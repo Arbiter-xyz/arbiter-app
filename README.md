@@ -4,9 +4,9 @@ Everything client-facing for **Arbiter**, a pay-per-question
 human-intelligence oracle settled on Stellar/Soroban: the worker console,
 the buyer dashboard, the marketing/landing page, and the headless demo
 scripts that exercise the whole system without a browser. Talks to
-[arbiter-backend](https://github.com/rudeus112266/arbiter-backend), which
+[arbiter-backend](https://github.com/Arbiter-xyz/arbiter-backend), which
 in turn settles against
-[arbiter-contract](https://github.com/rudeus112266/arbiter-contract).
+[arbiter-contract](https://github.com/Arbiter-xyz/arbiter-contract).
 
 Split out of the original `arbiter` monorepo. Fresh single commit, not a
 history-preserving split — full history and the six-round build narrative
