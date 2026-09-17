@@ -8,10 +8,11 @@ scripts that exercise the whole system without a browser. Talks to
 in turn settles against
 [arbiter-contract](https://github.com/Arbiter-xyz/arbiter-contract).
 
-Split out of the original `arbiter` monorepo. Fresh single commit, not a
-history-preserving split — full history and the six-round build narrative
-live in the original [`arbiter`](https://github.com/rudeus112266/arbiter)
-repo.
+Split out of the original `arbiter` monorepo and kept in sync with it as
+development continues — full history and the round-by-round build
+narrative live in the original
+[`arbiter`](https://github.com/rudeus112266/arbiter) repo; this repo
+tracks its `app/`, `demo-agent/`, `e2e/`, and `landing/` subtrees.
 
 ## Layout
 
@@ -33,6 +34,9 @@ e2e/          # browser click-through harness (stubbed)
 - `demo-agent/sponsored-demo.js` — proves, on real testnet, that a keypair
   which has never held a stroop of XLM can create an account, open a
   trustline, pay for a question, and get settled, entirely sponsored.
+- `app/admin.html` — a bearer-token-gated read-only ops console
+  (transactions, workers, payers, live treasury balance, fee revenue,
+  fraud/trust monitoring) served against arbiter-backend's `/admin/*`.
 
 ## Running it
 
