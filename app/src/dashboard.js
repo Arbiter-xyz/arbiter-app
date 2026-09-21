@@ -173,6 +173,13 @@ function renderQuestionItem(q) {
   qMeta.textContent = parts.filter(Boolean).join(' · ');
   left.append(qText, qMeta);
 
+  if (q.status === 'settled' && q.outcome === 'resolved' && q.answer) {
+    const qAnswer = document.createElement('p');
+    qAnswer.className = 'q-answer';
+    qAnswer.textContent = q.answer;
+    left.appendChild(qAnswer);
+  }
+
   const badge = document.createElement('span');
   const { label, cls } = describeStatus(q);
   badge.className = `badge ${cls}`;
