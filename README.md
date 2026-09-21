@@ -54,3 +54,18 @@ Verified live against a real deployed contract on Stellar testnet — see
 the original monorepo's README, "Round 6," for the full run (real
 `ask.js`/`worker-sim.js`/`sponsored-demo.js` executions, transaction links
 included).
+
+## Landing page — local backend
+
+`landing/` is a zero-build static site. By default it talks to the production API.
+
+To point it at a local `arbiter-backend`:
+
+```bash
+cd landing
+cp config.example.js config.js
+# edit config.js, e.g. window.ARBITER_API_BASE = "http://127.0.0.1:4000";
+python3 -m http.server 8123
+```
+
+`config.js` is gitignored. `script.js` loads it automatically when present; if it is missing, the production API is used.
