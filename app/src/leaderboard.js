@@ -1,13 +1,6 @@
+import { truncateAddress, formatRatio } from './format.js';
+
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
-
-function truncateAddress(id) {
-  if (id.length <= 16 || !id.startsWith('G')) return id;
-  return `${id.slice(0, 6)}…${id.slice(-6)}`;
-}
-
-function formatRatio(ratio) {
-  return ratio === null ? '—' : `${(ratio * 100).toFixed(1)}%`;
-}
 
 // Built with createElement/textContent, not innerHTML — workerId is
 // whatever a caller passed as GET /app/events's ?worker= param (no auth
