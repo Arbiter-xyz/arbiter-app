@@ -120,7 +120,23 @@
      reachable — this static page has no way to know whether one is
      running locally.
   ------------------------------------------------------------------- */
-  const API_BASE = "https://arbiter-backend-production-4e43.up.railway.app";
+  // Optional local override: sync-load landing/config.js when present (gitignored).
+  // Missing file is fine — fall back to the public production backend.
+  if (typeof window.ARBITER_API_BASE !== "string") {
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open("GET", "config.js", false);
+      xhr.send(null);
+      if (xhr.status >= 200 && xhr.status < 400 && xhr.responseText) {
+        (0, eval)(xhr.responseText);
+      }
+    } catch (_) {
+      /* config.js absent or blocked — use production */
+    }
+  }
+  const API_BASE =
+    (typeof window !== "undefined" && window.ARBITER_API_BASE) ||
+    "https://arbiter-backend-production-4e43.up.railway.app";
 
   const tryItForm = document.getElementById("try-it-form");
   const tryItInput = document.getElementById("try-it-input");
