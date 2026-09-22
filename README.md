@@ -8,11 +8,12 @@ scripts that exercise the whole system without a browser. Talks to
 in turn settles against
 [arbiter-contract](https://github.com/Arbiter-xyz/arbiter-contract).
 
-Split out of the original `arbiter` monorepo and kept in sync with it as
-development continues — full history and the round-by-round build
-narrative live in the original
-[`arbiter`](https://github.com/rudeus112266/arbiter) repo; this repo
-tracks its `app/`, `demo-agent/`, `e2e/`, and `landing/` subtrees.
+Originally split out of a monorepo; that monorepo is now retired — this
+repo is the sole source of truth for `app/`, `demo-agent/`, `e2e/`, and
+`landing/` going forward, version-checked against `arbiter-backend`'s
+reported API version rather than kept in lockstep by hand (see #150).
+Pre-split history and the round-by-round build narrative live in the
+archived [`arbiter`](https://github.com/rudeus112266/arbiter) repo.
 
 ## Layout
 
@@ -50,7 +51,8 @@ node sandbox-ask.js "What year did Stellar launch?"   # zero setup
 node ask.js "What is the capital of France?"           # real on-chain flow
 ```
 
-Verified live against a real deployed contract on Stellar testnet — see
-the original monorepo's README, "Round 6," for the full run (real
-`ask.js`/`worker-sim.js`/`sponsored-demo.js` executions, transaction links
-included).
+Verified live against a real deployed contract on Stellar testnet. (That
+run predates this repo's split; see "Round 6" in the archived
+[`arbiter`](https://github.com/rudeus112266/arbiter) monorepo README for
+the full run — real `ask.js`/`worker-sim.js`/`sponsored-demo.js`
+executions, transaction links included.)
