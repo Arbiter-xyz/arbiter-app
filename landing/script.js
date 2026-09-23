@@ -143,6 +143,58 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  /* -------------------------------------------------------------------
+     #how-it-works flow animation — a self-contained, generic visual of
+     the four stages (dispatch → quorum answers → reconciliation →
+     settlement). It is driven by the real sandbox lifecycle when a
+     try-it submission is in flight (see setTryItState below), and
+     otherwise idles on a clearly generic loop that never implies a
+     specific fabricated transaction. Respects prefers-reduced-motion by
+     rendering the static, fully-lit end state instead of animating.
+  ------------------------------------------------------------------- */
+  const flowEl = document.getElementById("flow-animation");
+  const flowStages = flowEl ? Array.from(flowEl.querySelectorAll("[data-flow-stage]")) : [];
+  const FLOW_STAGES = ["dispatch", "answers", "reconcile", "settle"];
+
+  function setFlowStage(stage) {
+    if (!flowStages.length) return;
+    const activeIndex = FLOW_STAGES.indexOf(stage);
+    flowStages.forEach((el) => {
+      const idx = FLOW_STAGES.indexOf(el.getAttribute("data-flow-stage"));
+      el.classList.toggle("is-active", idx === activeIndex);
+      el.classList.toggle("is-done", activeIndex >= 0 && idx < activeIndex);
+    });
+  }
+
+  let flowIdleTimer = null;
+
+  function stopFlowIdle() {
+    if (flowIdleTimer !== null) {
+      window.clearInterval(flowIdleTimer);
+      flowIdleTimer = null;
+    }
+  }
+
+  function startFlowIdle() {
+    if (!flowStages.length || prefersReducedMotion) return;
+    stopFlowIdle();
+    let i = 0;
+    setFlowStage(FLOW_STAGES[i]);
+    flowIdleTimer = window.setInterval(() => {
+      i = (i + 1) % FLOW_STAGES.length;
+      setFlowStage(FLOW_STAGES[i]);
+    }, 2200);
+  }
+
+  if (flowStages.length) {
+    if (prefersReducedMotion) {
+      // Static, fully-lit end state — no motion, but the flow is still shown.
+      flowStages.forEach((el) => el.classList.add("is-done"));
+    } else {
+      startFlowIdle();
+    }
+  }
+
   function setTryItState(state, status, answer) {
     if (!tryItResult) return;
     tryItResult.className = `try-it-result is-${state}`;
@@ -158,6 +210,20 @@
       answerEl.className = "try-it-answer";
       answerEl.textContent = answer;
       tryItResult.appendChild(answerEl);
+    }
+
+    // Sync the #how-it-works animation to the real sandbox lifecycle when
+    // one is in flight, instead of running a second, fake timeline.
+    if (flowStages.length && !prefersReducedMotion) {
+      if (state === "loading") {
+        stopFlowIdle();
+        setFlowStage(/reconcil/i.test(status) ? "reconcile" : "dispatch");
+      } else if (state === "resolved" || state === "refunded") {
+        stopFlowIdle();
+        setFlowStage("settle");
+      } else if (state === "error") {
+        startFlowIdle();
+      }
     }
   }
 
@@ -203,6 +269,11 @@
       } catch (err) {
         setTryItState(
           "error",
-          `Couldn't reach the API (${err.message}). Run the A
-
-/* … truncated 1142 chars — edit only what you need near the top … */
+          `Couldn't reach the API (${err.message}). Run the Arbiter backend locally and point API_BASE at it to try the live sandbox.`,
+        );
+      } finally {
+        tryItSubmit.disabled = false;
+      }
+    });
+  }
+})();
