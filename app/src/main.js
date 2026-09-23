@@ -7,6 +7,7 @@ import {
   HanaModule,
   AlbedoModule,
   HotWalletModule,
+  LedgerModule,
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet, getLocalWalletSecret } from './localWallet.js';
 import { StrKey } from '@stellar/stellar-sdk';
@@ -24,9 +25,18 @@ const USDC_ASSET_CODE = import.meta.env.VITE_USDC_ASSET_CODE || 'USDC';
 // hardware-wallet adapters (Trezor/Ledger) that pull in a large, more
 // security-sensitive dependency tree we have no use for. See the README
 // for the concrete CVE this sidesteps.
+//
+// LedgerModule is the one deliberate exception (issue #75): it is added
+// explicitly by name rather than via allowAllModules(), so the Trezor
+// adapters and their protobufjs dependency tree stay excluded. Ledger's
+// browser integration is WebUSB/WebHID against the device directly (the
+// kit's Ledger module), not a deep link into the Ledger Live companion
+// app. Before merging, re-run round 5's audit process: grep the built
+// bundle for `trezor`/`protobuf` and run `npm audit --audit-level=high`,
+// confirming the critical/high count stays at zero.
 const kit = new StellarWalletsKit({
   network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule()],
+  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule()],
 });
 
 const el = {
@@ -206,170 +216,4 @@ function gfDiv(a, b) {
 }
 
 function randomBytes(length) {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return bytes;
-}
-
-// Split `secret` (Uint8Array) into `n` shares, any `k` of which reconstruct it.
-// Each share is { x, y } where y is one byte per secret byte.
-function splitSecret(secret, k, n) {
-  if (k < 2 || k > n) throw new Error('threshold must be between 2 and the number of shares');
-  const shares = [];
-  for (let i = 0; i < n; i++) shares.push({ x: i + 1, y: new Uint8Array(secret.length) });
-  for (let byteIndex = 0; byteIndex < secret.length; byteIndex++) {
-    const coeffs = new Uint8Array(k);
-    coeffs[0] = secret[byteIndex];
-    const rest = randomBytes(k - 1);
-    for (let j = 1; j < k; j++) coeffs[j] = rest[j - 1];
-    for (const share of shares) {
-      let acc = 0;
-      for (let j = k - 1; j >= 0; j--) acc = gfMul(acc, share.x) ^ coeffs[j];
-      share.y[byteIndex] = acc;
-    }
-  }
-  return shares;
-}
-
-// Lagrange interpolation at x=0 over GF(256) to recover the secret bytes.
-function combineShares(shares) {
-  if (shares.length < 2) throw new Error('need at least two shares');
-  const length = shares[0].y.length;
-  const secret = new Uint8Array(length);
-  for (let byteIndex = 0; byteIndex < length; byteIndex++) {
-    let acc = 0;
-    for (let i = 0; i < shares.length; i++) {
-      let num = 1;
-      let den = 1;
-      for (let j = 0; j < shares.length; j++) {
-        if (i === j) continue;
-        num = gfMul(num, shares[j].x);
-        den = gfMul(den, shares[i].x ^ shares[j].x);
-      }
-      acc ^= gfMul(shares[i].y[byteIndex], gfDiv(num, den));
-    }
-    secret[byteIndex] = acc;
-  }
-  return secret;
-}
-
-function bytesToBase64(bytes) {
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-}
-
-function base64ToBytes(base64) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
-}
-
-function encodeShare(share, k, n) {
-  return `${RECOVERY_SHARE_PREFIX}:${k}-of-${n}:${share.x}:${bytesToBase64(share.y)}`;
-}
-
-function decodeShare(text) {
-  const parts = text.trim().split(':');
-  if (parts.length !== 4 || parts[0] !== RECOVERY_SHARE_PREFIX) {
-    throw new Error('not a valid Arbiter recovery share');
-  }
-  const [k, n] = parts[1].split('-of-').map(Number);
-  return { k, n, x: Number(parts[2]), y: base64ToBytes(parts[3]) };
-}
-
-function secretToBytes(secret) {
-  return new TextEncoder().encode(secret);
-}
-
-function bytesToSecret(bytes) {
-  return new TextDecoder().decode(bytes);
-}
-
-function renderRecoveryShares(shares, k, n) {
-  el.recoveryShares.innerHTML = '';
-  shares.forEach((share, index) => {
-    const li = document.createElement('li');
-    const label = document.createElement('span');
-    label.textContent = `Share ${index + 1} of ${n} — give this to one trustee:`;
-    const code = document.createElement('code');
-    code.textContent = encodeShare(share, k, n);
-    li.append(label, code);
-    el.recoveryShares.append(li);
-  });
-}
-
-el.btnSetupRecovery.addEventListener('click', () => {
-  const secret = getLocalWalletSecret();
-  if (!secret) {
-    el.recoveryStatus.textContent = 'No quick-start wallet found in this browser.';
-    return;
-  }
-  const k = Number(el.recoveryThreshold.value);
-  const n = Number(el.recoveryShareCount.value);
-  if (!Number.isInteger(k) || !Number.isInteger(n) || k < 2 || k > n) {
-    el.recoveryStatus.textContent = 'Choose a threshold between 2 and the number of shares.';
-    return;
-  }
-  try {
-    const shares = splitSecret(secretToBytes(secret), k, n);
-    renderRecoveryShares(shares, k, n);
-    el.recoveryStatus.textContent = `Split into ${n} shares — any ${k} reconstruct the wallet. Nothing was sent to the network.`;
-  } catch (err) {
-    el.recoveryStatus.textContent = `Could not split the secret: ${err.message}`;
-  }
-});
-
-el.btnRecoverWallet.addEventListener('click', async () => {
-  const lines = el.recoveryInput.value.split('\n').map((line) => line.trim()).filter(Boolean);
-  if (lines.length < 2) {
-    el.recoveryStatus.textContent = 'Paste at least two shares, one per line.';
-    return;
-  }
-  try {
-    const shares = lines.map(decodeShare);
-    const secret = bytesToSecret(combineShares(shares));
-    const { Keypair } = await import('@stellar/stellar-sdk');
-    const keypair = Keypair.fromSecret(secret);
-    el.recoveryStatus.textContent = `Recovered wallet ${keypair.publicKey()} — import this secret into your wallet to use it.`;
-    log(`Recovered quick-start wallet ${keypair.publicKey()} from ${shares.length} shares.`);
-  } catch (err) {
-    el.recoveryStatus.textContent = `Recovery failed: ${err.message}`;
-  }
-});
-
-async function activateWallet(wallet, address) {
-  state.activeWallet = wallet;
-  state.address = address;
-  log(`Connected wallet ${address}`);
-  el.workerAddress.textContent = address;
-  await routeAfterConnect();
-  setConnectButtonsBusy(false);
-}
-
-async function hasUsdcTrustline(address) {
-  const res = await fetch(`${HORIZON_URL}/accounts/${address}`);
-  if (res.status === 404) return false; // account doesn't exist on-chain at all yet
-  if (!res.ok) throw new Error(`Horizon returned ${res.status}`);
-  const account = await res.json();
-  return (account.balances || []).some((b) => b.asset_code === USDC_ASSET_CODE);
-}
-
-async function routeAfterConnect() {
-  try {
-    const ready = await hasUsdcTrustline(state.address);
-    showPanel(ready ? 'online' : 'onboard');
-    if (ready) {
-      refreshEarnings();
-      setInterval(refreshEarnings, 20_000);
-    }
-  } catch (err) {
-    log(`Trustline check failed (${err.message}) — assuming onboarding is needed`);
-    showPanel('onboard');
-  }
-}
-
-// --- Sponsored onboarding (zero XLM required) ----------------------------
-
-/* … truncated 14347 chars — edit only what you need near the top … */
+  const bytes 

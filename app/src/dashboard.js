@@ -7,15 +7,18 @@ import {
   HanaModule,
   AlbedoModule,
   HotWalletModule,
+  LedgerModule,
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet } from './localWallet.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
 // Same hand-picked module list as the worker console — see main.js.
+// Ledger is added explicitly (not via allowAllModules()) so the Trezor/
+// protobufjs surface stays excluded — see the round-5 note in main.js.
 const kit = new StellarWalletsKit({
   network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule()],
+  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule()],
 });
 
 const el = {
