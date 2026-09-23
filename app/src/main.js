@@ -109,6 +109,65 @@ function selectedCategories() {
   return [...el.categoryPicker.querySelectorAll('input[type=checkbox]:checked')].map((c) => c.value);
 }
 
+// --- Live category-demand heatmap (issue #77) -----------------------------
+//
+// Reads the same smoothed per-category online-worker counts dispatch.js
+// already computes internally (getSmoothedOnlineWorkerCount() /
+// computeSmoothedCount()) via GET /categories/demand, and paints a small
+// bar next to each category checkbox so a worker can see which topics are
+// short on workers before going online. Degrades gracefully (bars hidden,
+// no broken UI) when the backend is unreachable, matching the trustLive
+// pattern in landing/script.js.
+
+const DEMAND_REFRESH_MS = 30_000;
+let demandRefreshHandle = null;
+
+function demandBarFor(category) {
+  const label = el.categoryPicker.querySelector(`label[data-category="${category}"]`);
+  return label ? label.querySelector('.category-demand-bar') : null;
+}
+
+function renderCategoryDemand(demand) {
+  // demand: { [category]: smoothedOnlineWorkerCount }
+  const counts = Object.values(demand).filter((n) => Number.isFinite(n));
+  const max = counts.length ? Math.max(...counts, 1) : 1;
+  for (const input of el.categoryPicker.querySelectorAll('input[type=checkbox]')) {
+    const bar = demandBarFor(input.value);
+    if (!bar) continue;
+    const count = Number.isFinite(demand[input.value]) ? demand[input.value] : 0;
+    // Scarcity = demand: fewer online workers means a taller bar.
+    const scarcity = 1 - count / max;
+    bar.style.width = `${Math.round(scarcity * 100)}%`;
+    bar.title = `${count} worker${count === 1 ? '' : 's'} online now`;
+  }
+}
+
+function clearCategoryDemand() {
+  for (const bar of el.categoryPicker.querySelectorAll('.category-demand-bar')) {
+    bar.style.width = '0%';
+    bar.removeAttribute('title');
+  }
+}
+
+async function refreshCategoryDemand() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/categories/demand`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderCategoryDemand(data.demand || {});
+  } catch (err) {
+    // Backend unreachable or malformed: hide the heatmap rather than
+    // leaving stale or broken bars in the picker.
+    clearCategoryDemand();
+  }
+}
+
+function startCategoryDemandPolling() {
+  if (demandRefreshHandle) return;
+  refreshCategoryDemand();
+  demandRefreshHandle = setInterval(refreshCategoryDemand, DEMAND_REFRESH_MS);
+}
+
 // --- Wallet connect (extension) or quick start (local, non-custodial) -----
 
 // A user clicking both connect options in quick succession could otherwise
@@ -187,33 +246,6 @@ el.btnCopySecret.addEventListener('click', async () => {
 // user's own (contacts, a second device, a password manager). Reconstructing
 // from any k shares reproduces the original Keypair/address, so the README's
 // non-custodial framing is unchanged — there is no server-side capability to
-// rebuild a user's key.
+// rebuild a u
 
-const RECOVERY_SHARE_PREFIX = 'arbiter-recovery-share-v1';
-
-// GF(256) arithmetic with the AES polynomial 0x11b, used for Shamir splitting.
-function gfMul(a, b) {
-  let p = 0;
-  for (let i = 0; i < 8; i++) {
-    if (b & 1) p ^= a;
-    const hi = a & 0x80;
-    a = (a << 1) & 0xff;
-    if (hi) a ^= 0x1b;
-    b >>= 1;
-  }
-  return p;
-}
-
-function gfInv(a) {
-  if (a === 0) throw new Error('cannot invert zero');
-  let r = 1;
-  for (let i = 0; i < 254; i++) r = gfMul(r, a);
-  return r;
-}
-
-function gfDiv(a, b) {
-  return gfMul(a, gfInv(b));
-}
-
-function randomBytes(length) {
-  const bytes 
+/* … truncated 599 chars — edit only what you need near the top … */
