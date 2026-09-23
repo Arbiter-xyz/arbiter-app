@@ -203,31 +203,6 @@
       } catch (err) {
         setTryItState(
           "error",
-          `Couldn't reach the API (${err.message}). Run the Arbiter backend locally to try this live — see the docs.`,
-        );
-      } finally {
-        tryItSubmit.disabled = false;
-      }
-    });
-  }
+          `Couldn't reach the API (${err.message}). Run the A
 
-  /* -------------------------------------------------------------------
-     Live platform stats — pure enhancement on top of the static,
-     permanently-true trust markers (test counts etc.). If the API isn't
-     reachable, this line simply never appears rather than showing a
-     broken placeholder — the static trust strip is already complete
-     without it.
-  ------------------------------------------------------------------- */
-  const trustLive = document.getElementById("trust-live");
-  if (trustLive) {
-    fetch(`${API_BASE}/stats`)
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`status ${res.status}`))))
-      .then((stats) => {
-        trustLive.textContent = `Live: ${stats.totalResolved} resolved · ${stats.totalRefunded} refunded · ${stats.onlineWorkers} workers online right now`;
-        trustLive.classList.add("is-visible");
-      })
-      .catch(() => {
-        /* no reachable backend — leave the static trust strip as-is */
-      });
-  }
-})();
+/* … truncated 1142 chars — edit only what you need near the top … */

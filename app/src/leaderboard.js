@@ -62,5 +62,62 @@ async function loadLeaderboard() {
   }
 }
 
+// Public, unauthenticated activity feed (issue #78). Consumes the
+// anonymized settlement stream from the backend's public channel —
+// distinct from the worker-only /app/events SSE channel dispatch.js
+// gates. Events carry only category/tier/outcome/amount; never workerId
+// or payer address. Rendered with createElement/textContent (not
+// innerHTML) for the same reason as renderRow above: this is a public
+// surface and the payload is caller-influenced.
+function renderActivityItem(event) {
+  const li = document.createElement('li');
+  li.className = 'activity-item';
+
+  const outcome = document.createElement('span');
+  outcome.className = `activity-outcome activity-outcome-${event.outcome}`;
+  outcome.textContent = event.outcome;
+
+  const detail = document.createElement('span');
+  detail.className = 'muted small';
+  detail.textContent = `${event.category} · tier ${event.tier} · ${event.amount} USDC`;
+
+  li.append(outcome, ' ', detail);
+  return li;
+}
+
+function initActivityFeed() {
+  const list = document.getElementById('activity-feed');
+  if (!list) return;
+
+  // Degrade silently when the backend is unreachable: no error UI, no
+  // broken element — just leave the feed empty.
+  let source;
+  try {
+    source = new EventSource(`${BACKEND_URL}/activity`);
+  } catch {
+    return;
+  }
+
+  source.addEventListener('settlement', (msg) => {
+    let event;
+    try {
+      event = JSON.parse(msg.data);
+    } catch {
+      return;
+    }
+    // Defensive: never render identifying fields even if a backend
+    // regression leaks them into the payload.
+    if (event.workerId || event.payer) return;
+
+    list.prepend(renderActivityItem(event));
+    while (list.children.length > 20) list.removeChild(list.lastChild);
+  });
+
+  source.onerror = () => {
+    // Silent degradation — EventSource auto-reconnects; no UI change.
+  };
+}
+
 document.getElementById('btn-refresh').addEventListener('click', loadLeaderboard);
 loadLeaderboard();
+initActivityFeed();
