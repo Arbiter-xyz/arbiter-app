@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Arbiter — Ground truth for on-chain and technical claims, verified by staked humans</title>
-  <meta name="description" content="Arbiter is a pay-per-question verification API for on-chain and technical claims — audit findings, contract behavior, on-chain events. Pay in USDC, a staked quorum of humans checks it, settled automatically on-chain or fully refunded." />
+  <title>Arbiter — Put a stake on the answer, verified by staked humans</title>
+  <meta name="description" content="Arbiter is a pay-per-question verification API. Ask anything you need a real answer on — an audit finding, a contract's behavior, a claim an AI got wrong — and a staked quorum of humans checks it. Pay with a wallet or a card, settled on-chain or fully refunded." />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -29,7 +29,7 @@
           <li><a href="#developers">Developers</a></li>
           <li><a href="#pricing">Pricing</a></li>
           <li><a href="#faq">FAQ</a></li>
-          <li><a href="https://github.com" class="nav-cta">Read the docs</a></li>
+          <li><a href="https://github.com/Arbiter-xyz/arbiter-backend#readme" class="nav-cta">Read the docs</a></li>
         </ul>
       </nav>
     </div>
@@ -40,20 +40,20 @@
     <section class="hero" id="top" aria-labelledby="hero-heading">
       <div class="container hero-grid">
         <div class="hero-copy reveal">
-          <p class="eyebrow">Ground truth for on-chain &amp; technical claims · Built on Stellar / Soroban</p>
-          <h1 id="hero-heading">Is that audit finding real?<br />Put a stake on the answer.</h1>
+          <p class="eyebrow">Ground truth for any claim you need checked · Built on Stellar / Soroban</p>
+          <h1 id="hero-heading">Is that true?<br />Put a stake on the answer.</h1>
           <p class="hero-sub">
-            Arbiter verifies on-chain and technical claims — audit findings, contract behavior,
-            "did this transaction actually do what the README says" — with a real, USDC-staked
-            human quorum, not a raw LLM guess. Pay in USDC, get a settled answer on-chain, or a
-            full refund if consensus isn&rsquo;t reached. No stuck funds, no partial states.
+            Arbiter checks any claim you need a real answer on — an audit finding, a contract's
+            behavior, something an AI got wrong — with a real, staked human quorum, not a raw
+            LLM guess. Pay with a wallet or a card, get a settled answer, or a full refund if
+            consensus isn&rsquo;t reached. No stuck funds, no partial states.
           </p>
           <div class="hero-actions">
             <a href="#try-it-input" class="btn btn-primary">Verify a claim live</a>
-            <a href="https://github.com" class="btn btn-secondary">Read the docs</a>
+            <a href="https://github.com/Arbiter-xyz/arbiter-backend#readme" class="btn btn-secondary">Read the docs</a>
           </div>
           <ul class="hero-trust" aria-label="At a glance">
-            <li><strong>0.25 USDC</strong><span>starting price</span></li>
+            <li><strong>$0.05</strong><span>starting price</span></li>
             <li><strong>Staked</strong><span>quorum, not a guess</span></li>
             <li><strong>Fail-closed</strong><span>by design</span></li>
           </ul>
@@ -100,8 +100,8 @@
           <li class="step reveal">
             <span class="step-index">02</span>
             <h3>Pay</h3>
-            <p>Submit USDC on Stellar to escrow, or use the sponsored zero-XLM flow — the
-              platform covers your network fee.</p>
+            <p>Submit USDC on Stellar to escrow (the platform covers your network fee, zero XLM
+              needed), or use an API key billed by the question — no wallet required.</p>
           </li>
           <li class="step reveal">
             <span class="step-index">03</span>
@@ -184,6 +184,7 @@
             <li>Async job model — no long-held HTTP connections</li>
             <li>Four tiers, from an instant AI draft to a 5-worker staked quorum</li>
             <li>Confidence score and reconciliation method on every response</li>
+            <li>No Stellar wallet needed — bill an API key by the question instead</li>
             <li>Public, on-chain-verifiable <a href="https://arbiter-app-ten.vercel.app/leaderboard.html">verifier leaderboard</a></li>
           </ul>
         </div>
@@ -217,7 +218,7 @@
         <div class="pricing-grid">
           <article class="price-card reveal">
             <h3>Instant</h3>
-            <p class="price">0.05 <span>USDC</span></p>
+            <p class="price">$0.05 <span>USDC</span></p>
             <ul>
               <li>No human quorum — an AI draft</li>
               <li>Seconds, not a wait</li>
@@ -227,7 +228,7 @@
 
           <article class="price-card reveal">
             <h3>Standard</h3>
-            <p class="price">0.25 <span>USDC</span></p>
+            <p class="price">$0.25 <span>USDC</span></p>
             <ul>
               <li>Quorum of 3 workers</li>
               <li>45s answer window</li>
@@ -238,7 +239,7 @@
           <article class="price-card price-card-featured reveal">
             <p class="price-badge">Most popular</p>
             <h3>Express</h3>
-            <p class="price">0.40 <span>USDC</span></p>
+            <p class="price">$0.40 <span>USDC</span></p>
             <ul>
               <li>Quorum of 2 workers</li>
               <li>12s answer window</li>
@@ -248,7 +249,7 @@
 
           <article class="price-card reveal">
             <h3>Priority</h3>
-            <p class="price">0.60 <span>USDC</span></p>
+            <p class="price">$0.60 <span>USDC</span></p>
             <ul>
               <li>Quorum of 5 workers</li>
               <li>30s answer window</li>
@@ -346,7 +347,7 @@
         <h2 id="final-cta-heading">Ask your first question in under a minute.</h2>
         <div class="hero-actions center">
           <a href="#try-it-input" class="btn btn-primary">Ask a question live</a>
-          <a href="https://github.com" class="btn btn-secondary">Read the docs</a>
+          <a href="https://github.com/Arbiter-xyz/arbiter-backend#readme" class="btn btn-secondary">Read the docs</a>
         </div>
       </div>
     </section>
@@ -360,8 +361,8 @@
       </a>
       <nav aria-label="Footer">
         <ul>
-          <li><a href="https://github.com">Docs</a></li>
-          <li><a href="https://github.com">GitHub</a></li>
+          <li><a href="https://github.com/Arbiter-xyz/arbiter-backend#readme">Docs</a></li>
+          <li><a href="https://github.com/Arbiter-xyz">GitHub</a></li>
           <li><a href="#faq">FAQ</a></li>
         </ul>
       </nav>
