@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Arbiter — Worker Console</title>
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#5b4cf0" />
+    <meta name="theme-color" href="#5b4cf0" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -85,6 +85,12 @@
           <label><input type="checkbox" value="history" /> History</label>
           <label><input type="checkbox" value="general" /> General knowledge</label>
         </fieldset>
+
+        <div id="category-demand" class="category-demand" aria-live="polite">
+          <div class="muted small">Live demand — categories short on workers right now</div>
+          <ul id="category-demand-list" class="category-demand-list"></ul>
+          <p id="category-demand-status" class="muted small"></p>
+        </div>
 
         <div class="push-row">
           <div>

@@ -6,9 +6,11 @@
   "type": "module",
   "scripts": {
     "ask": "node ask.js",
+    "sandbox-ask": "node sandbox-ask.js",
+    "bot": "node bot.js",
     "worker": "node worker-sim.js",
     "sponsored-demo": "node sponsored-demo.js",
-    "check": "node --check ask.js sandbox-ask.js worker-sim.js sponsored-demo.js lib/stellar.js"
+    "check": "node --check ask.js sandbox-ask.js bot.js worker-sim.js sponsored-demo.js lib/stellar.js"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^16.2.0",

@@ -7,15 +7,19 @@ import {
   HanaModule,
   AlbedoModule,
   HotWalletModule,
+  LedgerModule,
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet } from './localWallet.js';
+import { renderMarkdown } from './markdown.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
 // Same hand-picked module list as the worker console — see main.js.
+// Ledger is added explicitly (not via allowAllModules()) so the Trezor/
+// protobufjs surface stays excluded — see the round-5 note in main.js.
 const kit = new StellarWalletsKit({
   network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule()],
+  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule()],
 });
 
 const el = {
@@ -165,7 +169,9 @@ function renderQuestionItem(q) {
   const left = document.createElement('div');
   const qText = document.createElement('p');
   qText.className = 'q-text';
-  qText.textContent = q.question || q.questionId;
+  // Markdown is rendered through a sanitizing renderer (markdown.js) that
+  // builds safe DOM nodes — never innerHTML of raw user content.
+  renderMarkdown(qText, q.question || q.questionId);
   const qMeta = document.createElement('div');
   qMeta.className = 'q-meta';
   const parts = [q.tier, q.amount ? `${q.amount} USDC` : null];
