@@ -1,56 +1,99 @@
-import 'dotenv/config';
-import { env, sleep } from './lib/stellar.js';
+// Sandbox-only chat bot front-end for asking Arbiter questions from a
+// Slack/Discord workspace.
+//
+// This mirrors the zero-setup pattern of demo-agent/sandbox-ask.js: it proxies
+// /oracle/sandbox calls with NO payer secret and NO wallet connect. There is no
+// payment identity to answer here, and no real payment is possible from the bot
+// until a custody model is explicitly chosen and documented (see issue #90).
+//
+// Usage:
+//   node sandbox-ask.js "What is the capital of France?"
+//   node sandbox-ask.js --user U123 "What is the capital of France?"
+//
+// The --user flag stands in for the Slack/Discord user id so that rate limiting
+// is applied per chat user, not per bot process.
 
-/**
- * The zero-setup version of ask.js: no DEMO_PAYER_SECRET, no testnet USDC,
- * no chain interaction at all. Proves the sandbox flow end to end and
- * doubles as a copy-paste starting point for someone evaluating the API
- * before they've decided to set up a real wallet.
- */
-const question = process.argv.slice(2).join(' ') || 'What is the capital of France?';
-const simulate = process.env.SANDBOX_SIMULATE; // 'resolved' | 'disagreement' | 'no-answers'
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:4000";
 
-async function pollJob(jobId, { intervalMs = 300, timeoutMs = 15_000 } = {}) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const res = await fetch(`${env.backendUrl}/oracle/${jobId}`);
-    const job = await res.json();
-    if (job.status === 'settled') return job;
-    process.stdout.write(`  … status=${job.status}\r`);
-    await sleep(intervalMs);
+// Per-user rate limiting. Keyed by chat user id so one user cannot exhaust a
+// shared sandbox quota for everyone else in the workspace.
+const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000);
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 5);
+const userHits = new Map();
+
+function checkRateLimit(userId) {
+  const now = Date.now();
+  const hits = (userHits.get(userId) || []).filter(
+    (t) => now - t < RATE_LIMIT_WINDOW_MS
+  );
+  if (hits.length >= RATE_LIMIT_MAX) {
+    const retryMs = RATE_LIMIT_WINDOW_MS - (now - hits[0]);
+    return { allowed: false, retryMs };
   }
-  throw new Error(`job ${jobId} did not settle within ${timeoutMs}ms`);
+  hits.push(now);
+  userHits.set(userId, hits);
+  return { allowed: true };
+}
+
+async function askSandbox(question) {
+  const res = await fetch(`${BACKEND_URL}/oracle/sandbox`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`sandbox request failed (${res.status}): ${text}`);
+  }
+  return res.json();
+}
+
+// Formats the real /oracle/sandbox result for posting back in-channel.
+function formatReply(result) {
+  const answer =
+    result && (result.answer ?? result.result ?? result.response ?? result);
+  return typeof answer === "string" ? answer : JSON.stringify(answer);
+}
+
+async function handleAsk(userId, question) {
+  const limit = checkRateLimit(userId);
+  if (!limit.allowed) {
+    const secs = Math.ceil(limit.retryMs / 1000);
+    return `Rate limit reached. Try again in ${secs}s.`;
+  }
+  try {
+    const result = await askSandbox(question);
+    return formatReply(result);
+  } catch (err) {
+    return `Sorry, I couldn't reach the oracle: ${err.message}`;
+  }
 }
 
 async function main() {
-  console.log(`Asking (sandbox — free, no wallet, no chain): "${question}"`);
-
-  const res = await fetch(`${env.backendUrl}/oracle/sandbox`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, simulate }),
-  });
-  if (res.status !== 202) {
-    throw new Error(`expected 202, got ${res.status}: ${JSON.stringify(await res.json())}`);
+  const args = process.argv.slice(2);
+  let userId = "anonymous";
+  const rest = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--user" && args[i + 1]) {
+      userId = args[++i];
+    } else {
+      rest.push(args[i]);
+    }
   }
-  const { jobId, statusUrl } = await res.json();
-  console.log(`✓ Sandbox job started: ${jobId} (poll ${statusUrl})`);
-
-  const job = await pollJob(jobId);
-  console.log();
-
-  if (job.outcome === 'resolved') {
-    console.log(`✓ RESOLVED (sandbox) — answer: "${job.answer}" (confidence ${job.confidence})`);
-    console.log(`  Fake payout tx: ${job.payoutTx}`);
-  } else {
-    console.log(`✓ REFUNDED (sandbox) — reason: ${job.reason}`);
-    console.log(`  Fake refund tx: ${job.refundTx}`);
+  const question = rest.join(" ").trim();
+  if (!question) {
+    console.error('Usage: node sandbox-ask.js [--user USER_ID] "<question>"');
+    process.exit(1);
   }
-  console.log('\nNothing here touched real funds or a real chain. Set DEMO_PAYER_SECRET and');
-  console.log('run ask.js instead once you\'re ready to try the real, on-chain flow.');
+  const reply = await handleAsk(userId, question);
+  console.log(reply);
 }
 
-main().catch((err) => {
-  console.error('\nsandbox-ask.js failed:', err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+module.exports = { handleAsk, checkRateLimit, askSandbox, formatReply };
