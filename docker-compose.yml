@@ -1,0 +1,55 @@
+# One-command local stack: backend + simulated workers, sandbox flow only.
+#
+#   git clone https://github.com/Arbiter-xyz/arbiter-backend ../arbiter-backend
+#   docker compose up --build
+#   docker compose run --rm ask "What is 6 x 7?"
+#
+# The backend lives in its own repo; point BACKEND_CONTEXT elsewhere if it
+# isn't checked out as a sibling. Secrets (testnet keys etc.) come from
+# ${BACKEND_ENV_FILE} / demo-agent/.env — never put them in this file.
+services:
+  backend:
+    build: ${BACKEND_CONTEXT:-../arbiter-backend}
+    env_file:
+      - path: ${BACKEND_ENV_FILE:-../arbiter-backend/.env}
+        required: false
+    environment:
+      PORT: 4000
+      # Uncomment (and the redis service) to exercise store.js's Redis path;
+      # left out, the backend uses its in-memory store.
+      # REDIS_URL: redis://redis:6379
+    ports:
+      - "4000:4000"
+
+  # redis:
+  #   image: redis:7-alpine
+
+  worker-a: &worker
+    build: ./demo-agent
+    depends_on: [backend]
+    restart: on-failure
+    env_file:
+      - path: ./demo-agent/.env
+        required: false
+    environment:
+      BACKEND_URL: http://backend:4000
+      WORKER_ID: demo-worker-a
+      WORKER_ANSWER: "42"
+      WORKER_CATEGORIES: ${WORKER_CATEGORIES:-}
+
+  worker-b:
+    <<: *worker
+    environment:
+      BACKEND_URL: http://backend:4000
+      WORKER_ID: demo-worker-b
+      WORKER_ANSWER: "42"
+      WORKER_CATEGORIES: ${WORKER_CATEGORIES:-}
+
+  # One-shot: `docker compose run --rm ask "your question"`
+  ask:
+    build: ./demo-agent
+    profiles: [ask]
+    depends_on: [backend]
+    environment:
+      BACKEND_URL: http://backend:4000
+    entrypoint: ["node", "sandbox-demo.js"]
