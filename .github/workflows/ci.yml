@@ -27,6 +27,14 @@ jobs:
         working-directory: app
       - run: npm run build
         working-directory: app
+      # Hard, enforced bundle-size budget (issue #4). The wallet-kit chunk
+      # used to be a single 735KB monolith; per-adapter dynamic imports split
+      # it so no single chunk may exceed the budget below. This check fails
+      # the build if any emitted chunk regresses past the budget, keeping the
+      # split honest instead of letting weight silently creep back in.
+      - name: Enforce bundle-size budget
+        run: node scripts/check-bundle-budget.mjs
+        working-directory: app
       - name: Dependency audit (fails only on high/critical)
         run: npm audit --omit=dev --audit-level=high
         working-directory: app

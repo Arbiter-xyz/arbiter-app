@@ -1,12 +1,6 @@
 import {
   StellarWalletsKit,
   WalletNetwork,
-  FreighterModule,
-  LobstrModule,
-  xBullModule,
-  HanaModule,
-  AlbedoModule,
-  HotWalletModule,
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet, getLocalWalletSecret } from './localWallet.js';
 import { StrKey } from '@stellar/stellar-sdk';
@@ -24,10 +18,40 @@ const USDC_ASSET_CODE = import.meta.env.VITE_USDC_ASSET_CODE || 'USDC';
 // hardware-wallet adapters (Trezor/Ledger) that pull in a large, more
 // security-sensitive dependency tree we have no use for. See the README
 // for the concrete CVE this sidesteps.
-const kit = new StellarWalletsKit({
-  network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule()],
-});
+//
+// Each adapter is loaded via a per-wallet dynamic import() so that selecting
+// one wallet only pulls in that wallet's SDK — the other adapters' (and their
+// transitive dependency trees') chunks are never fetched. This is what keeps
+// the wallet-kit bundle from collapsing into a single ~735KB chunk.
+const WALLET_MODULES = {
+  freighter: () => import('@creit.tech/stellar-wallets-kit/modules/freighter').then((m) => new m.FreighterModule()),
+  lobstr: () => import('@creit.tech/stellar-wallets-kit/modules/lobstr').then((m) => new m.LobstrModule()),
+  xbull: () => import('@creit.tech/stellar-wallets-kit/modules/xbull').then((m) => new m.xBullModule()),
+  hana: () => import('@creit.tech/stellar-wallets-kit/modules/hana').then((m) => new m.HanaModule()),
+  albedo: () => import('@creit.tech/stellar-wallets-kit/modules/albedo').then((m) => new m.AlbedoModule()),
+  hotwallet: () => import('@creit.tech/stellar-wallets-kit/modules/hotwallet').then((m) => new m.HotWalletModule()),
+};
+
+// The kit is constructed lazily, once, with only the adapters the user has
+// actually selected. Until then no adapter SDK is loaded at all.
+let kit = null;
+let kitModules = null;
+
+async function getKit(selectedIds) {
+  const ids = selectedIds && selectedIds.length ? selectedIds : Object.keys(WALLET_MODULES);
+  const modules = await Promise.all(ids.map((id) => WALLET_MODULES[id]()));
+  // Rebuild the kit whenever the active adapter set changes so we never keep
+  // a stale module list around.
+  const signature = ids.join(',');
+  if (!kit || kitModules !== signature) {
+    kit = new StellarWalletsKit({
+      network: WalletNetwork.TESTNET,
+      modules,
+    });
+    kitModules = signature;
+  }
+  return kit;
+}
 
 const el = {
   connect: document.getElementById('panel-connect'),
@@ -194,159 +218,4 @@ async function reconcilePendingAnswer(record) {
     });
     // 409 means the backend already recorded this idempotency key — the
     // answer was submitted exactly once, so treat it as success.
-    if (res.ok || res.status === 409) {
-      await deletePendingAnswer(record.id);
-      log(`Queued answer submitted for "${record.questionText || record.questionId}".`);
-      return 'submitted';
-    }
-    return 'retry';
-  } catch {
-    return 'retry';
-  }
-}
-
-async function flushPendingAnswers() {
-  const pending = (await listPendingAnswers()) || [];
-  for (const record of pending) {
-    await reconcilePendingAnswer(record);
-  }
-}
-
-// The service worker asks the page to drain the queue (it can't touch the
-// page's IndexedDB handle directly).
-navigator.serviceWorker?.addEventListener('message', (event) => {
-  if (event.data?.type === 'flush-pending-answers') flushPendingAnswers();
-});
-
-window.addEventListener('online', () => {
-  state.online = true;
-  flushPendingAnswers();
-});
-
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch((err) => log(`Service worker registration failed: ${err.message}`));
-}
-
-function log(message) {
-  const li = document.createElement('li');
-  const time = new Date().toLocaleTimeString();
-  li.textContent = `[${time}] ${message}`;
-  el.log.prepend(li);
-}
-
-function showPanel(name) {
-  for (const key of ['connect', 'onboard', 'online']) {
-    el[key].classList.toggle('hidden', key !== name);
-  }
-  el.earnings.classList.toggle('hidden', name !== 'online');
-}
-
-function selectedCategories() {
-  return [...el.categoryPicker.querySelectorAll('input[type=checkbox]:checked')].map((c) => c.value);
-}
-
-// --- Wallet connect (extension) or quick start (local, non-custodial) -----
-
-// A user clicking both connect options in quick succession could otherwise
-// let whichever resolves last silently overwrite the other's in-flight
-// state.activeWallet/state.address — guard against that race by disabling
-// both the instant either one starts, and only re-enabling on failure.
-function setConnectButtonsBusy(busy) {
-  el.btnConnect.disabled = busy;
-  el.btnQuickStart.disabled = busy;
-}
-
-el.btnConnect.addEventListener('click', async () => {
-  setConnectButtonsBusy(true);
-  try {
-    await kit.openModal({
-      onWalletSelected: async (option) => {
-        kit.setWallet(option.id);
-        const { address } = await kit.getAddress();
-        el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
-        await activateWallet(kit, address);
-      },
-      onClosed: (err) => {
-        setConnectButtonsBusy(false);
-        if (err) log(`Wallet selection closed: ${err.message}`);
-      },
-    });
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(`Wallet connect failed: ${err.message}`);
-  }
-});
-
-el.btnQuickStart.addEventListener('click', async () => {
-  setConnectButtonsBusy(true);
-  try {
-    const localWallet = createOrLoadLocalWallet();
-    const { address } = await localWallet.getAddress();
-    log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
-    showBackupPanel();
-    await activateWallet(localWallet, address);
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(`Quick start failed: ${err.message}`);
-  }
-});
-
-function showBackupPanel() {
-  el.backup.classList.remove('hidden');
-  el.backupSecret.value = '••••••••••••••••••••••••••••••••••••••••••••••••••';
-  el.backupSecret.type = 'password';
-  el.backupCopyStatus.textContent = '';
-}
-
-el.btnRevealSecret.addEventListener('click', () => {
-  const revealed = el.backupSecret.type === 'password';
-  if (revealed) el.backupSecret.value = getLocalWalletSecret() || '';
-  el.backupSecret.type = revealed ? 'text' : 'password';
-  el.btnRevealSecret.textContent = revealed ? 'Hide' : 'Reveal';
-});
-
-el.btnCopySecret.addEventListener('click', async () => {
-  const secret = getLocalWalletSecret();
-  if (!secret) return;
-  try {
-    await navigator.clipboard.writeText(secret);
-    el.backupCopyStatus.textContent = 'Copied to clipboard — store it somewhere safe, then clear your clipboard.';
-  } catch (err) {
-    el.backupCopyStatus.textContent = `Could not copy automatically (${err.message}) — reveal and copy it manually.`;
-  }
-});
-
-async function activateWallet(wallet, address) {
-  state.activeWallet = wallet;
-  state.address = address;
-  log(`Connected wallet ${address}`);
-  el.workerAddress.textContent = address;
-  await routeAfterConnect();
-  setConnectButtonsBusy(false);
-}
-
-async function hasUsdcTrustline(address) {
-  const res = await fetch(`${HORIZON_URL}/accounts/${address}`);
-  if (res.status === 404) return false; // account doesn't exist on-chain at all yet
-  if (!res.ok) throw new Error(`Horizon returned ${res.status}`);
-  const account = await res.json();
-  return (account.balances || []).some((b) => b.asset_code === USDC_ASSET_CODE);
-}
-
-async function routeAfterConnect() {
-  try {
-    const ready = await hasUsdcTrustline(state.address);
-    showPanel(ready ? 'online' : 'onboard');
-    if (ready) {
-      refreshEarnings();
-      setInterval(refreshEarnings, 20_000);
-    }
-  } catch (err) {
-    log(`Trustline check failed (${err.message}) — assuming onboarding is needed`);
-    showPanel('onboard');
-  }
-}
-
-// --- Sponsored onboarding (zero XLM required) ----------------------------
-
-/* … truncated 14347 chars — edit only what you need near the top … */
+    if (r
