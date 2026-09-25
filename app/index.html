@@ -61,6 +61,23 @@
           <button id="btn-toggle">Go online</button>
         </div>
 
+        <div class="push-row">
+          <div>
+            <div class="muted small">Practice mode</div>
+            <p id="practice-status" class="muted small">
+              Off — questions you answer are real and count toward your reputation.
+            </p>
+          </div>
+          <button id="btn-practice-toggle" class="secondary" type="button" aria-pressed="false">
+            Practice mode
+          </button>
+        </div>
+        <p class="muted small">
+          Practice mode is a client-only preview: it shows a sample question so you can try the
+          answer flow without a real payment. Practice answers never touch the chain, your stake,
+          or your reputation (matchRatio / totalAnswers).
+        </p>
+
         <fieldset id="category-picker">
           <legend>Topics you'll answer (optional — leave all unchecked to answer everything)</legend>
           <label><input type="checkbox" value="math" /> Math</label>
@@ -128,7 +145,7 @@
       </section>
 
       <section id="panel-question" class="panel hidden">
-        <h2>Incoming question</h2>
+        <h2 id="question-heading">Incoming question</h2>
         <div class="timer-track"><div class="timer-bar" id="timer-bar"></div></div>
         <p id="question-text"></p>
         <form id="answer-form">
