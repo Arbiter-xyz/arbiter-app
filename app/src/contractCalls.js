@@ -1,4 +1,4 @@
-import { Contract, TransactionBuilder, Address, nativeToScVal, rpc } from '@stellar/stellar-sdk';
+import { Contract, TransactionBuilder, Address, nativeToScVal, rpc, Transaction } from '@stellar/stellar-sdk';
 
 const SOROBAN_RPC_URL = import.meta.env.VITE_SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org';
 const NETWORK_PASSPHRASE = import.meta.env.VITE_NETWORK_PASSPHRASE || 'Test SDF Network ; September 2015';
@@ -50,5 +50,61 @@ export async function buildWithdrawToXdr(workerAddress, beneficiaryAddress, amou
     nativeToScVal(BigInt(amountStroops), { type: 'i128' }),
   ]);
 }
+
+/**
+ * Ledger's Stellar app signs classic transaction envelopes (and, on recent
+ * firmware, Soroban auth entries embedded in a full envelope) but it does NOT
+ * expose a standalone "sign this auth entry" primitive. Soroban contract calls
+ * are therefore signed by handing the device the *whole* assembled transaction
+ * envelope, exactly like a classic payment — the device hashes and signs the
+ * envelope's signature payload, and the resulting signature is attached to the
+ * transaction's source-account signature slot.
+ *
+ * This helper is the adapter boundary: it takes the unsigned XDR produced by
+ * `buildUnsignedCallXdr` and returns the signed XDR after the caller has driven
+ * the Ledger device. `signEnvelope` is injected so this module stays free of a
+ * hard dependency on any particular Ledger transport (WebHID/WebUSB/node-hid),
+ * which keeps it testable against a faithful emulator as well as real hardware.
+ *
+ * @param {string} unsignedXdr - assembled, unsigned transaction envelope XDR
+ * @param {(payload: { xdr: string, networkPassphrase: string }) => Promise<string>} signEnvelope
+ *   - drives the Ledger Stellar app and resolves to the signed envelope XDR
+ * @returns {Promise<string>} signed transaction envelope XDR
+ */
+export async function signSorobanCallWithLedger(unsignedXdr, signEnvelope) {
+  if (typeof signEnvelope !== 'function') {
+    throw new Error(
+      'Ledger signing requires a signEnvelope transport. Soroban auth entries cannot be signed standalone on current Ledger firmware — the full transaction envelope must be signed instead.'
+    );
+  }
+  // Parse first so a malformed/unsupported envelope fails loudly here rather
+  // than producing a misleading "signed" result the device never approved.
+  TransactionBuilder.fromXDR(unsignedXdr, NETWORK_PASSPHRASE);
+  const signedXdr = await signEnvelope({ xdr: unsignedXdr, networkPassphrase: NETWORK_PASSPHRASE });
+  if (!signedXdr || typeof signedXdr !== 'string') {
+    throw new Error('Ledger did not return a signed transaction envelope.');
+  }
+  // Validate the returned envelope is a real, parseable transaction before it
+  // is ever submitted — honest degradation instead of a silent bad signature.
+  const signed = TransactionBuilder.fromXDR(signedXdr, NETWORK_PASSPHRASE);
+  if (!(signed instanceof Transaction)) {
+    throw new Error('Ledger returned an unexpected transaction type; refusing to submit.');
+  }
+  return signedXdr;
+}
+
+/**
+ * Honest capability report for the Ledger path. Current Ledger Stellar app
+ * firmware signs full transaction envelopes (including Soroban contract calls
+ * assembled by `buildUnsignedCallXdr`), but does not support signing a bare
+ * Soroban auth entry in isolation. Callers should surface this to the user
+ * rather than pretending standalone auth-entry signing works.
+ */
+export const LEDGER_CAPABILITIES = Object.freeze({
+  signsFullTransactionEnvelope: true,
+  signsStandaloneAuthEntry: false,
+  note:
+    'Ledger signs the full assembled Soroban transaction envelope. Standalone auth-entry signing is not supported on current firmware; use the envelope-signing path.',
+});
 
 export { NETWORK_PASSPHRASE };
