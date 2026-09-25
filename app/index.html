@@ -142,12 +142,20 @@
           <div class="muted small">Your track record</div>
           <p id="track-record-summary">No answers yet — this fills in once you start answering.</p>
         </div>
+
+        <div class="referral" id="referral">
+          <div class="muted small">Invite other workers</div>
+          <button id="btn-referral" class="secondary" type="button" disabled>Get referral link</button>
+          <input id="referral-link" class="hidden" type="text" readonly />
+          <p class="muted small" id="referral-stats"></p>
+        </div>
       </section>
 
       <section id="panel-question" class="panel hidden">
         <h2 id="question-heading">Incoming question</h2>
         <div class="timer-track"><div class="timer-bar" id="timer-bar"></div></div>
         <p id="question-text"></p>
+        <img id="question-image" class="question-image hidden" alt="" />
         <form id="answer-form">
           <input id="answer-input" type="text" placeholder="Type your answer…" autocomplete="off" />
           <button id="btn-answer" type="submit">Submit answer</button>
@@ -161,5 +169,7 @@
     </main>
 
     <script type="module" src="/src/main.js"></script>
+    <script type="module" src="/src/referral.js"></script>
+    <script type="module" src="/src/attachments.js"></script>
   </body>
 </html>

@@ -1,10 +1,26 @@
 import 'dotenv/config';
+import { readFile } from 'node:fs/promises';
+import { basename, extname } from 'node:path';
 import { Keypair } from '@stellar/stellar-sdk';
 import { env, submitPaymentDirect, explorerTxLink, sleep } from './lib/stellar.js';
 
 const question = process.argv.slice(2).join(' ') || 'What is the capital of France?';
 const tier = process.env.TIER || 'standard';
 const category = process.env.CATEGORY || undefined;
+// Optional image attachment (issue #94): IMAGE=./screenshot.png
+const imagePath = process.env.IMAGE || undefined;
+const IMAGE_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' };
+
+// Uploads via the separate multipart path, not POST /oracle's JSON body.
+async function uploadImage(path) {
+  const type = IMAGE_TYPES[extname(path).toLowerCase()];
+  if (!type) throw new Error(`unsupported image type: ${path}`);
+  const form = new FormData();
+  form.append('image', new Blob([await readFile(path)], { type }), basename(path));
+  const res = await fetch(`${env.backendUrl}/attachments`, { method: 'POST', body: form });
+  if (!res.ok) throw new Error(`image upload failed: ${res.status}`);
+  return (await res.json()).attachmentId;
+}
 
 async function postOracle(body, headers = {}) {
   const res = await fetch(`${env.backendUrl}/oracle`, {
@@ -36,7 +52,9 @@ async function main() {
   console.log(`Payer: ${payer.publicKey()}`);
 
   // Step 1 — expect a 402 with no payment proof supplied.
-  const challenge = await postOracle({ question, tier, category });
+  const attachmentId = imagePath ? await uploadImage(imagePath) : undefined;
+  if (attachmentId) console.log(`✓ Image attached: ${attachmentId}`);
+  const challenge = await postOracle({ question, tier, category, attachmentId });
   if (challenge.status !== 402) {
     throw new Error(`expected 402 on first call, got ${challenge.status}: ${JSON.stringify(challenge.body)}`);
   }
@@ -54,7 +72,7 @@ async function main() {
   // Step 3 — retry with payment proof headers. This now returns 202
   // immediately rather than blocking for up to the quorum timeout.
   const fulfil = await postOracle(
-    { question },
+    { question, attachmentId },
     { 'X-Payment-Tx': paymentTxHash, 'X-Question-Id': challenge.body.questionId },
   );
   if (fulfil.status !== 202) {
