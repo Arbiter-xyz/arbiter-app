@@ -41,6 +41,25 @@ e2e/          # browser click-through harness (stubbed)
 
 ## Running it
 
+### One command (Docker Compose, sandbox flow)
+
+```sh
+docker compose up --build                                   # backend + 2 worker-sim.js instances
+docker compose run --rm ask "What is the capital of France?" # sandbox question → settlement
+```
+
+Testnet secrets (optional) go in a root `.env`; they are never baked into `docker-compose.yml`.
+Watch activity live at `app/demo.html` (`npm run dev` in `app/`, uses the admin token).
+
+### Embeddable widget
+
+```html
+<div data-arbiter-widget></div>
+<script src="https://<host>/widget.js" data-api-base="https://your-backend"></script>
+```
+
+Sandbox-only (`/oracle/sandbox` + poll `/oracle/:jobId`) — no payment, no chain, no signup.
+
 ```sh
 cd app && npm install && npm run dev      # or: npm run build
 cd landing && python3 -m http.server 8123 # static, no build step
