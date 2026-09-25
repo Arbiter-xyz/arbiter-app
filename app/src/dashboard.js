@@ -10,6 +10,7 @@ import {
   LedgerModule,
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet } from './localWallet.js';
+import { renderMarkdown } from './markdown.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
@@ -168,7 +169,9 @@ function renderQuestionItem(q) {
   const left = document.createElement('div');
   const qText = document.createElement('p');
   qText.className = 'q-text';
-  qText.textContent = q.question || q.questionId;
+  // Markdown is rendered through a sanitizing renderer (markdown.js) that
+  // builds safe DOM nodes — never innerHTML of raw user content.
+  renderMarkdown(qText, q.question || q.questionId);
   const qMeta = document.createElement('div');
   qMeta.className = 'q-meta';
   const parts = [q.tier, q.amount ? `${q.amount} USDC` : null];
