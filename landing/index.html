@@ -152,59 +152,71 @@
             <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4.4-3 8.4-7 9-4-.6-7-4.6-7-9V6l7-3z"/><path d="M9 12.5l2 2 4-4.5"/></svg>
             <h3>Staked verifier reputation</h3>
             <p>Workers post a real USDC bond as a credibility signal before checking a claim.
-              Answers that lose a quorum vote forfeit a slice of it — automatically, on-chain.
-              Real money behind a claim, not just an opinion.</p>
+              Answers that lose a quorum vote forfeit a slice of that bond.</p>
           </article>
+        </div>
 
-          <article class="feature-card reveal">
-            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></svg>
-            <h3>Zero-XLM onboarding</h3>
-            <p>Account creation and network fees are sponsored. Ask or answer questions without
-              ever holding a stroop of XLM.</p>
-          </article>
-
-          <article class="feature-card reveal">
-            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>
-            <h3>Permissionless refund escape hatch</h3>
-            <p>If the backend ever goes dark, anyone can force a refund after a timeout window —
-              directly on the contract, no cooperation required.</p>
-          </article>
+        <!-- COMPARISON TABLE -->
+        <div class="comparison reveal" id="comparison">
+          <h3 class="comparison-heading">How Arbiter compares</h3>
+          <p class="comparison-sub">The same argument the FAQ makes in prose, side by side: what
+            actually backs an answer when being wrong is expensive and checkable.</p>
+          <div class="comparison-scroll">
+            <table class="comparison-table">
+              <caption class="sr-only">Comparison of Arbiter against a raw LLM call and unstaked crowdsourcing</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Dimension</th>
+                  <th scope="col" class="is-arbiter">Arbiter</th>
+                  <th scope="col">Raw LLM call</th>
+                  <th scope="col">Unstaked crowdsourcing</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">Who answers</th>
+                  <td class="is-arbiter">A live quorum of humans, reconciled into one consensus</td>
+                  <td>A single model, one pass, no second opinion</td>
+                  <td>Whoever shows up, with no bond at risk</td>
+                </tr>
+                <tr>
+                  <th scope="row">Staking / slashing</th>
+                  <td class="is-arbiter">Workers post a USDC bond; a losing answer forfeits a slice of it</td>
+                  <td>None — a wrong answer costs the model nothing</td>
+                  <td>None — no stake to lose, so no cost to being wrong</td>
+                </tr>
+                <tr>
+                  <th scope="row">Settlement</th>
+                  <td class="is-arbiter">On-chain via a Soroban escrow contract, verifiable by anyone</td>
+                  <td>Off-chain, no settlement layer at all</td>
+                  <td>Off-chain, no on-chain settlement guarantee</td>
+                </tr>
+                <tr>
+                  <th scope="row">When consensus fails</th>
+                  <td class="is-arbiter">Fail-closed: a full on-chain refund, never a partial state</td>
+                  <td>No notion of consensus — you get an answer either way</td>
+                  <td>Ambiguous — no defined refund path</td>
+                </tr>
+                <tr>
+                  <th scope="row">Best for</th>
+                  <td class="is-arbiter">Technical claims where being wrong is expensive and checkable</td>
+                  <td>Drafting, brainstorming, low-stakes lookups</td>
+                  <td>Subjective or opinion-based tasks</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </section>
 
     <!-- DEVELOPERS -->
-    <section class="section" id="developers" aria-labelledby="dev-heading">
-      <div class="container dev-grid">
-        <div class="reveal">
-          <h2 id="dev-heading" class="section-heading">Built for developers</h2>
-          <p class="section-sub">Poll one endpoint. Get a typed, reconciled answer back — or a
-            clean refund reason if consensus couldn&rsquo;t be reached.</p>
-          <ul class="dev-list">
-            <li>Async job model — no long-held HTTP connections</li>
-            <li>Four tiers, from an instant AI draft to a 5-worker staked quorum</li>
-            <li>Confidence score and reconciliation method on every response</li>
-            <li>No Stellar wallet needed — bill an API key by the question instead</li>
-            <li>Public, on-chain-verifiable <a href="https://arbiter-app-ten.vercel.app/leaderboard.html">verifier leaderboard</a></li>
-          </ul>
-        </div>
-
-        <div class="terminal reveal" aria-label="Example: polling for a result">
-          <div class="terminal-bar">
-            <span class="dot dot-red" aria-hidden="true"></span><span class="dot dot-yellow" aria-hidden="true"></span><span class="dot dot-green" aria-hidden="true"></span>
-            <span class="terminal-title">poll-result.sh</span>
-          </div>
-          <pre class="terminal-body" tabindex="0"><code><span class="tok-muted">$</span> curl https://api.arbiter.dev/oracle/17285…
-
-<span class="tok-muted">&lt; HTTP/1.1</span> <span class="tok-status">200 OK</span>
-<span class="tok-brace">{</span>
-  <span class="tok-key">"status"</span>: <span class="tok-string">"settled"</span>,
-  <span class="tok-key">"outcome"</span>: <span class="tok-string">"resolved"</span>,
-  <span class="tok-key">"answer"</span>: <span class="tok-string">"2015"</span>,
-  <span class="tok-key">"confidence"</span>: 1,
-  <span class="tok-key">"payoutTx"</span>: <span class="tok-string">"a1b2c3…"</span>
-<span class="tok-brace">}</span></code></pre>
-        </div>
+    <section class="section" id="developers" aria-labelledby="developers-heading">
+      <div class="container">
+        <h2 id="developers-heading" class="section-heading reveal">Developers</h2>
+        <p class="section-sub reveal">One endpoint, no API key to start. See the
+          <a href="https://github.com/Arbiter-xyz/arbiter-backend#readme">docs</a> for the full
+          surface.</p>
       </div>
     </section>
 
@@ -212,161 +224,31 @@
     <section class="section section-alt" id="pricing" aria-labelledby="pricing-heading">
       <div class="container">
         <h2 id="pricing-heading" class="section-heading reveal">Pricing</h2>
-        <p class="section-sub reveal">Pick a tier per claim. Price scales with live verifier
-          supply and is always quoted before you pay.</p>
-
-        <div class="pricing-grid">
-          <article class="price-card reveal">
-            <h3>Instant</h3>
-            <p class="price">$0.05 <span>USDC</span></p>
-            <ul>
-              <li>No human quorum — an AI draft</li>
-              <li>Seconds, not a wait</li>
-              <li>A fast lean, not a verified claim</li>
-            </ul>
-          </article>
-
-          <article class="price-card reveal">
-            <h3>Standard</h3>
-            <p class="price">$0.25 <span>USDC</span></p>
-            <ul>
-              <li>Quorum of 3 workers</li>
-              <li>45s answer window</li>
-              <li>Good default for most questions</li>
-            </ul>
-          </article>
-
-          <article class="price-card price-card-featured reveal">
-            <p class="price-badge">Most popular</p>
-            <h3>Express</h3>
-            <p class="price">$0.40 <span>USDC</span></p>
-            <ul>
-              <li>Quorum of 2 workers</li>
-              <li>12s answer window</li>
-              <li>For latency-sensitive calls</li>
-            </ul>
-          </article>
-
-          <article class="price-card reveal">
-            <h3>Priority</h3>
-            <p class="price">$0.60 <span>USDC</span></p>
-            <ul>
-              <li>Quorum of 5 workers</li>
-              <li>30s answer window</li>
-              <li>Highest-confidence consensus</li>
-            </ul>
-          </article>
-        </div>
-        <p class="pricing-note reveal">Base prices shown. A live surge multiplier applies when
-          worker supply is scarce, capped at 2× and locked at quote time.</p>
-      </div>
-    </section>
-
-    <!-- FOR WORKERS -->
-    <section class="worker-band" aria-labelledby="worker-heading">
-      <div class="container worker-band-inner reveal">
-        <div>
-          <h2 id="worker-heading">Verify claims. Get paid in USDC.</h2>
-          <p>Auditors, on-chain analysts, and technical reviewers: stake a bond, check what you
-            actually know, get settled on-chain automatically. Wrong quorum answers cost you a
-            slice of your stake — right ones build a public, verifiable track record.</p>
-        </div>
-        <a href="#" class="btn btn-secondary btn-on-dark">Start earning</a>
-      </div>
-    </section>
-
-    <!-- TRUST / TECHNICAL CREDIBILITY -->
-    <section class="section trust-strip" aria-labelledby="trust-heading">
-      <div class="container">
-        <h2 id="trust-heading" class="sr-only">Technical credibility</h2>
-        <ul class="trust-grid reveal">
-          <li><strong>49</strong><span>contract tests passing</span></li>
-          <li><strong>120</strong><span>backend tests passing</span></li>
-          <li><strong>100%</strong><span>fail-closed settlement paths</span></li>
-          <li><strong>Open</strong><span>architecture, verifiable on-chain</span></li>
-        </ul>
-        <p class="trust-live" id="trust-live" aria-live="polite"></p>
+        <p class="section-sub reveal">Pay per question, with a wallet or a card. Price is locked
+          in at quote time.</p>
       </div>
     </section>
 
     <!-- FAQ -->
     <section class="section" id="faq" aria-labelledby="faq-heading">
-      <div class="container faq-container">
-        <h2 id="faq-heading" class="section-heading reveal">Frequently asked</h2>
-
-        <div class="faq-list reveal">
-          <details class="faq-item">
+      <div class="container">
+        <h2 id="faq-heading" class="section-heading reveal">FAQ</h2>
+        <div class="faq-list">
+          <details class="faq-item reveal">
             <summary>Why a human quorum instead of just asking an LLM?</summary>
-            <p>For claims where being wrong is expensive — an audit finding, whether a contract
-              actually does what it claims, whether an on-chain event happened the way it's
-              described — a raw LLM call has no skin in the game. Arbiter's quorum does: workers
-              post a real USDC bond, and a wrong answer that loses the quorum vote costs them a
-              slice of it. If you just want a fast lean with no stake behind it, the Instant tier
-              gives you that directly, priced and labeled differently from a verified answer.</p>
+            <p>A raw LLM call has no stake behind it — if it&rsquo;s wrong, nothing happens to
+              anyone. Arbiter&rsquo;s workers post a real USDC bond before answering, and a losing
+              answer forfeits a slice of it. That staked accountability, settled on-chain, is the
+              difference between a guess and a checked answer.</p>
           </details>
-
-          <details class="faq-item">
-            <summary>What happens if workers disagree?</summary>
-            <p>Answers are reconciled by an LLM tolerant of paraphrasing, with a deterministic
-              fallback if that call ever fails. If confidence stays below threshold, the full
-              payment is refunded — never split or estimated.</p>
-          </details>
-
-          <details class="faq-item">
-            <summary>How fast is settlement?</summary>
-            <p>Once a quorum of workers has answered, reconciliation and on-chain settlement
-              typically complete in seconds. You poll one job endpoint until it reports
-              <code>settled</code>.</p>
-          </details>
-
-          <details class="faq-item">
-            <summary>What if the backend goes down?</summary>
-            <p>Every pending question carries a timeout window after which <em>anyone</em> — not
-              just Arbiter — can force a full refund directly on the contract. Your funds are
-              never dependent on our infrastructure staying up.</p>
-          </details>
-
-          <details class="faq-item">
-            <summary>Do I need to hold XLM?</summary>
-            <p>No. Account creation and network fees are sponsored for both payers and workers.
-              You only ever need USDC.</p>
-          </details>
-
-          <details class="faq-item">
-            <summary>What network does Arbiter run on?</summary>
-            <p>Arbiter is built and tested on Stellar Testnet today. Mainnet deployment follows
-              an independent contract audit.</p>
-          </details>
-        </div>
-      </div>
-    </section>
-
-    <!-- FINAL CTA -->
-    <section class="final-cta" aria-labelledby="final-cta-heading">
-      <div class="container reveal">
-        <h2 id="final-cta-heading">Ask your first question in under a minute.</h2>
-        <div class="hero-actions center">
-          <a href="#try-it-input" class="btn btn-primary">Ask a question live</a>
-          <a href="https://github.com/Arbiter-xyz/arbiter-backend#readme" class="btn btn-secondary">Read the docs</a>
         </div>
       </div>
     </section>
   </main>
 
   <footer class="site-footer">
-    <div class="container footer-inner">
-      <a href="#top" class="logo">
-        <span class="logo-mark" aria-hidden="true"></span>
-        Arbiter
-      </a>
-      <nav aria-label="Footer">
-        <ul>
-          <li><a href="https://github.com/Arbiter-xyz/arbiter-backend#readme">Docs</a></li>
-          <li><a href="https://github.com/Arbiter-xyz">GitHub</a></li>
-          <li><a href="#faq">FAQ</a></li>
-        </ul>
-      </nav>
-      <p class="footer-note">Testnet build. Not audited. Not financial advice.</p>
+    <div class="container">
+      <p>&copy; Arbiter. Built on Stellar / Soroban.</p>
     </div>
   </footer>
 
