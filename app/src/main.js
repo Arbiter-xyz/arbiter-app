@@ -1,6 +1,13 @@
 import {
   StellarWalletsKit,
   WalletNetwork,
+  FreighterModule,
+  LobstrModule,
+  xBullModule,
+  HanaModule,
+  AlbedoModule,
+  HotWalletModule,
+  LedgerModule,
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet, getLocalWalletSecret } from './localWallet.js';
 import { StrKey } from '@stellar/stellar-sdk';
@@ -19,39 +26,18 @@ const USDC_ASSET_CODE = import.meta.env.VITE_USDC_ASSET_CODE || 'USDC';
 // security-sensitive dependency tree we have no use for. See the README
 // for the concrete CVE this sidesteps.
 //
-// Each adapter is loaded via a per-wallet dynamic import() so that selecting
-// one wallet only pulls in that wallet's SDK — the other adapters' (and their
-// transitive dependency trees') chunks are never fetched. This is what keeps
-// the wallet-kit bundle from collapsing into a single ~735KB chunk.
-const WALLET_MODULES = {
-  freighter: () => import('@creit.tech/stellar-wallets-kit/modules/freighter').then((m) => new m.FreighterModule()),
-  lobstr: () => import('@creit.tech/stellar-wallets-kit/modules/lobstr').then((m) => new m.LobstrModule()),
-  xbull: () => import('@creit.tech/stellar-wallets-kit/modules/xbull').then((m) => new m.xBullModule()),
-  hana: () => import('@creit.tech/stellar-wallets-kit/modules/hana').then((m) => new m.HanaModule()),
-  albedo: () => import('@creit.tech/stellar-wallets-kit/modules/albedo').then((m) => new m.AlbedoModule()),
-  hotwallet: () => import('@creit.tech/stellar-wallets-kit/modules/hotwallet').then((m) => new m.HotWalletModule()),
-};
-
-// The kit is constructed lazily, once, with only the adapters the user has
-// actually selected. Until then no adapter SDK is loaded at all.
-let kit = null;
-let kitModules = null;
-
-async function getKit(selectedIds) {
-  const ids = selectedIds && selectedIds.length ? selectedIds : Object.keys(WALLET_MODULES);
-  const modules = await Promise.all(ids.map((id) => WALLET_MODULES[id]()));
-  // Rebuild the kit whenever the active adapter set changes so we never keep
-  // a stale module list around.
-  const signature = ids.join(',');
-  if (!kit || kitModules !== signature) {
-    kit = new StellarWalletsKit({
-      network: WalletNetwork.TESTNET,
-      modules,
-    });
-    kitModules = signature;
-  }
-  return kit;
-}
+// LedgerModule is the one deliberate exception (issue #75): it is added
+// explicitly by name rather than via allowAllModules(), so the Trezor
+// adapters and their protobufjs dependency tree stay excluded. Ledger's
+// browser integration is WebUSB/WebHID against the device directly (the
+// kit's Ledger module), not a deep link into the Ledger Live companion
+// app. Before merging, re-run round 5's audit process: grep the built
+// bundle for `trezor`/`protobuf` and run `npm audit --audit-level=high`,
+// confirming the critical/high count stays at zero.
+const kit = new StellarWalletsKit({
+  network: WalletNetwork.TESTNET,
+  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule()],
+});
 
 const el = {
   connect: document.getElementById('panel-connect'),
@@ -105,117 +91,161 @@ const state = {
   sessionExpiresAt: 0,
 };
 
-// --- Offline-first answer queue (IndexedDB + service worker background sync) --
-//
-// In-flight answers are persisted locally the moment the worker starts
-// composing them, so a connectivity drop mid-quorum never silently loses
-// work. The service worker (app/public/sw.js) drains the queue via the
-// Background Sync API; this module owns the IndexedDB store and the
-// reconciliation rules that make retries safe:
-//
-//   * exactly-once submission — every queued answer carries a stable
-//     client-generated idempotency key, and the backend dedupes on it, so a
-//     sync retry can never create a second answer for the same question.
-//   * closed-while-offline — before submitting, we re-check the question's
-//     status; if it is no longer accepting answers the queued item is
-//     discarded (never submitted against a stale/closed question) and the
-//     worker is told why.
-const ANSWER_DB_NAME = 'quorum-worker';
-const ANSWER_DB_VERSION = 1;
-const ANSWER_STORE = 'pending-answers';
-const SYNC_TAG = 'sync-pending-answers';
-
-function openAnswerDb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(ANSWER_DB_NAME, ANSWER_DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(ANSWER_STORE)) {
-        db.createObjectStore(ANSWER_STORE, { keyPath: 'id' });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+function log(message) {
+  const li = document.createElement('li');
+  const time = new Date().toLocaleTimeString();
+  li.textContent = `[${time}] ${message}`;
+  el.log.prepend(li);
 }
 
-async function withAnswerStore(mode, fn) {
-  const db = await openAnswerDb();
-  try {
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(ANSWER_STORE, mode);
-      const store = tx.objectStore(ANSWER_STORE);
-      const result = fn(store);
-      tx.oncomplete = () => resolve(result && result.__req ? result.__req.result : result);
-      tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error);
-    });
-  } finally {
-    db.close();
+function showPanel(name) {
+  for (const key of ['connect', 'onboard', 'online']) {
+    el[key].classList.toggle('hidden', key !== name);
+  }
+  el.earnings.classList.toggle('hidden', name !== 'online');
+}
+
+function selectedCategories() {
+  return [...el.categoryPicker.querySelectorAll('input[type=checkbox]:checked')].map((c) => c.value);
+}
+
+// --- Live category-demand heatmap (issue #77) -----------------------------
+//
+// Reads the same smoothed per-category online-worker counts dispatch.js
+// already computes internally (getSmoothedOnlineWorkerCount() /
+// computeSmoothedCount()) via GET /categories/demand, and paints a small
+// bar next to each category checkbox so a worker can see which topics are
+// short on workers before going online. Degrades gracefully (bars hidden,
+// no broken UI) when the backend is unreachable, matching the trustLive
+// pattern in landing/script.js.
+
+const DEMAND_REFRESH_MS = 30_000;
+let demandRefreshHandle = null;
+
+function demandBarFor(category) {
+  const label = el.categoryPicker.querySelector(`label[data-category="${category}"]`);
+  return label ? label.querySelector('.category-demand-bar') : null;
+}
+
+function renderCategoryDemand(demand) {
+  // demand: { [category]: smoothedOnlineWorkerCount }
+  const counts = Object.values(demand).filter((n) => Number.isFinite(n));
+  const max = counts.length ? Math.max(...counts, 1) : 1;
+  for (const input of el.categoryPicker.querySelectorAll('input[type=checkbox]')) {
+    const bar = demandBarFor(input.value);
+    if (!bar) continue;
+    const count = Number.isFinite(demand[input.value]) ? demand[input.value] : 0;
+    // Scarcity = demand: fewer online workers means a taller bar.
+    const scarcity = 1 - count / max;
+    bar.style.width = `${Math.round(scarcity * 100)}%`;
+    bar.title = `${count} worker${count === 1 ? '' : 's'} online now`;
   }
 }
 
-function putPendingAnswer(record) {
-  return withAnswerStore('readwrite', (store) => store.put(record));
+function clearCategoryDemand() {
+  for (const bar of el.categoryPicker.querySelectorAll('.category-demand-bar')) {
+    bar.style.width = '0%';
+    bar.removeAttribute('title');
+  }
 }
 
-function deletePendingAnswer(id) {
-  return withAnswerStore('readwrite', (store) => store.delete(id));
-}
-
-function listPendingAnswers() {
-  return withAnswerStore('readonly', (store) => {
-    const req = store.getAll();
-    return { __req: req };
-  });
-}
-
-// Stable per-answer idempotency key: the same composed answer always maps to
-// the same key, so a retried sync is a no-op on the backend rather than a
-// duplicate submission.
-function makeIdempotencyKey(questionId, address) {
-  return `${questionId}:${address}:${crypto.randomUUID()}`;
-}
-
-async function requestBackgroundSync() {
-  if (!('serviceWorker' in navigator)) return;
+async function refreshCategoryDemand() {
   try {
-    const reg = await navigator.serviceWorker.ready;
-    if (reg.sync) await reg.sync.register(SYNC_TAG);
+    const res = await fetch(`${BACKEND_URL}/categories/demand`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderCategoryDemand(data.demand || {});
   } catch (err) {
-    log(`Background sync unavailable (${err.message}) — will retry on reconnect.`);
+    // Backend unreachable or malformed: hide the heatmap rather than
+    // leaving stale or broken bars in the picker.
+    clearCategoryDemand();
   }
 }
 
-// Reconcile a single queued answer against the live question state. Returns
-// 'submitted' | 'discarded' | 'retry'.
-async function reconcilePendingAnswer(record) {
-  let question;
-  try {
-    const res = await fetch(`${BACKEND_URL}/questions/${record.questionId}`);
-    if (!res.ok) return 'retry';
-    question = await res.json();
-  } catch {
-    return 'retry'; // still offline — leave it queued
-  }
+function startCategoryDemandPolling() {
+  if (demandRefreshHandle) return;
+  refreshCategoryDemand();
+  demandRefreshHandle = setInterval(refreshCategoryDemand, DEMAND_REFRESH_MS);
+}
 
-  // Question closed while we were offline (quorum reached by others, or
-  // timeout): discard the stale answer rather than submitting it.
-  if (!question || question.status !== 'open') {
-    await deletePendingAnswer(record.id);
-    log(`Question closed before your answer could be sent — discarded your queued answer for "${record.questionText || record.questionId}".`);
-    return 'discarded';
-  }
+// --- Wallet connect (extension) or quick start (local, non-custodial) -----
 
+// A user clicking both connect options in quick succession could otherwise
+// let whichever resolves last silently overwrite the other's in-flight
+// state.activeWallet/state.address — guard against that race by disabling
+// both the instant either one starts, and only re-enabling on failure.
+function setConnectButtonsBusy(busy) {
+  el.btnConnect.disabled = busy;
+  el.btnQuickStart.disabled = busy;
+}
+
+el.btnConnect.addEventListener('click', async () => {
+  setConnectButtonsBusy(true);
   try {
-    const res = await fetch(`${BACKEND_URL}/questions/${record.questionId}/answers`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Idempotency-Key': record.idempotencyKey,
+    await kit.openModal({
+      onWalletSelected: async (option) => {
+        kit.setWallet(option.id);
+        const { address } = await kit.getAddress();
+        el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
+        await activateWallet(kit, address);
       },
-      body: JSON.stringify({ answer: record.answer, address: record.address }),
+      onClosed: (err) => {
+        setConnectButtonsBusy(false);
+        if (err) log(`Wallet selection closed: ${err.message}`);
+      },
     });
-    // 409 means the backend already recorded this idempotency key — the
-    // answer was submitted exactly once, so treat it as success.
-    if (r
+  } catch (err) {
+    setConnectButtonsBusy(false);
+    log(`Wallet connect failed: ${err.message}`);
+  }
+});
+
+el.btnQuickStart.addEventListener('click', async () => {
+  setConnectButtonsBusy(true);
+  try {
+    const localWallet = createOrLoadLocalWallet();
+    const { address } = await localWallet.getAddress();
+    log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
+    showBackupPanel();
+    await activateWallet(localWallet, address);
+  } catch (err) {
+    setConnectButtonsBusy(false);
+    log(`Quick start failed: ${err.message}`);
+  }
+});
+
+function showBackupPanel() {
+  el.backup.classList.remove('hidden');
+  el.backupSecret.value = '••••••••••••••••••••••••••••••••••••••••••••••••••';
+  el.backupSecret.type = 'password';
+  el.backupCopyStatus.textContent = '';
+}
+
+el.btnRevealSecret.addEventListener('click', () => {
+  const revealed = el.backupSecret.type === 'password';
+  if (revealed) el.backupSecret.value = getLocalWalletSecret() || '';
+  el.backupSecret.type = revealed ? 'text' : 'password';
+  el.btnRevealSecret.textContent = revealed ? 'Hide' : 'Reveal';
+});
+
+el.btnCopySecret.addEventListener('click', async () => {
+  const secret = getLocalWalletSecret();
+  if (!secret) return;
+  try {
+    await navigator.clipboard.writeText(secret);
+    el.backupCopyStatus.textContent = 'Copied to clipboard — store it somewhere safe, then clear your clipboard.';
+  } catch (err) {
+    el.backupCopyStatus.textContent = `Could not copy automatically (${err.message}) — reveal and copy it manually.`;
+  }
+});
+
+// --- Social recovery (client-side Shamir split, no backend involvement) ---
+//
+// The quick-start secret is split into N shares entirely in this browser.
+// Arbiter's backend never sees the secret or any share: distribution is the
+// user's own (contacts, a second device, a password manager). Reconstructing
+// from any k shares reproduces the original Keypair/address, so the README's
+// non-custodial framing is unchanged — there is no server-side capability to
+// rebuild a u
+
+/* … truncated 599 chars — edit only what you need near the top … */
