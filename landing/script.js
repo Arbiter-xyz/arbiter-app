@@ -219,6 +219,67 @@
     });
   }
 
+  /* -------------------------------------------------------------------
+     Voice input for the try-it widget — typing a full question on a
+     phone keyboard is real friction for exactly the frictionless
+     first-impression this hero is built to deliver. Uses the Web Speech
+     API where available and only ever fills the same #try-it-input the
+     existing submit handler already reads from, so the submission path
+     to /oracle/sandbox is untouched. Where SpeechRecognition is absent
+     (notably most non-Chrome mobile browsers) the button is never shown
+     at all, matching trustLive's silent-absence-on-failure pattern
+     rather than presenting a broken affordance.
+  ------------------------------------------------------------------- */
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const tryItMic = document.getElementById("try-it-mic");
+
+  if (tryItMic && tryItInput && SpeechRecognition) {
+    const recognition = new SpeechRecognition();
+    recognition.lang = document.documentElement.lang || "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+
+    let listening = false;
+    let baseText = "";
+
+    function setListening(next) {
+      listening = next;
+      tryItMic.classList.toggle("is-listening", listening);
+      tryItMic.setAttribute("aria-pressed", String(listening));
+      tryItMic.setAttribute("aria-label", listening ? "Stop voice input" : "Ask by voice");
+    }
+
+    recognition.addEventListener("result", (evt) => {
+      let transcript = "";
+      for (let i = evt.resultIndex; i < evt.results.length; i += 1) {
+        transcript += evt.results[i][0].transcript;
+      }
+      const prefix = baseText ? `${baseText} ` : "";
+      tryItInput.value = `${prefix}${transcript}`.trim();
+    });
+
+    recognition.addEventListener("error", () => setListening(false));
+    recognition.addEventListener("end", () => setListening(false));
+
+    tryItMic.addEventListener("click", () => {
+      if (listening) {
+        recognition.stop();
+        return;
+      }
+      baseText = tryItInput.value.trim();
+      try {
+        recognition.start();
+        setListening(true);
+      } catch (err) {
+        setListening(false);
+      }
+    });
+
+    // Only reveal the affordance once we know the API exists — the button
+    // ships hidden in the markup so unsupported browsers never flash it.
+    tryItMic.hidden = false;
+  }
+
   function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
