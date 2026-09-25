@@ -1,0 +1,51 @@
+# One-command local stack: backend + simulated workers (+ optional sandbox ask).
+#
+#   docker compose up --build
+#   docker compose run --rm ask "What is the capital of France?"
+#
+# In-memory store only (no Redis) — matches every other documented setup.
+# Testnet secrets, if you want them, go in ./.env (never in this file).
+services:
+  backend:
+    build: https://github.com/Arbiter-xyz/arbiter-backend.git#main
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      PORT: "4000"
+    ports:
+      - "4000:4000"
+
+  worker-1:
+    build: ./demo-agent
+    depends_on: [backend]
+    restart: on-failure
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      BACKEND_URL: http://backend:4000
+      WORKER_ID: demo-worker-1
+      WORKER_ANSWER: "Paris"
+      WORKER_CATEGORIES: ${WORKER_CATEGORIES:-}
+
+  worker-2:
+    build: ./demo-agent
+    depends_on: [backend]
+    restart: on-failure
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      BACKEND_URL: http://backend:4000
+      WORKER_ID: demo-worker-2
+      WORKER_ANSWER: "Paris"
+      WORKER_CATEGORIES: ${WORKER_CATEGORIES:-}
+
+  ask:
+    build: ./demo-agent
+    profiles: [tools]
+    depends_on: [backend]
+    environment:
+      BACKEND_URL: http://backend:4000
+    entrypoint: ["node", "sandbox-ask.js"]
