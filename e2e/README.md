@@ -1,8 +1,9 @@
 # End-to-end tests
 
 This directory contains the end-to-end (e2e) test suite for the wallet
-integration layer, including the manual hardware-in-the-loop runbook for
-Ledger devices.
+integration layer, including the real Playwright suite that drives the
+quick-start wallet flow against a real testnet, and the manual
+hardware-in-the-loop runbook for Ledger devices.
 
 ## Automated suite
 
@@ -15,6 +16,65 @@ yarn test:e2e
 These tests exercise the wallet-connect abstraction in `localWallet.js`
 against the browser-extension wallets (Freighter, Lobstr, xBull, Hana,
 Albedo, HOT Wallet) using their documented mock/injection hooks.
+
+## Playwright quick-start flow suite
+
+The Playwright suite drives the **built app** in a real browser context and
+covers the full quick-start wallet flow end to end:
+
+1. **Generate a quick-start wallet** — the app creates a fresh keypair and
+   shows the public key.
+2. **Get sponsored funding** — the sponsor funds the new account on testnet
+   and the balance becomes visible in the UI.
+3. **Ask a sandbox question** — a free/sandboxed question returns a result
+   without spending funds.
+4. **Ask a real paid question** — a paid question signs and submits a real
+   testnet transaction.
+5. **See it settle** — the UI reflects the settled transaction (result and
+   updated balance).
+
+Run it with:
+
+```sh
+yarn test:e2e:playwright
+```
+
+### Backend and testnet
+
+The suite runs against a real (or realistically faked) backend plus a real
+Stellar testnet contract. Point it at the target environment with:
+
+- `E2E_BASE_URL` — base URL of the built app under test.
+- `E2E_BACKEND_URL` — backend the app talks to (real or a local fake).
+- `E2E_TESTNET_RPC_URL` — Soroban RPC endpoint for the testnet contract.
+- `E2E_SPONSOR_SECRET` — funded testnet sponsor account used for funding.
+
+When a real testnet is unavailable, set `E2E_FAKE_BACKEND=1` to run against
+the realistically faked backend that mirrors the real funding/settlement
+responses, so the suite still exercises the browser flow in CI.
+
+### Handling testnet flakiness
+
+Testnet latency and congestion are real, non-trivial flakiness sources. The
+suite handles them explicitly **without masking real regressions**:
+
+- **Explicit waits, not sleeps.** Every step waits for a concrete UI state
+  (balance updated, result rendered, transaction hash shown) via Playwright
+  auto-waiting assertions rather than fixed timeouts.
+- **Bounded retries on transient network errors only.** Funding and
+  settlement polling retry on transient RPC/network failures (timeouts,
+  connection resets, `TRY_AGAIN_LATER`) with exponential backoff and a hard
+  cap. Deterministic failures (rejected transaction, bad signature, wrong
+  result) are **not** retried and fail the test immediately.
+- **Settlement polling with a deadline.** After submitting a paid question,
+  the suite polls the transaction status until it settles or a generous
+  deadline elapses; exceeding the deadline fails with the last observed
+  status so the failure is meaningful.
+- **CI isolation.** Each run generates a fresh quick-start wallet and uses a
+  dedicated sponsor account, so runs do not interfere with each other.
+
+A failure therefore means the flow actually broke (or the testnet stayed
+unavailable past the deadline), not that a single request was slow.
 
 ## Ledger hardware-in-the-loop runbook
 
