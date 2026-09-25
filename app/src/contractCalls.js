@@ -107,4 +107,76 @@ export const LEDGER_CAPABILITIES = Object.freeze({
     'Ledger signs the full assembled Soroban transaction envelope. Standalone auth-entry signing is not supported on current firmware; use the envelope-signing path.',
 });
 
+/**
+ * Reads the on-chain state of a question so the offline queue can decide, at
+ * sync time, whether a queued answer is still valid. This is the reconciliation
+ * primitive the offline-first worker console relies on: a queued answer must
+ * never be submitted against a question that has already closed (quorum reached
+ * by others, or timeout), and must never be silently duplicated on retry.
+ *
+ * Returns a normalized snapshot rather than raw contract output so callers can
+ * branch on `open` without re-deriving quorum/timeout logic themselves.
+ *
+ * @param {string|number|bigint} questionId
+ * @returns {Promise<{ id: string, open: boolean, closedReason: 'quorum'|'timeout'|null, answerCount: number }>}
+ */
+export async function getQuestionState(questionId) {
+  const srv = getServer();
+  const contract = new Contract(CONTRACT_ID);
+  const result = await srv.simulateTransaction(
+    new TransactionBuilder(await srv.getAccount(CONTRACT_ID), {
+      fee: '100',
+      networkPassphrase: NETWORK_PASSPHRASE,
+    })
+      .addOperation(contract.call('get_question', nativeToScVal(BigInt(questionId), { type: 'u64' })))
+      .setTimeout(60)
+      .build()
+  );
+  if (rpc.Api.isSimulationError(result)) {
+    throw new Error(`Failed to read question ${questionId}: ${result.error}`);
+  }
+  const raw = result.result?.retval;
+  const value = raw ? raw.value() : null;
+  const open = Boolean(value?.open ?? value?.is_open ?? false);
+  const closedReason = open ? null : value?.closed_reason === 'timeout' ? 'timeout' : 'quorum';
+  return {
+    id: String(questionId),
+    open,
+    closedReason,
+    answerCount: Number(value?.answer_count ?? 0),
+  };
+}
+
+/**
+ * Submits a worker's answer exactly once. The `answerId` is a client-generated
+ * idempotency key persisted alongside the queued answer in IndexedDB; the
+ * contract (or the relaying /sponsor endpoint) is expected to reject a repeat
+ * of the same key, so a background-sync retry after a dropped response can
+ * never create a duplicate answer. Callers should treat a duplicate-key
+ * rejection as success, not failure.
+ *
+ * @param {string} answerId - stable idempotency key for this answer
+ * @param {string|number|bigint} questionId
+ * @param {string} answerXdr - signed answer transaction envelope XDR
+ * @returns {Promise<{ answerId: string, duplicate: boolean }>}
+ */
+export async function submitAnswerOnce(answerId, questionId, answerXdr) {
+  const srv = getServer();
+  const tx = TransactionBuilder.fromXDR(answerXdr, NETWORK_PASSPHRASE);
+  try {
+    const sent = await srv.sendTransaction(tx);
+    if (sent.status === 'DUPLICATE') {
+      return { answerId, duplicate: true };
+    }
+    return { answerId, duplicate: false };
+  } catch (err) {
+    // A duplicate idempotency key surfaces as a submission error on retry;
+    // treat it as an already-applied answer so sync can safely dequeue.
+    if (/duplicate|already/i.test(String(err?.message || err))) {
+      return { answerId, duplicate: true };
+    }
+    throw err;
+  }
+}
+
 export { NETWORK_PASSPHRASE };
