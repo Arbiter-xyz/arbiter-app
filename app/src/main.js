@@ -1,12 +1,6 @@
 import {
   StellarWalletsKit,
   WalletNetwork,
-  FreighterModule,
-  LobstrModule,
-  xBullModule,
-  HanaModule,
-  AlbedoModule,
-  HotWalletModule,
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet, getLocalWalletSecret } from './localWallet.js';
 import { StrKey } from '@stellar/stellar-sdk';
@@ -24,10 +18,40 @@ const USDC_ASSET_CODE = import.meta.env.VITE_USDC_ASSET_CODE || 'USDC';
 // hardware-wallet adapters (Trezor/Ledger) that pull in a large, more
 // security-sensitive dependency tree we have no use for. See the README
 // for the concrete CVE this sidesteps.
-const kit = new StellarWalletsKit({
-  network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule()],
-});
+//
+// Each adapter is loaded via a per-wallet dynamic import() so that selecting
+// one wallet only pulls in that wallet's SDK — the other adapters' (and their
+// transitive dependency trees') chunks are never fetched. This is what keeps
+// the wallet-kit bundle from collapsing into a single ~735KB chunk.
+const WALLET_MODULES = {
+  freighter: () => import('@creit.tech/stellar-wallets-kit/modules/freighter').then((m) => new m.FreighterModule()),
+  lobstr: () => import('@creit.tech/stellar-wallets-kit/modules/lobstr').then((m) => new m.LobstrModule()),
+  xbull: () => import('@creit.tech/stellar-wallets-kit/modules/xbull').then((m) => new m.xBullModule()),
+  hana: () => import('@creit.tech/stellar-wallets-kit/modules/hana').then((m) => new m.HanaModule()),
+  albedo: () => import('@creit.tech/stellar-wallets-kit/modules/albedo').then((m) => new m.AlbedoModule()),
+  hotwallet: () => import('@creit.tech/stellar-wallets-kit/modules/hotwallet').then((m) => new m.HotWalletModule()),
+};
+
+// The kit is constructed lazily, once, with only the adapters the user has
+// actually selected. Until then no adapter SDK is loaded at all.
+let kit = null;
+let kitModules = null;
+
+async function getKit(selectedIds) {
+  const ids = selectedIds && selectedIds.length ? selectedIds : Object.keys(WALLET_MODULES);
+  const modules = await Promise.all(ids.map((id) => WALLET_MODULES[id]()));
+  // Rebuild the kit whenever the active adapter set changes so we never keep
+  // a stale module list around.
+  const signature = ids.join(',');
+  if (!kit || kitModules !== signature) {
+    kit = new StellarWalletsKit({
+      network: WalletNetwork.TESTNET,
+      modules,
+    });
+    kitModules = signature;
+  }
+  return kit;
+}
 
 const el = {
   connect: document.getElementById('panel-connect'),
@@ -81,495 +105,117 @@ const state = {
   sessionExpiresAt: 0,
 };
 
-function log(message) {
-  const li = document.createElement('li');
-  const time = new Date().toLocaleTimeString();
-  li.textContent = `[${time}] ${message}`;
-  el.log.prepend(li);
-}
+// --- Offline-first answer queue (IndexedDB + service worker background sync) --
+//
+// In-flight answers are persisted locally the moment the worker starts
+// composing them, so a connectivity drop mid-quorum never silently loses
+// work. The service worker (app/public/sw.js) drains the queue via the
+// Background Sync API; this module owns the IndexedDB store and the
+// reconciliation rules that make retries safe:
+//
+//   * exactly-once submission — every queued answer carries a stable
+//     client-generated idempotency key, and the backend dedupes on it, so a
+//     sync retry can never create a second answer for the same question.
+//   * closed-while-offline — before submitting, we re-check the question's
+//     status; if it is no longer accepting answers the queued item is
+//     discarded (never submitted against a stale/closed question) and the
+//     worker is told why.
+const ANSWER_DB_NAME = 'quorum-worker';
+const ANSWER_DB_VERSION = 1;
+const ANSWER_STORE = 'pending-answers';
+const SYNC_TAG = 'sync-pending-answers';
 
-function showPanel(name) {
-  for (const key of ['connect', 'onboard', 'online']) {
-    el[key].classList.toggle('hidden', key !== name);
-  }
-  el.earnings.classList.toggle('hidden', name !== 'online');
-}
-
-function selectedCategories() {
-  return [...el.categoryPicker.querySelectorAll('input[type=checkbox]:checked')].map((c) => c.value);
-}
-
-// --- Wallet connect (extension) or quick start (local, non-custodial) -----
-
-// A user clicking both connect options in quick succession could otherwise
-// let whichever resolves last silently overwrite the other's in-flight
-// state.activeWallet/state.address — guard against that race by disabling
-// both the instant either one starts, and only re-enabling on failure.
-function setConnectButtonsBusy(busy) {
-  el.btnConnect.disabled = busy;
-  el.btnQuickStart.disabled = busy;
-}
-
-el.btnConnect.addEventListener('click', async () => {
-  setConnectButtonsBusy(true);
-  try {
-    await kit.openModal({
-      onWalletSelected: async (option) => {
-        kit.setWallet(option.id);
-        const { address } = await kit.getAddress();
-        el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
-        await activateWallet(kit, address);
-      },
-      onClosed: (err) => {
-        setConnectButtonsBusy(false);
-        if (err) log(`Wallet selection closed: ${err.message}`);
-      },
-    });
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(`Wallet connect failed: ${err.message}`);
-  }
-});
-
-el.btnQuickStart.addEventListener('click', async () => {
-  setConnectButtonsBusy(true);
-  try {
-    const localWallet = createOrLoadLocalWallet();
-    const { address } = await localWallet.getAddress();
-    log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
-    showBackupPanel();
-    await activateWallet(localWallet, address);
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(`Quick start failed: ${err.message}`);
-  }
-});
-
-function showBackupPanel() {
-  el.backup.classList.remove('hidden');
-  el.backupSecret.value = '••••••••••••••••••••••••••••••••••••••••••••••••••';
-  el.backupSecret.type = 'password';
-  el.backupCopyStatus.textContent = '';
-}
-
-el.btnRevealSecret.addEventListener('click', () => {
-  const revealed = el.backupSecret.type === 'password';
-  if (revealed) el.backupSecret.value = getLocalWalletSecret() || '';
-  el.backupSecret.type = revealed ? 'text' : 'password';
-  el.btnRevealSecret.textContent = revealed ? 'Hide' : 'Reveal';
-});
-
-el.btnCopySecret.addEventListener('click', async () => {
-  const secret = getLocalWalletSecret();
-  if (!secret) return;
-  try {
-    await navigator.clipboard.writeText(secret);
-    el.backupCopyStatus.textContent = 'Copied to clipboard — store it somewhere safe, then clear your clipboard.';
-  } catch (err) {
-    el.backupCopyStatus.textContent = `Could not copy automatically (${err.message}) — reveal and copy it manually.`;
-  }
-});
-
-async function activateWallet(wallet, address) {
-  state.activeWallet = wallet;
-  state.address = address;
-  log(`Connected wallet ${address}`);
-  el.workerAddress.textContent = address;
-  await routeAfterConnect();
-  setConnectButtonsBusy(false);
-}
-
-async function hasUsdcTrustline(address) {
-  const res = await fetch(`${HORIZON_URL}/accounts/${address}`);
-  if (res.status === 404) return false; // account doesn't exist on-chain at all yet
-  if (!res.ok) throw new Error(`Horizon returned ${res.status}`);
-  const account = await res.json();
-  return (account.balances || []).some((b) => b.asset_code === USDC_ASSET_CODE);
-}
-
-async function routeAfterConnect() {
-  try {
-    const ready = await hasUsdcTrustline(state.address);
-    showPanel(ready ? 'online' : 'onboard');
-    if (ready) {
-      refreshEarnings();
-      setInterval(refreshEarnings, 20_000);
-    }
-  } catch (err) {
-    log(`Trustline check failed (${err.message}) — assuming onboarding is needed`);
-    showPanel('onboard');
-  }
-}
-
-// --- Sponsored onboarding (zero XLM required) ------------------------------
-
-el.btnOnboard.addEventListener('click', async () => {
-  el.btnOnboard.disabled = true;
-  try {
-    log('Building sponsored onboarding transaction…');
-    const buildRes = await fetch(`${BACKEND_URL}/sponsor/onboard/build`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address: state.address }),
-    });
-    if (!buildRes.ok) throw new Error((await buildRes.json()).error || `build failed: ${buildRes.status}`);
-    const { xdr } = await buildRes.json();
-
-    log('Signing onboarding transaction with your wallet…');
-    const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
-      address: state.address,
-      networkPassphrase: WalletNetwork.TESTNET,
-    });
-
-    log('Submitting sponsored onboarding transaction…');
-    const submitRes = await fetch(`${BACKEND_URL}/sponsor/onboard/submit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ xdr: signedTxXdr }),
-    });
-    if (!submitRes.ok) throw new Error((await submitRes.json()).error || `submit failed: ${submitRes.status}`);
-    const { hash } = await submitRes.json();
-
-    log(`Onboarded — account created and USDC trustline opened (tx ${hash}), zero XLM spent by you.`);
-    showPanel('online');
-    refreshEarnings();
-  } catch (err) {
-    log(`Onboarding failed: ${err.message}`);
-  } finally {
-    el.btnOnboard.disabled = false;
-  }
-});
-
-// --- Go online / offline ----------------------------------------------------
-
-el.btnToggle.addEventListener('click', async () => {
-  if (state.online) {
-    goOffline();
-    return;
-  }
-  el.btnToggle.disabled = true;
-  try {
-    await goOnline();
-  } catch (err) {
-    log(`Could not go online: ${err.message}`);
-  } finally {
-    el.btnToggle.disabled = false;
-  }
-});
-
-/** Proves control of this address once (a single signTransaction prompt,
- * same primitive already used for onboarding/staking — never signMessage,
- * whose conventions vary across wallets), then reuses the resulting bearer
- * session for both the SSE connection and every answer submission until it
- * expires. This exists because the backend now REQUIRES it for any
- * real-address workerId — see workerAuth.js. */
-async function ensureSession() {
-  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) return state.sessionToken;
-
-  log('Proving control of your address (one signature)…');
-  const challengeRes = await fetch(`${BACKEND_URL}/workers/${state.address}/session/challenge`, { method: 'POST' });
-  if (!challengeRes.ok) throw new Error((await challengeRes.json()).error || 'failed to get session challenge');
-  const { xdr } = await challengeRes.json();
-
-  const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
-    address: state.address,
-    networkPassphrase: WalletNetwork.TESTNET,
-  });
-
-  const sessionRes = await fetch(`${BACKEND_URL}/workers/${state.address}/session`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ signedXdr: signedTxXdr }),
-  });
-  if (!sessionRes.ok) throw new Error((await sessionRes.json()).error || 'failed to establish session');
-  const { token, expiresAt } = await sessionRes.json();
-  state.sessionToken = token;
-  state.sessionExpiresAt = expiresAt;
-  log('Session established — you can answer questions as yourself, and only yourself.');
-  return token;
-}
-
-async function goOnline() {
-  const token = await ensureSession();
-  const categories = selectedCategories();
-  const qs = new URLSearchParams({ worker: state.address, token });
-  if (categories.length) qs.set('categories', categories.join(','));
-
-  const es = new EventSource(`${BACKEND_URL}/app/events?${qs.toString()}`);
-  state.eventSource = es;
-
-  es.addEventListener('connected', () => {
-    state.online = true;
-    el.workerStatus.textContent = categories.length ? `online — ${categories.join(', ')}` : 'online — all topics';
-    el.btnToggle.textContent = 'Go offline';
-    log(`Connected to dispatch channel${categories.length ? ` for [${categories.join(', ')}]` : ''}`);
-  });
-
-  es.addEventListener('question', (evt) => {
-    const data = JSON.parse(evt.data);
-    onQuestionReceived(data);
-  });
-
-  es.onerror = () => {
-    log('Dispatch channel error/disconnected');
-    goOffline();
-  };
-}
-
-function goOffline() {
-  if (state.eventSource) {
-    state.eventSource.close();
-    state.eventSource = null;
-  }
-  state.online = false;
-  el.workerStatus.textContent = 'offline';
-  el.btnToggle.textContent = 'Go online';
-  el.question.classList.add('hidden');
-  stopCountdown();
-  log('Disconnected from dispatch channel');
-}
-
-// --- Question / answer flow --------------------------------------------------
-
-function onQuestionReceived({ questionId, question, expiresInMs }) {
-  state.currentQuestion = { questionId, deadlineAt: Date.now() + expiresInMs };
-  el.questionText.textContent = question;
-  el.answerInput.value = '';
-  el.answerInput.disabled = false;
-  el.btnAnswer.disabled = false;
-  el.question.classList.remove('hidden');
-  log(`New question dispatched: "${question}"`);
-  startCountdown(expiresInMs);
-}
-
-function startCountdown(totalMs) {
-  stopCountdown();
-  const start = Date.now();
-  state.countdownHandle = setInterval(() => {
-    const elapsed = Date.now() - start;
-    const remaining = Math.max(0, 1 - elapsed / totalMs);
-    el.timerBar.style.width = `${remaining * 100}%`;
-    if (remaining <= 0) {
-      stopCountdown();
-      el.answerInput.disabled = true;
-      el.btnAnswer.disabled = true;
-      log('Question window expired');
-    }
-  }, 100);
-}
-
-function stopCountdown() {
-  if (state.countdownHandle) {
-    clearInterval(state.countdownHandle);
-    state.countdownHandle = null;
-  }
-}
-
-el.answerForm.addEventListener('submit', async (evt) => {
-  evt.preventDefault();
-  const q = state.currentQuestion;
-  const answer = el.answerInput.value.trim();
-  if (!q || !answer) return;
-
-  el.btnAnswer.disabled = true;
-  el.answerInput.disabled = true;
-  try {
-    const res = await fetch(`${BACKEND_URL}/app/answer`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ questionId: q.questionId, workerId: state.address, answer, token: state.sessionToken }),
-    });
-    if (res.status === 401) {
-      log('Session expired or invalid — go offline and back online to re-authenticate.');
-    } else if (res.status === 409) {
-      log('Answer rejected — question already closed, expired, or already answered');
-    } else if (!res.ok) {
-      throw new Error(`unexpected status ${res.status}`);
-    } else {
-      log(`Answer submitted: "${answer}"`);
-    }
-  } catch (err) {
-    log(`Answer submission failed: ${err.message}`);
-    el.btnAnswer.disabled = false;
-    el.answerInput.disabled = false;
-  }
-});
-
-// --- Earnings & staking -------------------------------------------------
-// Matching answers are CREDITED on-chain (accrued-balance settlement), not
-// paid out per-question — withdraw() collects everything in one shot at
-// the worker's own discretion. Staking is an optional credibility bond
-// (losing answers forfeit a slice of it); never required to participate.
-
-async function refreshEarnings() {
-  if (!state.address) return;
-  try {
-    const [owedRes, stakeRes, repRes] = await Promise.all([
-      fetch(`${BACKEND_URL}/workers/${state.address}/owed`),
-      fetch(`${BACKEND_URL}/workers/${state.address}/stake`),
-      fetch(`${BACKEND_URL}/workers/${state.address}/reputation`),
-    ]);
-    if (owedRes.ok) el.owedAmount.textContent = `${(await owedRes.json()).owed} USDC`;
-    if (stakeRes.ok) el.stakeAmount.textContent = `${(await stakeRes.json()).stake} USDC`;
-    if (repRes.ok) renderTrackRecord(await repRes.json());
-  } catch (err) {
-    log(`Could not refresh earnings/stake: ${err.message}`);
-  }
-}
-
-function renderTrackRecord({ matched, total, matchRatio }) {
-  if (total === 0) {
-    el.trackRecordSummary.textContent = 'No answers yet — this fills in once you start answering.';
-    return;
-  }
-  const pct = Math.round(matchRatio * 100);
-  el.trackRecordSummary.textContent = `${matched}/${total} answers matched consensus (${pct}%)`;
-}
-
-el.btnWithdraw.addEventListener('click', async () => {
-  el.btnWithdraw.disabled = true;
-  try {
-    // Optional — leave blank to withdraw to your own address (the common
-    // case). Fill it in to route the payout elsewhere (an exchange deposit
-    // address, a cold wallet) without ever holding the funds at the signing
-    // key first.
-    const beneficiary = el.withdrawBeneficiaryInput.value.trim();
-    if (beneficiary && !StrKey.isValidEd25519PublicKey(beneficiary)) {
-      throw new Error('payout address is not a valid Stellar public key');
-    }
-
-    const owedRes = await fetch(`${BACKEND_URL}/workers/${state.address}/owed`);
-    if (!owedRes.ok) throw new Error(`could not look up accrued balance: ${owedRes.status}`);
-    const { owedStroops } = await owedRes.json();
-    if (BigInt(owedStroops) <= 0n) throw new Error('nothing accrued to withdraw yet');
-
-    log('Building withdraw transaction…');
-    const xdr = beneficiary
-      ? await buildWithdrawToXdr(state.address, beneficiary, owedStroops)
-      : await buildWithdrawXdr(state.address, owedStroops);
-    const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
-      address: state.address,
-      networkPassphrase: WalletNetwork.TESTNET,
-    });
-    const res = await fetch(`${BACKEND_URL}/sponsor/withdraw`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        xdr: signedTxXdr,
-        workerAddress: state.address,
-        amountStroops: owedStroops,
-        ...(beneficiary ? { beneficiaryAddress: beneficiary } : {}),
-      }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || `withdraw failed: ${res.status}`);
-    const { hash } = await res.json();
-    log(beneficiary ? `Withdrew accrued earnings to ${beneficiary} (tx ${hash})` : `Withdrew accrued earnings (tx ${hash})`);
-    await refreshEarnings();
-  } catch (err) {
-    log(`Withdraw failed: ${err.message}`);
-  } finally {
-    el.btnWithdraw.disabled = false;
-  }
-});
-
-initBankWithdraw({
-  button: el.btnWithdrawBank,
-  status: el.bankWithdrawStatus,
-  getAddress: () => state.address,
-  getWallet: () => state.activeWallet,
-  getArbiterSessionToken: ensureSession,
-  networkPassphrase: WalletNetwork.TESTNET,
-  assetCode: USDC_ASSET_CODE,
-});
-
-el.stakeForm.addEventListener('submit', async (evt) => {
-  evt.preventDefault();
-  el.btnStake.disabled = true;
-  try {
-    const amountStroops = stroopsFromUsdcInput(el.stakeInput.value);
-    log(`Building stake transaction for ${el.stakeInput.value} USDC…`);
-    const xdr = await buildStakeXdr(state.address, amountStroops);
-    const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
-      address: state.address,
-      networkPassphrase: WalletNetwork.TESTNET,
-    });
-    const res = await fetch(`${BACKEND_URL}/sponsor/stake`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ xdr: signedTxXdr, workerAddress: state.address, amountStroops: amountStroops.toString() }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || `stake failed: ${res.status}`);
-    const { hash } = await res.json();
-    log(`Staked (tx ${hash})`);
-    el.stakeInput.value = '';
-    await refreshEarnings();
-  } catch (err) {
-    log(`Stake failed: ${err.message}`);
-  } finally {
-    el.btnStake.disabled = false;
-  }
-});
-
-// --- Push notifications ---------------------------------------------------
-// Supplements the SSE tab connection for workers who want to be notified of
-// longer-timeout questions without babysitting the page. Never required —
-// the console works identically without it, just tab-open-only.
-
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch((err) => {
-    log(`Service worker registration failed (push notifications unavailable): ${err.message}`);
-  });
-}
-
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(base64);
-  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
-}
-
-if (el.btnEnablePush) {
-  el.btnEnablePush.addEventListener('click', async () => {
-    if (!state.address) return;
-    el.btnEnablePush.disabled = true;
-    try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        throw new Error('push notifications are not supported in this browser');
+function openAnswerDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(ANSWER_DB_NAME, ANSWER_DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(ANSWER_STORE)) {
+        db.createObjectStore(ANSWER_STORE, { keyPath: 'id' });
       }
-
-      const keyRes = await fetch(`${BACKEND_URL}/push/vapid-public-key`);
-      if (!keyRes.ok) throw new Error('this server has not configured push notifications');
-      const { publicKey } = await keyRes.json();
-
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') throw new Error('notification permission was not granted');
-
-      // Backend now requires proof of address control here too, same as
-      // answering a question — a subscription silently redirects this
-      // worker's notifications, so it can't be left open to anyone who
-      // just knows the address.
-      const token = await ensureSession();
-
-      const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey),
-      });
-
-      const res = await fetch(`${BACKEND_URL}/workers/${state.address}/push-subscribe`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscription: subscription.toJSON(), categories: selectedCategories(), token }),
-      });
-      if (!res.ok) throw new Error((await res.json()).error || `subscribe failed: ${res.status}`);
-
-      el.pushStatus.textContent = 'On — you may get notified for longer-timeout questions.';
-      log('Push notifications enabled.');
-    } catch (err) {
-      log(`Could not enable push notifications: ${err.message}`);
-      el.pushStatus.textContent = `Off — ${err.message}`;
-    } finally {
-      el.btnEnablePush.disabled = false;
-    }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
   });
 }
+
+async function withAnswerStore(mode, fn) {
+  const db = await openAnswerDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(ANSWER_STORE, mode);
+      const store = tx.objectStore(ANSWER_STORE);
+      const result = fn(store);
+      tx.oncomplete = () => resolve(result && result.__req ? result.__req.result : result);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+function putPendingAnswer(record) {
+  return withAnswerStore('readwrite', (store) => store.put(record));
+}
+
+function deletePendingAnswer(id) {
+  return withAnswerStore('readwrite', (store) => store.delete(id));
+}
+
+function listPendingAnswers() {
+  return withAnswerStore('readonly', (store) => {
+    const req = store.getAll();
+    return { __req: req };
+  });
+}
+
+// Stable per-answer idempotency key: the same composed answer always maps to
+// the same key, so a retried sync is a no-op on the backend rather than a
+// duplicate submission.
+function makeIdempotencyKey(questionId, address) {
+  return `${questionId}:${address}:${crypto.randomUUID()}`;
+}
+
+async function requestBackgroundSync() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    if (reg.sync) await reg.sync.register(SYNC_TAG);
+  } catch (err) {
+    log(`Background sync unavailable (${err.message}) — will retry on reconnect.`);
+  }
+}
+
+// Reconcile a single queued answer against the live question state. Returns
+// 'submitted' | 'discarded' | 'retry'.
+async function reconcilePendingAnswer(record) {
+  let question;
+  try {
+    const res = await fetch(`${BACKEND_URL}/questions/${record.questionId}`);
+    if (!res.ok) return 'retry';
+    question = await res.json();
+  } catch {
+    return 'retry'; // still offline — leave it queued
+  }
+
+  // Question closed while we were offline (quorum reached by others, or
+  // timeout): discard the stale answer rather than submitting it.
+  if (!question || question.status !== 'open') {
+    await deletePendingAnswer(record.id);
+    log(`Question closed before your answer could be sent — discarded your queued answer for "${record.questionText || record.questionId}".`);
+    return 'discarded';
+  }
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/questions/${record.questionId}/answers`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Idempotency-Key': record.idempotencyKey,
+      },
+      body: JSON.stringify({ answer: record.answer, address: record.address }),
+    });
+    // 409 means the backend already recorded this idempotency key — the
+    // answer was submitted exactly once, so treat it as success.
+    if (r
