@@ -5,24 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Arbiter — Worker Console</title>
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" href="#5b4cf0" />
+    <meta name="theme-color" content="#5b4cf0" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <main class="app">
+    <a class="skip-link" href="#main" data-i18n="skip">Skip to main content</a>
+    <main class="app" id="main" tabindex="-1">
       <header>
-        <h1>Arbiter <span class="tag">worker console</span></h1>
+        <h1>Arbiter <span class="tag" data-i18n="console.tag">worker console</span></h1>
         <p class="sub">
-          Answer paid questions, get settled on-chain automatically.
-          <a href="/dashboard.html">Buyer dashboard →</a>
-          <a href="/leaderboard.html">Leaderboard →</a>
-          <a href="/admin.html">Admin →</a>
+          <span data-i18n="console.sub">Answer paid questions, get settled on-chain automatically.</span>
+          <a href="/dashboard.html" data-i18n="nav.dashboard">Buyer dashboard →</a>
+          <a href="/leaderboard.html" data-i18n="nav.leaderboard">Leaderboard →</a>
+          <a href="/admin.html" data-i18n="nav.admin">Admin →</a>
+          <label><span class="sr-only" data-i18n="lang.label">Language</span>
+            <select class="lang-switch"><option value="en">English</option><option value="ar">العربية</option></select>
+          </label>
         </p>
       </header>
 
       <section id="panel-connect" class="panel">
-        <button id="btn-connect">Connect wallet</button>
-        <button id="btn-quick-start" class="secondary">Quick start (no extension needed)</button>
+        <button id="btn-connect" data-i18n="connect.wallet">Connect wallet</button>
+        <button id="btn-quick-start" class="secondary" data-i18n="connect.quick">Quick start (no extension needed)</button>
         <p class="muted small">
           Quick start generates a wallet in this browser — non-custodial (only you hold the key,
           it's just stored locally instead of in an extension), zero setup, zero XLM required.
@@ -30,7 +34,7 @@
       </section>
 
       <section id="panel-backup" class="panel hidden warning">
-        <h2>⚠ Back up your quick-start key</h2>
+        <h2 data-i18n="backup.title">⚠ Back up your quick-start key</h2>
         <p>
           This wallet lives only in this browser. If you clear your browser data, use private
           browsing, or switch devices, <strong>any staked or accrued USDC on this address is
@@ -39,26 +43,28 @@
           before you stake anything or let earnings accrue.
         </p>
         <div class="row">
+          <label for="backup-secret" class="sr-only" data-i18n="backup.secretLabel">Quick-start secret key</label>
           <input id="backup-secret" type="password" readonly value="" />
-          <button id="btn-reveal-secret" class="secondary" type="button">Reveal</button>
-          <button id="btn-copy-secret" type="button">Copy</button>
+          <button id="btn-reveal-secret" class="secondary" type="button" aria-controls="backup-secret" data-i18n="backup.reveal">Reveal</button>
+          <button id="btn-copy-secret" type="button" data-i18n="backup.copy">Copy</button>
+          <button id="btn-backup-done" class="secondary" type="button" data-i18n="backup.done">I've saved it — lock export</button>
         </div>
-        <p class="muted small" id="backup-copy-status"></p>
+        <p class="muted small" id="backup-copy-status" role="status" aria-live="polite"></p>
       </section>
 
       <section id="panel-onboard" class="panel hidden">
-        <h2>One more step</h2>
+        <h2 data-i18n="onboard.title">One more step</h2>
         <p>Your wallet has no USDC trustline yet. Onboarding is sponsored — free, no XLM required.</p>
-        <button id="btn-onboard">Onboard (sponsored, free)</button>
+        <button id="btn-onboard" data-i18n="onboard.button">Onboard (sponsored, free)</button>
       </section>
 
       <section id="panel-online" class="panel hidden">
         <div class="row">
           <div>
             <strong id="worker-address"></strong>
-            <div class="muted" id="worker-status">offline</div>
+            <div class="muted" id="worker-status" role="status" aria-live="polite">offline</div>
           </div>
-          <button id="btn-toggle">Go online</button>
+          <button id="btn-toggle" data-i18n="online.go">Go online</button>
         </div>
 
         <div class="push-row">
@@ -79,15 +85,15 @@
         </p>
 
         <fieldset id="category-picker">
-          <legend>Topics you'll answer (optional — leave all unchecked to answer everything)</legend>
-          <label><input type="checkbox" value="math" /> Math</label>
-          <label><input type="checkbox" value="coding" /> Coding</label>
-          <label><input type="checkbox" value="history" /> History</label>
-          <label><input type="checkbox" value="general" /> General knowledge</label>
+          <legend data-i18n="topics.legend">Topics you'll answer (optional — leave all unchecked to answer everything)</legend>
+          <label data-category="math"><input type="checkbox" value="math" /> <span data-i18n="topic.math">Math</span><span class="category-demand-bar" aria-hidden="true"></span><span class="demand-level" hidden></span></label>
+          <label data-category="coding"><input type="checkbox" value="coding" /> <span data-i18n="topic.coding">Coding</span><span class="category-demand-bar" aria-hidden="true"></span><span class="demand-level" hidden></span></label>
+          <label data-category="history"><input type="checkbox" value="history" /> <span data-i18n="topic.history">History</span><span class="category-demand-bar" aria-hidden="true"></span><span class="demand-level" hidden></span></label>
+          <label data-category="general"><input type="checkbox" value="general" /> <span data-i18n="topic.general">General knowledge</span><span class="category-demand-bar" aria-hidden="true"></span><span class="demand-level" hidden></span></label>
         </fieldset>
 
-        <div id="category-demand" class="category-demand" aria-live="polite">
-          <div class="muted small">Live demand — categories short on workers right now</div>
+        <div id="category-demand" class="category-demand" aria-live="polite" aria-labelledby="demand-heading">
+          <div class="muted small" id="demand-heading" data-i18n="demand.title">Live demand — categories short on workers right now</div>
           <ul id="category-demand-list" class="category-demand-list"></ul>
           <p id="category-demand-status" class="muted small"></p>
         </div>
@@ -95,7 +101,7 @@
         <div class="push-row">
           <div>
             <div class="muted small">Push notifications</div>
-            <p id="push-status" class="muted small">Off — you'll only get questions while this tab is open.</p>
+            <p id="push-status" class="muted small" role="status" aria-live="polite">Off — you'll only get questions while this tab is open.</p>
           </div>
           <button id="btn-enable-push" class="secondary" type="button">Enable</button>
         </div>
@@ -106,31 +112,31 @@
       </section>
 
       <section id="panel-earnings" class="panel hidden">
-        <h2>Earnings &amp; stake</h2>
+        <h2 data-i18n="earnings.title">Earnings &amp; stake</h2>
 
         <div class="row">
           <div>
-            <div class="muted small">Accrued (withdrawable)</div>
+            <div class="muted small" data-i18n="earnings.accrued">Accrued (withdrawable)</div>
             <strong id="owed-amount">0.00 USDC</strong>
           </div>
           <div>
-            <button id="btn-withdraw">Withdraw</button>
+            <button id="btn-withdraw" data-i18n="earnings.withdraw">Withdraw</button>
             <button id="btn-withdraw-bank" class="secondary hidden" type="button">Withdraw to bank</button>
           </div>
         </div>
         <div class="row" id="withdraw-beneficiary-row">
-          <input id="withdraw-beneficiary-input" type="text" placeholder="Payout address (optional — defaults to your own)" />
+          <input id="withdraw-beneficiary-input" type="text" placeholder="Payout address (optional — defaults to your own)" aria-label="Payout address (optional — defaults to your own)" data-i18n-attr="placeholder:earnings.payout,aria-label:earnings.payout" />
         </div>
-        <p class="muted small" id="bank-withdraw-status"></p>
+        <p class="muted small" id="bank-withdraw-status" role="status" aria-live="polite"></p>
 
         <div class="row" style="margin-top: 0.75rem">
           <div>
-            <div class="muted small">Staked bond</div>
+            <div class="muted small" data-i18n="earnings.staked">Staked bond</div>
             <strong id="stake-amount">0.00 USDC</strong>
           </div>
           <form id="stake-form" class="inline-form">
-            <input id="stake-input" type="number" min="0.01" step="0.01" placeholder="Amount" />
-            <button id="btn-stake" type="submit">Stake</button>
+            <input id="stake-input" type="number" min="0.01" step="0.01" placeholder="Amount" aria-label="Stake amount in USDC" data-i18n-attr="aria-label:earnings.amount" />
+            <button id="btn-stake" type="submit" data-i18n="earnings.stake">Stake</button>
           </form>
         </div>
         <p class="muted small">
@@ -144,19 +150,20 @@
         </div>
       </section>
 
-      <section id="panel-question" class="panel hidden">
-        <h2 id="question-heading">Incoming question</h2>
-        <div class="timer-track"><div class="timer-bar" id="timer-bar"></div></div>
+      <section id="panel-question" class="panel hidden" aria-labelledby="question-heading">
+        <h2 id="question-heading" tabindex="-1" data-i18n="question.title">Incoming question</h2>
+        <div class="timer-track" role="progressbar" id="timer-track" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-label="Time remaining to answer" data-i18n-attr="aria-label:question.timer"><div class="timer-bar" id="timer-bar"></div></div>
         <p id="question-text"></p>
         <form id="answer-form">
-          <input id="answer-input" type="text" placeholder="Type your answer…" autocomplete="off" />
-          <button id="btn-answer" type="submit">Submit answer</button>
+          <label for="answer-input" class="sr-only" data-i18n="question.answer">Your answer</label>
+          <input id="answer-input" type="text" placeholder="Type your answer…" autocomplete="off" data-i18n-attr="placeholder:question.placeholder" />
+          <button id="btn-answer" type="submit" data-i18n="question.submit">Submit answer</button>
         </form>
       </section>
 
       <section class="panel">
-        <h2>Activity log</h2>
-        <ul id="log"></ul>
+        <h2 id="log-heading" data-i18n="log.title">Activity log</h2>
+        <ul id="log" role="log" aria-live="polite" aria-labelledby="log-heading"></ul>
       </section>
     </main>
 

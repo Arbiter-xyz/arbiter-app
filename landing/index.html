@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to main content</a>
+  <a class="skip-link" href="#main" data-i18n="skip">Skip to main content</a>
 
   <header class="site-header">
     <div class="container header-inner">
@@ -24,12 +24,13 @@
 
       <nav class="primary-nav" id="primary-nav" aria-label="Primary">
         <ul>
-          <li><a href="#how-it-works">How it works</a></li>
-          <li><a href="#features">Features</a></li>
-          <li><a href="#developers">Developers</a></li>
-          <li><a href="#pricing">Pricing</a></li>
-          <li><a href="#faq">FAQ</a></li>
-          <li><a href="https://github.com/Arbiter-xyz/arbiter-backend#readme" class="nav-cta">Read the docs</a></li>
+          <li><a href="#how-it-works" data-i18n="nav.how">How it works</a></li>
+          <li><a href="#features" data-i18n="nav.features">Features</a></li>
+          <li><a href="#developers" data-i18n="nav.developers">Developers</a></li>
+          <li><a href="#pricing" data-i18n="nav.pricing">Pricing</a></li>
+          <li><a href="#faq" data-i18n="nav.faq">FAQ</a></li>
+          <li><a href="https://github.com/Arbiter-xyz/arbiter-backend#readme" class="nav-cta" data-i18n="nav.docs">Read the docs</a></li>
+          <li><label><span class="sr-only" data-i18n="lang.label">Language</span><select class="lang-switch" id="lang-switch"><option value="en">English</option><option value="ar">العربية</option></select></label></li>
         </ul>
       </nav>
     </div>
@@ -40,22 +41,22 @@
     <section class="hero" id="top" aria-labelledby="hero-heading">
       <div class="container hero-grid">
         <div class="hero-copy reveal">
-          <p class="eyebrow">Ground truth for any claim you need checked · Built on Stellar / Soroban</p>
-          <h1 id="hero-heading">Is that true?<br />Put a stake on the answer.</h1>
-          <p class="hero-sub">
+          <p class="eyebrow" data-i18n="hero.eyebrow">Ground truth for any claim you need checked · Built on Stellar / Soroban</p>
+          <h1 id="hero-heading" data-i18n="hero.title">Is that true? Put a stake on the answer.</h1>
+          <p class="hero-sub" data-i18n="hero.sub">
             Arbiter checks any claim you need a real answer on — an audit finding, a contract's
             behavior, something an AI got wrong — with a real, staked human quorum, not a raw
             LLM guess. Pay with a wallet or a card, get a settled answer, or a full refund if
             consensus isn&rsquo;t reached. No stuck funds, no partial states.
           </p>
           <div class="hero-actions">
-            <a href="#try-it-input" class="btn btn-primary">Verify a claim live</a>
-            <a href="https://github.com/Arbiter-xyz/arbiter-backend#readme" class="btn btn-secondary">Read the docs</a>
+            <a href="#try-it-input" class="btn btn-primary" data-i18n="hero.cta">Verify a claim live</a>
+            <a href="https://github.com/Arbiter-xyz/arbiter-backend#readme" class="btn btn-secondary" data-i18n="nav.docs">Read the docs</a>
           </div>
           <ul class="hero-trust" aria-label="At a glance">
-            <li><strong>$0.05</strong><span>starting price</span></li>
-            <li><strong>Staked</strong><span>quorum, not a guess</span></li>
-            <li><strong>Fail-closed</strong><span>by design</span></li>
+            <li><strong data-i18n-price="0.05">$0.05</strong><span data-i18n="trust.price">starting price</span></li>
+            <li><strong data-i18n="trust.staked">Staked</strong><span data-i18n="trust.stakedSub">quorum, not a guess</span></li>
+            <li><strong data-i18n="trust.fail">Fail-closed</strong><span data-i18n="trust.failSub">by design</span></li>
           </ul>
         </div>
 
@@ -89,7 +90,7 @@
     <!-- HOW IT WORKS -->
     <section class="section" id="how-it-works" aria-labelledby="how-heading">
       <div class="container">
-        <h2 id="how-heading" class="section-heading reveal">How it works</h2>
+        <h2 id="how-heading" class="section-heading reveal" data-i18n="nav.how">How it works</h2>
         <ol class="steps">
           <li class="step reveal">
             <span class="step-index">01</span>
@@ -122,7 +123,7 @@
     <!-- FEATURES -->
     <section class="section section-alt" id="features" aria-labelledby="features-heading">
       <div class="container">
-        <h2 id="features-heading" class="section-heading reveal">Why Arbiter</h2>
+        <h2 id="features-heading" class="section-heading reveal" data-i18n="h.why">Why Arbiter</h2>
         <p class="section-sub reveal">Every guarantee below is enforced by the smart contract
           itself, not a policy we promise to follow.</p>
 
@@ -143,7 +144,7 @@
 
           <article class="feature-card reveal">
             <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 17l5-5 4 4 8-9"/><path d="M15 7h5v5"/></svg>
-            <h3>Surge-aware pricing</h3>
+            <h3 data-i18n="h.surge">Surge-aware pricing</h3>
             <p>Price reflects live worker supply, not a fixed sticker — and it&rsquo;s locked in
               at quote time, so it can never move on you mid-flow.</p>
           </article>
@@ -213,7 +214,7 @@
     <!-- DEVELOPERS -->
     <section class="section" id="developers" aria-labelledby="developers-heading">
       <div class="container">
-        <h2 id="developers-heading" class="section-heading reveal">Developers</h2>
+        <h2 id="developers-heading" class="section-heading reveal" data-i18n="nav.developers">Developers</h2>
         <p class="section-sub reveal">One endpoint, no API key to start. See the
           <a href="https://github.com/Arbiter-xyz/arbiter-backend#readme">docs</a> for the full
           surface.</p>
@@ -223,7 +224,7 @@
     <!-- PRICING -->
     <section class="section section-alt" id="pricing" aria-labelledby="pricing-heading">
       <div class="container">
-        <h2 id="pricing-heading" class="section-heading reveal">Pricing</h2>
+        <h2 id="pricing-heading" class="section-heading reveal" data-i18n="nav.pricing">Pricing</h2>
         <p class="section-sub reveal">Pay per question, with a wallet or a card. Price is locked
           in at quote time.</p>
       </div>
@@ -232,7 +233,7 @@
     <!-- FAQ -->
     <section class="section" id="faq" aria-labelledby="faq-heading">
       <div class="container">
-        <h2 id="faq-heading" class="section-heading reveal">FAQ</h2>
+        <h2 id="faq-heading" class="section-heading reveal" data-i18n="nav.faq">FAQ</h2>
         <div class="faq-list">
           <details class="faq-item reveal">
             <summary>Why a human quorum instead of just asking an LLM?</summary>
@@ -252,6 +253,7 @@
     </div>
   </footer>
 
+  <script src="i18n.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
