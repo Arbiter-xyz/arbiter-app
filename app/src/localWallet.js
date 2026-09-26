@@ -184,8 +184,7 @@ export function recoverKeypairFromShares(shares) {
   return Keypair.fromSecret(combineShares(shares));
 }
 
-export function hasLocalWallet() {
-  return !!localStorage.getItem(STORAGE_KEY);
+/**
  * The same keypair is also reused by the Chrome/Firefox extension worker
  * console (issue #91): the extension background service worker has no
  * `localStorage`, so it passes `chrome.storage.local` (or any async
@@ -193,7 +192,6 @@ export function hasLocalWallet() {
  * {getAddress, signTransaction} shape. The secret is still never sent to
  * the backend — only the signed challenge/response is.
  */
-const STORAGE_KEY = 'arbiter_local_wallet_secret';
 
 /** Resolves the storage backend: the default browser `localStorage` for the
  * web app, or an injected async store (e.g. `chrome.storage.local`) for the
@@ -407,5 +405,71 @@ export function createLedgerWallet(opts = {}) {
     async signAuthEntry() {
       throw new LedgerAuthEntryUnsupportedError();
     },
+  };
+}
+
+// --- Hardened quick-start wallet (issue #7) --------------------------------
+//
+// The web app no longer keeps the secret in localStorage or the page heap.
+// Key material lives in a dedicated Web Worker (walletWorker.js) backed by
+// IndexedDB: encrypted under a non-extractable AES key until the user
+// confirms their backup, then converted to a non-extractable WebCrypto
+// Ed25519 key that nothing on this origin can read. The page only ever sees
+// the address and signed XDR. Still zero setup: no extension, no password.
+// Threat model: docs/security/quick-start-wallet-threat-model.md.
+
+let workerRpc = null;
+
+function getWorkerRpc() {
+  if (workerRpc) return workerRpc;
+  const worker = new Worker(new URL('./walletWorker.js', import.meta.url), { type: 'module' });
+  const pending = new Map();
+  let seq = 0;
+  worker.onmessage = ({ data }) => {
+    const p = pending.get(data.id);
+    if (!p) return;
+    pending.delete(data.id);
+    data.error ? p.reject(new Error(data.error)) : p.resolve(data.result);
+  };
+  workerRpc = (op, args) =>
+    new Promise((resolve, reject) => {
+      const id = ++seq;
+      pending.set(id, { resolve, reject });
+      worker.postMessage({ id, op, args });
+    });
+  return workerRpc;
+}
+
+/** Opens (creating on first use) the isolated quick-start wallet. A legacy
+ * plaintext secret from localStorage is migrated into the worker once and
+ * then deleted from localStorage. Returns the usual
+ * {getAddress, signTransaction} shape plus backup helpers. */
+export async function openSecureLocalWallet() {
+  const rpc = getWorkerRpc();
+  let legacySecret = null;
+  try {
+    legacySecret = localStorage.getItem(STORAGE_KEY);
+  } catch {}
+  const info = await rpc('init', { legacySecret });
+  if (legacySecret) localStorage.removeItem(STORAGE_KEY);
+
+  return {
+    id: 'local-quick-start',
+    state: info.state,
+    async getAddress() {
+      return { address: info.address };
+    },
+    async signTransaction(xdr, opts = {}) {
+      return rpc('sign', { xdr, networkPassphrase: opts.networkPassphrase });
+    },
+    /** Raw secret for the one-time backup; null once export is locked. */
+    exportSecret: () => rpc('exportSecret'),
+    /** User confirmed their backup: make the key permanently non-exportable. */
+    async lockExport() {
+      const { state } = await rpc('lock');
+      this.state = state;
+      return state;
+    },
+    clear: () => rpc('clear'),
   };
 }

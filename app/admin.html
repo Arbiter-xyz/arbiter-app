@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to main content</a>
     <section id="panel-login" class="panel" style="max-width: 420px; margin: 3rem auto">
       <h2>Admin console</h2>
       <p class="muted small">Paste the operator token (ADMIN_TOKEN on the backend) to continue.</p>
@@ -49,7 +50,7 @@
         </div>
       </nav>
 
-      <main class="admin-content">
+      <main class="admin-content" id="main" tabindex="-1">
         <section id="view-overview" class="admin-view">
           <h2>Overview</h2>
           <div class="admin-stat-grid">
@@ -81,7 +82,7 @@
           <div class="panel">
             <table class="leaderboard-table">
               <thead>
-                <tr><th>Question</th><th>Payer</th><th>Amount</th><th>Status</th><th>Outcome</th><th>Created</th></tr>
+                <tr><th scope="col">Question</th><th scope="col">Payer</th><th scope="col">Amount</th><th scope="col">Status</th><th scope="col">Outcome</th><th scope="col">Created</th></tr>
               </thead>
               <tbody id="tx-body"><tr><td colspan="6" class="muted small">Loading…</td></tr></tbody>
             </table>
@@ -93,7 +94,7 @@
           <div class="panel">
             <table class="leaderboard-table">
               <thead>
-                <tr><th>Worker</th><th>Match ratio</th><th>Answers</th><th>Established</th><th>Stake</th><th>Owed</th></tr>
+                <tr><th scope="col">Worker</th><th scope="col">Match ratio</th><th scope="col">Answers</th><th scope="col">Established</th><th scope="col">Stake</th><th scope="col">Owed</th></tr>
               </thead>
               <tbody id="workers-body"><tr><td colspan="6" class="muted small">Loading…</td></tr></tbody>
             </table>
@@ -105,7 +106,7 @@
           <div class="panel">
             <table class="leaderboard-table">
               <thead>
-                <tr><th>Payer</th><th>Total spend</th><th>Tracked</th><th>Settled</th><th>Success rate</th></tr>
+                <tr><th scope="col">Payer</th><th scope="col">Total spend</th><th scope="col">Tracked</th><th scope="col">Settled</th><th scope="col">Success rate</th></tr>
               </thead>
               <tbody id="payers-body"><tr><td colspan="5" class="muted small">Loading…</td></tr></tbody>
             </table>
@@ -137,7 +138,7 @@
               status (SEP-10 means only that address's own signature can). Not a live query.
             </p>
             <table class="leaderboard-table">
-              <thead><tr><th>Address</th><th>Status</th><th>Tier</th><th>Reported</th></tr></thead>
+              <thead><tr><th scope="col">Address</th><th scope="col">Status</th><th scope="col">Tier</th><th scope="col">Reported</th></tr></thead>
               <tbody id="kyc-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
             </table>
           </div>
@@ -148,7 +149,7 @@
           <div class="panel">
             <p class="muted small">Self-reported SEP-24 withdrawal history — same caveat as KYC &amp; Tiers above.</p>
             <table class="leaderboard-table">
-              <thead><tr><th>Address</th><th>Amount</th><th>Status</th><th>Reported</th></tr></thead>
+              <thead><tr><th scope="col">Address</th><th scope="col">Amount</th><th scope="col">Status</th><th scope="col">Reported</th></tr></thead>
               <tbody id="payouts-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
             </table>
           </div>
@@ -165,7 +166,7 @@
             <p class="muted small">Workers below the minimum match ratio once established — candidates for review.</p>
             <table class="leaderboard-table">
               <thead>
-                <tr><th>Worker</th><th>Match ratio</th><th>Answers</th><th>Stake</th></tr>
+                <tr><th scope="col">Worker</th><th scope="col">Match ratio</th><th scope="col">Answers</th><th scope="col">Stake</th></tr>
               </thead>
               <tbody id="fraud-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
             </table>

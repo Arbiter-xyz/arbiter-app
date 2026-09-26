@@ -7,54 +7,58 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <main class="app">
+    <a class="skip-link" href="#main" data-i18n="skip">Skip to main content</a>
+    <main class="app" id="main" tabindex="-1">
       <header>
-        <h1>Arbiter <span class="tag">buyer dashboard</span></h1>
+        <h1>Arbiter <span class="tag" data-i18n="dash.tag">buyer dashboard</span></h1>
         <p class="sub">
           See every question you've paid for — read-only, keyed by your own wallet address. No
           account, no signup: connect the same way you would to answer questions.
-          <a href="/index.html">Worker console →</a>
-          <a href="/leaderboard.html">Leaderboard →</a>
+          <a href="/index.html" data-i18n="nav.console">Worker console →</a>
+          <a href="/leaderboard.html" data-i18n="nav.leaderboard">Leaderboard →</a>
+          <label><span class="sr-only" data-i18n="lang.label">Language</span>
+            <select class="lang-switch"><option value="en">English</option><option value="ar">العربية</option></select>
+          </label>
         </p>
       </header>
 
       <section id="panel-connect" class="panel">
-        <button id="btn-connect">Connect wallet</button>
-        <button id="btn-quick-start" class="secondary">Quick start (no extension needed)</button>
+        <button id="btn-connect" data-i18n="connect.wallet">Connect wallet</button>
+        <button id="btn-quick-start" class="secondary" data-i18n="connect.quick">Quick start (no extension needed)</button>
       </section>
 
       <section id="panel-dashboard" class="panel hidden">
         <div class="row">
           <div>
             <strong id="payer-address"></strong>
-            <div class="muted small">connected</div>
+            <div class="muted small" id="live-status" role="status" aria-live="polite" data-i18n="dash.connected">connected</div>
           </div>
-          <button id="btn-refresh" class="secondary">Refresh</button>
+          <button id="btn-refresh" class="secondary" data-i18n="dash.refresh">Refresh</button>
         </div>
 
         <div class="dashboard-stats">
           <div>
-            <div class="muted small">Total spent</div>
+            <div class="muted small" data-i18n="dash.spent">Total spent</div>
             <strong id="stat-spend">0.00 USDC</strong>
           </div>
           <div>
-            <div class="muted small">Questions tracked</div>
+            <div class="muted small" data-i18n="dash.tracked">Questions tracked</div>
             <strong id="stat-count">0</strong>
           </div>
           <div>
-            <div class="muted small">Success rate</div>
+            <div class="muted small" data-i18n="dash.success">Success rate</div>
             <strong id="stat-success">—</strong>
           </div>
         </div>
 
-        <ul id="question-list" class="question-list">
+        <ul id="question-list" class="question-list" aria-live="polite" aria-relevant="additions text">
           <li class="muted small" id="question-list-empty">No questions yet.</li>
         </ul>
       </section>
 
       <section class="panel">
-        <h2>Activity log</h2>
-        <ul id="log"></ul>
+        <h2 id="log-heading" data-i18n="log.title">Activity log</h2>
+        <ul id="log" role="log" aria-live="polite" aria-labelledby="log-heading"></ul>
       </section>
     </main>
 
