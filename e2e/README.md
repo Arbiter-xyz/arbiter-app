@@ -146,3 +146,32 @@ The adapter in `localWallet.js` therefore:
 - A faithful emulator (e.g. Speculos with the Stellar app) may be used in
   place of physical hardware for steps 1–2; document the emulator version
   and app build used.
+
+## Visual regression
+
+A self-hosted pixel-diffing suite (Playwright `toHaveScreenshot()`, no SaaS)
+covers the landing page, worker console, dashboard and leaderboard on desktop
+and mobile viewports, plus each dashboard job-progression state (`pending`,
+`answering`, `reconciling`, `settled`, `refunded`). All backend calls are
+stubbed with fixed fixtures, SSE streams are aborted, the clock is frozen and
+animations are disabled, so the async states render deterministically.
+
+- Config: `app/playwright.visual.config.js`
+- Spec: `app/visual/visual.spec.js`
+- Baselines: `app/visual/__screenshots__/` (committed)
+
+```sh
+cd app
+npm run visual          # compare against baselines
+npm run visual:update   # regenerate baselines after an intended change
+```
+
+### Reviewing and accepting intentional changes
+
+1. CI's **Visual regression** job fails on any diff above 1% of pixels and
+   uploads `visual-diff-report` (expected / actual / diff images).
+2. Open the report and confirm every diff is intentional.
+3. Regenerate baselines on Linux so fonts match CI — e.g.
+   `docker run --rm -v $PWD:/w -w /w/app mcr.microsoft.com/playwright:v1.48.0-jammy npm run visual:update`.
+4. Commit the updated PNGs in the same PR; reviewers approve them in the
+   GitHub image diff view like any other change.

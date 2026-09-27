@@ -889,3 +889,19 @@ pre:focus-visible {
   .btn { width: 100%; }
   .hero-actions { flex-direction: column; }
 }
+
+/* Live widgets (live.js) */
+.tier-picker { margin-top: .5rem; font-size: .85rem; opacity: .85; }
+.tier-summary { margin: 0 0 .25rem; }
+.tier-advanced summary { cursor: pointer; }
+.tier-advanced select { margin-top: .4rem; max-width: 100%; }
+.live-ticker { margin-top: 1rem; font-size: .9rem; display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+.live-dot { width: .5rem; height: .5rem; border-radius: 50%; background: #22c55e; animation: live-pulse 2s infinite; }
+.ticker-note { flex-basis: 100%; font-size: .75rem; opacity: .7; }
+@keyframes live-pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+.surge-live { margin-top: 1.5rem; max-width: 40rem; }
+.surge-head { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; font-size: .9rem; }
+.surge-status { opacity: .7; }
+#surge-canvas { display: block; width: 100%; height: 140px; color: currentColor; }
+.surge-note { font-size: .75rem; opacity: .7; }
