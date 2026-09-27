@@ -205,76 +205,79 @@
   }
 
   /* -------------------------------------------------------------------
-     Interactive architecture diagram (#architecture) — a hand-authored
-     SVG mirroring the README's ASCII flow (app/demo-agent → backend
-     server.js → oracle.js → dispatch.js/reconcile.js → oracle-escrow
-     contract → USDC SAC, with Claude as reconciliation-only). Nodes are
-     clickable and reveal the real README detail for each component.
-     Progressive enhancement: the SVG and its labels are fully legible
-     without JS; this only wires up the click-to-expand detail panel.
+     Compare-tiers slider (#pricing) — a presentation layer over the same
+     four tiers' already-documented real values (base price, quorum size,
+     answer window) that the static .pricing-grid cards list. The cards
+     remain the no-JS / reduced-motion fallback; this control is only
+     injected when motion is allowed, and it never invents numbers —
+     confidence stays qualitative, matching the existing copy.
   ------------------------------------------------------------------- */
-  const archDiagram = document.getElementById("architecture-diagram");
-  const archDetail = document.getElementById("architecture-detail");
+  if (pricingGrid && !prefersReducedMotion) {
+    const COMPARE_TIERS = [
+      { label: "Instant", price: 0.05, quorum: 1, window: "30s", confidence: "Single worker — fastest, least redundant" },
+      { label: "Standard", price: 0.25, quorum: 2, window: "20s", confidence: "Two-worker agreement" },
+      { label: "Express", price: 0.4, quorum: 2, window: "12s", confidence: "Two-worker agreement, tighter deadline" },
+      { label: "Priority", price: 0.6, quorum: 3, window: "8s", confidence: "Highest-confidence consensus" },
+    ];
 
-  if (archDiagram && archDetail) {
-    const nodes = Array.from(archDiagram.querySelectorAll("[data-arch-node]"));
+    const compare = document.createElement("div");
+    compare.className = "pricing-compare";
 
-    const ARCH_DETAIL = {
-      app: {
-        title: "app / demo-agent",
-        body: "The client that submits a question and pays for an answer. The demo agent (and any integrator's app) POSTs to the backend's /ask endpoint, then polls for the reconciled result. It never talks to the contract or Claude directly.",
-      },
-      backend: {
-        title: "backend (server.js)",
-        body: "Express server exposing /ask, /sandbox, and /health. server.js orchestrates the request: it calls oracle.js to fan the question out to the model providers, then hands the collected answers to dispatch.js and reconcile.js.",
-      },
-      oracle: {
-        title: "oracle.js",
-        body: "Fans a single question out to multiple model providers in parallel and collects their answers. This is the quorum step — the backend needs several independent answers before it can reconcile.",
-      },
-      dispatch: {
-        title: "dispatch.js / reconcile.js",
-        body: "dispatch.js sends the question to the providers; reconcile.js compares the returned answers, picks the consensus result, and decides whether the answer is trustworthy enough to settle. Claude is used here only as a reconciliation aid — never as a primary answer source.",
-      },
-      claude: {
-        title: "Claude (reconciliation-only)",
-        body: "Claude is not one of the answering providers. It is invoked only during reconciliation to help judge agreement between the other providers' answers. It has no role in dispatch and cannot unilaterally settle a payment.",
-      },
-      contract: {
-        title: "oracle-escrow (Soroban contract)",
-        body: "The on-chain escrow that holds funds until an answer is reconciled. Public entry points: submit (record a reconciled answer), resolve (release payment to the provider), refund (return funds to the asker), refund_timeout (refund after the deadline passes), stake / unstake (provider collateral), and withdraw (pull accrued balances).",
-      },
-      usdc: {
-        title: "USDC SAC",
-        body: "The Stellar Asset Contract wrapping USDC. oracle-escrow moves real USDC through this SAC for every stake, resolve, refund, and withdraw — the contract never holds a bespoke token.",
-      },
-    };
+    const compareHeading = document.createElement("h3");
+    compareHeading.textContent = "Compare tiers";
 
-    function showArchDetail(key) {
-      const detail = ARCH_DETAIL[key];
-      if (!detail) return;
-      archDetail.innerHTML = "";
-      const heading = document.createElement("h3");
-      heading.textContent = detail.title;
-      const para = document.createElement("p");
-      para.textContent = detail.body;
-      archDetail.appendChild(heading);
-      archDetail.appendChild(para);
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.className = "pricing-compare-slider";
+    slider.min = "0";
+    slider.max = String(COMPARE_TIERS.length - 1);
+    slider.step = "1";
+    slider.value = "1";
+    slider.setAttribute("aria-label", "Compare pricing tiers");
+
+    const readout = document.createElement("div");
+    readout.className = "pricing-compare-readout";
+    readout.setAttribute("aria-live", "polite");
+
+    function renderCompare() {
+      const tier = COMPARE_TIERS[Number(slider.value)];
+      readout.textContent = "";
+
+      const name = document.createElement("p");
+      name.className = "pricing-compare-tier";
+      name.textContent = tier.label;
+
+      const price = document.createElement("p");
+      price.className = "pricing-compare-price";
+      price.textContent = `${tier.price.toFixed(2)} USDC per request`;
+
+      const detail = document.createElement("p");
+      detail.className = "pricing-compare-detail";
+      detail.textContent = `Quorum of ${tier.quorum} worker${tier.quorum === 1 ? "" : "s"} · ${tier.window} answer window`;
+
+      const confidence = document.createElement("p");
+      confidence.className = "pricing-compare-confidence";
+      confidence.textContent = tier.confidence;
+
+      readout.appendChild(name);
+      readout.appendChild(price);
+      readout.appendChild(detail);
+      readout.appendChild(confidence);
     }
 
-    nodes.forEach((node) => {
-      const key = node.getAttribute("data-arch-node");
-      node.setAttribute("tabindex", "0");
-      node.setAttribute("role", "button");
-      node.setAttribute("aria-label", `Show details for ${key}`);
+    slider.addEventListener("input", renderCompare);
 
-      node.addEventListener("click", () => showArchDetail(key));
-      node.addEventListener("keydown", (evt) => {
-        if (evt.key === "Enter" || evt.key === " ") {
-          evt.preventDefault();
-          showArchDetail(key);
-        }
-      });
-    });
+    compare.appendChild(compareHeading);
+    compare.appendChild(slider);
+    compare.appendChild(readout);
+    pricingGrid.insertAdjacentElement("afterend", compare);
+
+    renderCompare();
   }
-})();
+
+  /* -------------------------------------------------------------------
+     Interactive architecture diagram (#architecture) — a hand-authored
+     SVG mirroring the README's ASCII flow (app/demo-agent → backend
+     server.js → 
+
+/* … truncated 3811 chars — edit only what you need near the top … */
