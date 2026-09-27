@@ -44,17 +44,29 @@ function replaceRows(tbody, rows) {
   tbody.replaceChildren(...rows);
 }
 
-async function fetchAdmin(path) {
+// `options` follows fetch()'s own shape (method/headers/body) — passing none
+// preserves every existing GET-only call site's behavior exactly.
+async function fetchAdmin(path, options = {}) {
   const token = localStorage.getItem(TOKEN_KEY);
   const res = await fetch(`${BACKEND_URL}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    ...options,
+    headers: { Authorization: `Bearer ${token}`, ...(options.headers || {}) },
   });
   if (res.status === 401) {
     localStorage.removeItem(TOKEN_KEY);
     showLogin('That token was rejected — try again.');
     throw new Error('unauthorized');
   }
-  if (!res.ok) throw new Error(`backend returned ${res.status}`);
+  if (!res.ok) {
+    let message = `backend returned ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body && body.error) message = body.error;
+    } catch {
+      // body wasn't JSON (or was empty) — fall back to the generic message.
+    }
+    throw new Error(message);
+  }
   return res.json();
 }
 
@@ -266,11 +278,130 @@ async function renderPayouts() {
   );
 }
 
+// ---------------------------------------------------------------------
+// Worker pool whitelists (issue #36). Whitelist-gated dispatch for private
+// worker pools is assumed to be backend-owned enforcement (dispatch.js) —
+// this view only manages the whitelist data itself, against an assumed
+// contract (the authoritative shape is the backend agent's to set):
+//   GET    /admin/worker-pools                          -> { pools: [{ id, name, whitelist: string[] }] }
+//   POST   /admin/worker-pools/:poolId/whitelist         { address } -> { whitelist: string[] }
+//   DELETE /admin/worker-pools/:poolId/whitelist/:address            -> { whitelist: string[] }
+// ---------------------------------------------------------------------
+
+let poolsCache = [];
+let selectedPoolId = null;
+
+// Mirrors the StrKey.isValidEd25519PublicKey check main.js already uses for
+// the optional withdraw-beneficiary field — reject malformed input before
+// it ever reaches the backend.
+function isValidWorkerAddress(address) {
+  return /^G[A-Z2-7]{55}$/.test(address);
+}
+
+async function renderPools() {
+  const poolsSelect = document.getElementById('pools-select');
+  const { pools } = await fetchAdmin('/admin/worker-pools');
+  poolsCache = pools || [];
+  poolsSelect.replaceChildren(
+    ...poolsCache.map((p) => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name || p.id;
+      return opt;
+    }),
+  );
+  if (poolsCache.length === 0) {
+    selectedPoolId = null;
+    replaceRows(document.getElementById('pools-body'), [emptyRow(2, 'No worker pools configured yet.')]);
+    return;
+  }
+  selectedPoolId = poolsCache[0].id;
+  poolsSelect.value = selectedPoolId;
+  renderPoolWhitelist();
+}
+
+function renderPoolWhitelist() {
+  const tbody = document.getElementById('pools-body');
+  const pool = poolsCache.find((p) => p.id === selectedPoolId);
+  const whitelist = (pool && pool.whitelist) || [];
+  if (whitelist.length === 0) {
+    replaceRows(tbody, [emptyRow(2, 'No whitelisted workers in this pool yet.')]);
+    return;
+  }
+  replaceRows(
+    tbody,
+    whitelist.map((address) => {
+      const btnRemove = document.createElement('button');
+      btnRemove.textContent = 'Remove';
+      btnRemove.className = 'small';
+      btnRemove.addEventListener('click', () => removeFromWhitelist(address));
+      const actionCell = document.createElement('td');
+      actionCell.appendChild(btnRemove);
+      return row([td(address, { title: address }), actionCell]);
+    }),
+  );
+}
+
+document.getElementById('pools-select').addEventListener('change', (evt) => {
+  selectedPoolId = evt.target.value;
+  renderPoolWhitelist();
+});
+
+document.getElementById('pool-add-form').addEventListener('submit', async (evt) => {
+  evt.preventDefault();
+  const status = document.getElementById('pools-status');
+  const input = document.getElementById('pool-add-address');
+  const address = input.value.trim();
+  if (!selectedPoolId) {
+    status.textContent = 'No pool selected.';
+    return;
+  }
+  if (!isValidWorkerAddress(address)) {
+    status.textContent = 'Not a valid Stellar worker address.';
+    return;
+  }
+  const pool = poolsCache.find((p) => p.id === selectedPoolId);
+  if (pool && (pool.whitelist || []).includes(address)) {
+    status.textContent = 'That address is already whitelisted for this pool.';
+    return;
+  }
+  try {
+    const { whitelist } = await fetchAdmin(`/admin/worker-pools/${encodeURIComponent(selectedPoolId)}/whitelist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address }),
+    });
+    if (pool) pool.whitelist = whitelist;
+    input.value = '';
+    status.textContent = 'Added.';
+    renderPoolWhitelist();
+  } catch (err) {
+    if (err.message !== 'unauthorized') status.textContent = `Could not add address: ${err.message}`;
+  }
+});
+
+async function removeFromWhitelist(address) {
+  const status = document.getElementById('pools-status');
+  try {
+    const { whitelist } = await fetchAdmin(
+      `/admin/worker-pools/${encodeURIComponent(selectedPoolId)}/whitelist/${encodeURIComponent(address)}`,
+      { method: 'DELETE' },
+    );
+    const pool = poolsCache.find((p) => p.id === selectedPoolId);
+    if (pool) pool.whitelist = whitelist;
+    status.textContent = 'Removed.';
+    renderPoolWhitelist();
+  } catch (err) {
+    if (err.message !== 'unauthorized') status.textContent = `Could not remove address: ${err.message}`;
+  }
+}
+
 const VIEWS = {
   overview: renderOverview,
   transactions: renderTransactions,
   workers: renderWorkers,
   payers: renderPayers,
+  pools: renderPools,
   fees: renderFees,
   treasury: renderTreasury,
   kyc: renderKyc,
