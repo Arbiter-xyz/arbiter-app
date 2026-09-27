@@ -179,6 +179,20 @@ function renderQuestionItem(q) {
   qMeta.textContent = parts.filter(Boolean).join(' · ');
   left.append(qText, qMeta);
 
+  // Issue #20: show the actual answer a resolved question paid for, not just
+  // its metadata. Own element (not folded into qMeta) so it reads as "here's
+  // your answer," not another metadata fragment. Defensive against a
+  // resolved-but-no-answer-field response, which shouldn't happen per the
+  // backend but must not break rendering if it does.
+  if (q.status === 'settled' && q.outcome === 'resolved' && q.answer) {
+    const answerEl = document.createElement('p');
+    answerEl.className = 'q-answer';
+    const answerLabel = document.createElement('strong');
+    answerLabel.textContent = 'Answer: ';
+    answerEl.append(answerLabel, q.answer);
+    left.append(answerEl);
+  }
+
   const badge = document.createElement('span');
   const { label, cls } = describeStatus(q);
   badge.className = `badge ${cls}`;

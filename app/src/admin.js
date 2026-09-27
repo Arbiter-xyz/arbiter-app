@@ -1,14 +1,7 @@
+import { truncateAddress, formatRatio } from './format.js';
+
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';
-
-function truncateAddress(id) {
-  if (!id || id.length <= 16 || !id.startsWith('G')) return id || '—';
-  return `${id.slice(0, 6)}…${id.slice(-6)}`;
-}
-
-function formatRatio(ratio) {
-  return ratio === null || ratio === undefined ? '—' : `${(ratio * 100).toFixed(1)}%`;
-}
 
 // Every table below renders data that traces back to caller-controlled
 // input somewhere upstream — a non-address workerId (no auth required,

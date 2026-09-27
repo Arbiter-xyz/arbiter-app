@@ -103,8 +103,17 @@ async function reportToArbiter({ address, arbiterSessionToken, transaction }) {
  * on-chain withdraw button), getArbiterSessionToken() (from ensureSession()
  * — reused here purely to authenticate the /anchor/report call, not the
  * anchor itself), networkPassphrase, and assetCode.
+ *
+ * `autoRelayWithdrawal` (issue #22, optional): `({ amount, beneficiary, memo }) =>
+ * Promise<void>` — when provided, builds/signs/relays the on-chain
+ * withdraw_to() transfer to the anchor's collection account automatically
+ * (through the existing sponsor fee-bump relay) once the worker explicitly
+ * confirms, instead of only ever showing static "send this yourself"
+ * instructions. If it's omitted, or throws, or the anchor's response is
+ * missing/malformed data this can't confidently act on, this falls back to
+ * the manual-instructions display — the safer default.
  */
-export function initBankWithdraw({ button, status, getAddress, getWallet, getArbiterSessionToken, networkPassphrase, assetCode }) {
+export function initBankWithdraw({ button, status, getAddress, getWallet, getArbiterSessionToken, networkPassphrase, assetCode, autoRelayWithdrawal }) {
   let anchorConfigPromise = null;
 
   async function ensureAnchorConfig() {
@@ -143,12 +152,38 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
       await reportToArbiter({ address, arbiterSessionToken: await getArbiterSessionToken(), transaction });
 
       if (transaction.status === 'pending_user_transfer_start') {
+        const canAutoRelay =
+          typeof autoRelayWithdrawal === 'function' &&
+          transaction.withdraw_anchor_account &&
+          transaction.amount_in &&
+          Number(transaction.amount_in) > 0;
+
+        let fallbackPrefix = '';
+        if (canAutoRelay && window.confirm(`Send ${transaction.amount_in} ${assetCode} to the anchor to complete this withdrawal?`)) {
+          try {
+            status.textContent = 'Sending the payment to the anchor…';
+            await autoRelayWithdrawal({
+              amount: transaction.amount_in,
+              beneficiary: transaction.withdraw_anchor_account,
+              memo: transaction.withdraw_memo
+                ? { type: transaction.withdraw_memo_type || 'text', value: transaction.withdraw_memo }
+                : null,
+            });
+            status.textContent = 'Payment sent — waiting for the anchor to confirm receipt…';
+            return;
+          } catch (err) {
+            // Fail to the safer manual-instructions path below rather than
+            // leaving the worker unsure whether the transfer went through.
+            fallbackPrefix = `Automatic transfer failed (${err.message}) — showing manual instructions instead. `;
+          }
+        }
+
         // Built with createElement/textContent, not innerHTML — amount_in,
         // withdraw_anchor_account, and withdraw_memo all come straight from
         // the configured anchor's own SEP-24 API response, a third party
         // this backend doesn't control. A malicious or compromised anchor
         // could otherwise inject markup here.
-        status.textContent = '';
+        status.textContent = fallbackPrefix;
         status.append('Send ');
         const amountStrong = document.createElement('strong');
         amountStrong.textContent = `${transaction.amount_in} ${assetCode}`;

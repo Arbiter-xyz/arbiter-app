@@ -1,4 +1,4 @@
-import { Contract, TransactionBuilder, Address, nativeToScVal, rpc, Transaction } from '@stellar/stellar-sdk';
+import { Contract, TransactionBuilder, Address, nativeToScVal, rpc, Transaction, Memo } from '@stellar/stellar-sdk';
 
 const SOROBAN_RPC_URL = import.meta.env.VITE_SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org';
 const NETWORK_PASSPHRASE = import.meta.env.VITE_NETWORK_PASSPHRASE || 'Test SDF Network ; September 2015';
@@ -10,19 +10,45 @@ function getServer() {
   return server;
 }
 
+/** Builds a Memo instance from the plain {type, value} shape callers pass
+ * around (issue #22) — kept here rather than in anchor.js so anchor.js
+ * doesn't need a hard dependency on the Stellar SDK just to shuttle a
+ * memo through. `type` matches SEP-24's `withdraw_memo_type` values. */
+function buildMemo(memo) {
+  if (!memo || !memo.value) return null;
+  switch (memo.type) {
+    case 'id':
+      return Memo.id(String(memo.value));
+    case 'hash':
+      return Memo.hash(memo.value);
+    case 'return':
+      return Memo.return(memo.value);
+    case 'text':
+    default:
+      return Memo.text(String(memo.value));
+  }
+}
+
 /** Builds a simulated+assembled (but unsigned) contract-call transaction
  * for `sourceAddress` to sign with their own wallet. Uses a nominal fee —
  * the worker never actually pays it, since these calls are always relayed
  * through a /sponsor/* fee-bump endpoint so a zero-XLM worker can stake and
- * withdraw just like they can answer questions. */
-async function buildUnsignedCallXdr(sourceAddress, method, args) {
+ * withdraw just like they can answer questions.
+ *
+ * `memo` (issue #22): optional {type, value} pair, attached to the built
+ * transaction so a withdraw_to() call can carry the destination anchor's
+ * withdraw_memo, letting the anchor attribute the incoming payment to the
+ * right customer. */
+async function buildUnsignedCallXdr(sourceAddress, method, args, memo) {
   const srv = getServer();
   const account = await srv.getAccount(sourceAddress);
   const contract = new Contract(CONTRACT_ID);
-  const tx = new TransactionBuilder(account, { fee: '100', networkPassphrase: NETWORK_PASSPHRASE })
-    .addOperation(contract.call(method, ...args))
-    .setTimeout(60)
-    .build();
+  const builder = new TransactionBuilder(account, { fee: '100', networkPassphrase: NETWORK_PASSPHRASE }).addOperation(
+    contract.call(method, ...args)
+  );
+  const memoInstance = buildMemo(memo);
+  if (memoInstance) builder.addMemo(memoInstance);
+  const tx = builder.setTimeout(60).build();
   const prepared = await srv.prepareTransaction(tx);
   return prepared.toXDR();
 }
@@ -42,13 +68,17 @@ export async function buildWithdrawXdr(workerAddress, amountStroops) {
 }
 
 /** Same withdrawal, routed to `beneficiaryAddress` instead of the signing
- * key — `workerAddress` still signs and still owns the balance drawn down. */
-export async function buildWithdrawToXdr(workerAddress, beneficiaryAddress, amountStroops) {
-  return buildUnsignedCallXdr(workerAddress, 'withdraw_to', [
-    new Address(workerAddress).toScVal(),
-    new Address(beneficiaryAddress).toScVal(),
-    nativeToScVal(BigInt(amountStroops), { type: 'i128' }),
-  ]);
+ * key — `workerAddress` still signs and still owns the balance drawn down.
+ * `memo` (issue #22, optional): {type, value} carried on the transaction so
+ * a withdraw_to() call sent to an anchor's collection account can include
+ * that anchor's required withdraw_memo. */
+export async function buildWithdrawToXdr(workerAddress, beneficiaryAddress, amountStroops, memo) {
+  return buildUnsignedCallXdr(
+    workerAddress,
+    'withdraw_to',
+    [new Address(workerAddress).toScVal(), new Address(beneficiaryAddress).toScVal(), nativeToScVal(BigInt(amountStroops), { type: 'i128' })],
+    memo
+  );
 }
 
 /**
