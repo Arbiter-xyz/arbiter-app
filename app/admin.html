@@ -4,14 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Arbiter — Admin Console</title>
+    <link rel="stylesheet" href="/shared/tokens.css" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <section id="panel-login" class="panel" style="max-width: 420px; margin: 3rem auto">
+    <section id="panel-login" class="panel admin-login-panel">
       <h2>Admin console</h2>
       <p class="muted small">Paste the operator token (ADMIN_TOKEN on the backend) to continue.</p>
       <div class="row">
-        <input id="admin-token-input" type="password" placeholder="Admin token" style="flex: 1; padding: 0.5rem 0.7rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)" />
+        <input id="admin-token-input" class="admin-token-input" type="password" placeholder="Admin token" />
         <button id="btn-admin-login">Enter</button>
       </div>
       <p id="admin-login-status" class="muted small"></p>
@@ -59,11 +60,11 @@
             </div>
             <div class="panel">
               <div class="muted small">Treasury (USDC)</div>
-              <strong id="ov-treasury-usdc">—</strong>
+              <strong id="ov-treasury-usdc" class="admin-balance">—</strong>
             </div>
             <div class="panel">
               <div class="muted small">Treasury (XLM)</div>
-              <strong id="ov-treasury-xlm">—</strong>
+              <strong id="ov-treasury-xlm" class="admin-balance">—</strong>
             </div>
             <div class="panel">
               <div class="muted small">Known workers</div>
