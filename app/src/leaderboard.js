@@ -43,6 +43,7 @@ function renderRow(row, rank) {
 
 async function loadLeaderboard() {
   const tbody = document.getElementById('leaderboard-body');
+  if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="5" class="muted small">Loading…</td></tr>';
 
   try {
@@ -118,6 +119,40 @@ function initActivityFeed() {
   };
 }
 
-document.getElementById('btn-refresh').addEventListener('click', loadLeaderboard);
-loadLeaderboard();
-initActivityFeed();
+// Public route view for the unified app shell (#143). Renders the
+// leaderboard and activity feed for any visitor — no session or wallet
+// required, matching the previous standalone leaderboard.html. The
+// shell mounts this view into its own container, so the DOM ids below
+// are looked up lazily at mount time rather than at module load.
+export function mountLeaderboard(root) {
+  root.innerHTML = `
+    <section class="leaderboard-view">
+      <header class="leaderboard-header">
+        <h1>Leaderboard</h1>
+        <button id="btn-refresh" type="button">Refresh</button>
+      </header>
+      <table class="leaderboard-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Worker</th>
+            <th>Match ratio</th>
+            <th>Answers</th>
+            <th>Stake</th>
+          </tr>
+        </thead>
+        <tbody id="leaderboard-body"></tbody>
+      </table>
+      <section class="activity-section">
+        <h2>Recent settlements</h2>
+        <ul id="activity-feed" class="activity-feed"></ul>
+      </section>
+    </section>
+  `;
+
+  const refreshBtn = root.querySelector('#btn-refresh');
+  if (refreshBtn) refreshBtn.addEventListener('click', loadLeaderboard);
+
+  loadLeaderboard();
+  initActivityFeed();
+}
