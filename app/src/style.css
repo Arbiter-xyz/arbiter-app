@@ -396,3 +396,46 @@ fieldset label {
   padding: 0.2rem 0;
   border-bottom: 1px dashed var(--border);
 }
+
+/* Drop zone (#135) — reusable, currently unused. Markup pattern:
+   <label class="drop-zone" data-state="idle|dragover|error">
+     <input type="file" hidden />
+     <span class="drop-zone-title">Drop a file or click to browse</span>
+     <span class="drop-zone-hint">PNG, JPG up to 5 MB</span>
+   </label>
+   Toggle data-state="dragover" from dragenter/dragleave handlers.
+   Uses theme tokens only, so light and dark branches both apply.
+   Demo: app/dropzone-demo.html */
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 1.5rem 1rem;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--fg);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.drop-zone:hover,
+.drop-zone:focus-within {
+  border-color: var(--accent);
+}
+.drop-zone[data-state="dragover"] {
+  border-color: var(--accent);
+  border-style: solid;
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+}
+.drop-zone[data-state="error"] {
+  border-color: #d64545;
+}
+.drop-zone-title {
+  font-weight: 600;
+}
+.drop-zone-hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
