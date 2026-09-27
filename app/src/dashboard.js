@@ -186,7 +186,93 @@ function renderQuestionItem(q) {
 
   row.append(left, badge);
   li.appendChild(row);
+
+  // Issue #32: a question still inside its undo window gets a live
+  // countdown and a Cancel button, mirroring the worker console's
+  // setInterval-driven timer-bar pattern (main.js's startCountdown()/
+  // el.timerBar) rather than inventing a second countdown UI.
+  if (q.status !== 'settled' && Number.isFinite(q.cancelableUntil) && q.cancelableUntil > Date.now()) {
+    li.appendChild(renderCancelControls(q));
+  }
+
   return li;
+}
+
+/** Renders the countdown + Cancel button for a question still inside its
+ * undo window (`q.cancelableUntil`, an epoch-ms timestamp assumed to be
+ * added to the GET /payers/:address/questions response for an in-progress
+ * question — see issue #32). Wired to the assumed
+ * POST /payers/:address/questions/:questionId/cancel endpoint, reusing the
+ * existing payer session token from ensureSession(). */
+function renderCancelControls(q) {
+  const wrap = document.createElement('div');
+  wrap.className = 'cancel-controls';
+
+  const track = document.createElement('div');
+  track.className = 'timer-track';
+  const bar = document.createElement('div');
+  bar.className = 'timer-bar';
+  track.appendChild(bar);
+
+  const label = document.createElement('p');
+  label.className = 'muted small';
+
+  const btnCancel = document.createElement('button');
+  btnCancel.type = 'button';
+  btnCancel.className = 'secondary';
+  btnCancel.textContent = 'Cancel';
+
+  wrap.append(track, label, btnCancel);
+
+  const total = q.cancelableUntil - Date.now();
+  let handle = null;
+
+  function tick() {
+    const remainingMs = q.cancelableUntil - Date.now();
+    if (remainingMs <= 0) {
+      clearInterval(handle);
+      wrap.remove();
+      return;
+    }
+    const pct = Math.max(0, Math.min(100, (remainingMs / total) * 100));
+    bar.style.width = `${pct}%`;
+    label.textContent = `You can cancel this for ${Math.ceil(remainingMs / 1000)}s`;
+  }
+  tick();
+  handle = setInterval(tick, 250);
+
+  btnCancel.addEventListener('click', async () => {
+    btnCancel.disabled = true;
+    try {
+      const token = await ensureSession();
+      const res = await fetch(
+        `${BACKEND_URL}/payers/${state.address}/questions/${encodeURIComponent(q.questionId)}/cancel`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        }
+      );
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `unexpected status ${res.status}`);
+      clearInterval(handle);
+      wrap.remove();
+      const li = wrap.closest('.question-item');
+      if (li) {
+        const badge = li.querySelector('.badge');
+        if (badge) {
+          badge.className = 'badge badge-refunded';
+          badge.textContent = 'cancelled';
+        }
+      }
+      log(`Cancelled question ${q.questionId}.`);
+    } catch (err) {
+      clearInterval(handle);
+      btnCancel.disabled = false;
+      log(`Could not cancel question ${q.questionId}: ${err.message}`);
+    }
+  });
+
+  return wrap;
 }
 
 function describeStatus(q) {

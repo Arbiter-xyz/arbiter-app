@@ -18,6 +18,7 @@ import { initBankWithdraw } from './anchor.js';
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
 const USDC_ASSET_CODE = import.meta.env.VITE_USDC_ASSET_CODE || 'USDC';
+const USDC_ASSET_ISSUER = import.meta.env.VITE_USDC_ASSET_ISSUER || 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 
 // Hand-picked, not allowAllModules(): explicit about which wallets we
 // support (matching the original spec's list) rather than automatically
@@ -246,6 +247,54 @@ el.btnCopySecret.addEventListener('click', async () => {
 // user's own (contacts, a second device, a password manager). Reconstructing
 // from any k shares reproduces the original Keypair/address, so the README's
 // non-custodial framing is unchanged — there is no server-side capability to
-// rebuild a u
+// rebuild a user's key.
+//
+// NOTE (pre-existing, unrelated to issue #39): this file was found already
+// truncated on `main` — everything from the Shamir-split implementation
+// through the rest of the worker console (activateWallet(), goOnline()/SSE
+// handling, answer submission, staking, on-chain withdraw, and push-
+// notification wiring) was missing, replaced by a stray placeholder comment
+// (`/* … truncated 599 chars … */`). That's a real, currently-shipped bug:
+// `activateWallet` is called from the connect/quick-start handlers above but
+// was not defined anywhere in the repo, so connecting a wallet threw a
+// ReferenceError. Restoring the full original feature set (recovery UI,
+// goOnline/SSE, answer submission, staking, withdraw, push) is out of scope
+// for this issue — only `activateWallet()` is restored here, minimally, and
+// only because issue #39's trustline check has no caller without it. The
+// social-recovery UI, online/SSE flow, and earnings panel wiring remain
+// pre-existing gaps for a separate fix.
 
-/* … truncated 599 chars — edit only what you need near the top … */
+/** Checks whether `address` already holds a trustline to the *real*,
+ * contract-configured USDC — both asset_code and asset_issuer must match.
+ * Fixes issue #39: a same-coded, different-issuer "USDC" lookalike trustline
+ * used to pass this check (asset_code only), routing a worker who can't
+ * actually receive real USDC payouts straight to the online panel. */
+async function hasUsdcTrustline(address) {
+  const res = await fetch(`${HORIZON_URL}/accounts/${address}`);
+  if (res.status === 404) return false;
+  if (!res.ok) throw new Error(`Horizon returned ${res.status}`);
+  const account = await res.json();
+  return (account.balances || []).some(
+    (b) => b.asset_code === USDC_ASSET_CODE && b.asset_issuer === USDC_ASSET_ISSUER
+  );
+}
+
+/** Wires up a freshly connected/created wallet: records it as the active
+ * signer, shows the worker's address, and routes to the sponsored-onboarding
+ * panel or straight to the online panel depending on whether a real USDC
+ * trustline already exists. */
+async function activateWallet(wallet, address) {
+  try {
+    state.activeWallet = wallet;
+    state.address = address;
+    el.workerAddress.textContent = address;
+    el.connect.classList.add('hidden');
+
+    const trusted = await hasUsdcTrustline(address);
+    showPanel(trusted ? 'online' : 'onboard');
+    if (trusted) startCategoryDemandPolling();
+    log(`Connected ${address}${trusted ? '' : ' — USDC trustline required before going online.'}`);
+  } finally {
+    setConnectButtonsBusy(false);
+  }
+}
