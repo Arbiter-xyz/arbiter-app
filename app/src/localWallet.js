@@ -18,6 +18,13 @@ import { Keypair, TransactionBuilder, Networks } from '@stellar/stellar-sdk';
  * entirely in this module — no share, and never the secret, is sent to the
  * backend, so the non-custodial trust model above is unchanged. Arbiter's
  * backend has no new capability to reconstruct a user's key.
+ *
+ * The same keypair is also reused by the Chrome/Firefox extension worker
+ * console (issue #91): the extension background service worker has no
+ * `localStorage`, so it passes `chrome.storage.local` (or any async
+ * get/set/remove store) as `storage` and gets the identical
+ * {getAddress, signTransaction} shape. The secret is still never sent to
+ * the backend — only the signed challenge/response is.
  */
 const STORAGE_KEY = 'arbiter_local_wallet_secret';
 
@@ -183,17 +190,6 @@ export function combineShares(shares) {
 export function recoverKeypairFromShares(shares) {
   return Keypair.fromSecret(combineShares(shares));
 }
-
-export function hasLocalWallet() {
-  return !!localStorage.getItem(STORAGE_KEY);
- * The same keypair is also reused by the Chrome/Firefox extension worker
- * console (issue #91): the extension background service worker has no
- * `localStorage`, so it passes `chrome.storage.local` (or any async
- * get/set/remove store) as `storage` and gets the identical
- * {getAddress, signTransaction} shape. The secret is still never sent to
- * the backend — only the signed challenge/response is.
- */
-const STORAGE_KEY = 'arbiter_local_wallet_secret';
 
 /** Resolves the storage backend: the default browser `localStorage` for the
  * web app, or an injected async store (e.g. `chrome.storage.local`) for the

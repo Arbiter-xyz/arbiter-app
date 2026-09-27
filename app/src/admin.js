@@ -90,33 +90,71 @@ async function renderOverview() {
   document.getElementById('ov-payers').textContent = payers.payers.length;
 }
 
+// Pagination (issue #18): the backend's listTransactions({ limit, offset })
+// already supports paging past the first page — this view just never
+// passed offset. Only Transactions gets this treatment for now; /admin/
+// workers and /admin/payers haven't been confirmed to support offset the
+// same way, so don't guess at that here.
+const TX_PAGE_SIZE = 100;
+let txOffset = 0;
+
+function renderTransactionRow(t) {
+  const badge = document.createElement('span');
+  badge.className = `badge badge-${t.status === 'settled' ? 'resolved' : 'pending'}`;
+  badge.textContent = t.status || '—';
+  const statusCell = document.createElement('td');
+  statusCell.appendChild(badge);
+
+  return row([
+    td(truncateAddress(String(t.questionId)), { title: t.questionId }),
+    td(truncateAddress(t.payer), { title: t.payer || '' }),
+    td(`${t.amountStroops ? (Number(t.amountStroops) / 1e7).toFixed(2) : '—'} USDC`),
+    statusCell,
+    td(t.outcome || '—'),
+    td(t.createdAt ? new Date(t.createdAt).toLocaleString() : '—', { className: 'muted small' }),
+  ]);
+}
+
+function updateTxLoadMoreVisibility(lastPageCount) {
+  const btn = document.getElementById('btn-tx-load-more');
+  if (!btn) return;
+  // A page shorter than the page size means there's nothing left to page
+  // through.
+  btn.classList.toggle('hidden', lastPageCount < TX_PAGE_SIZE);
+}
+
 async function renderTransactions() {
+  txOffset = 0;
   const tbody = document.getElementById('tx-body');
-  const { transactions } = await fetchAdmin('/admin/transactions?limit=100');
+  const { transactions } = await fetchAdmin(`/admin/transactions?limit=${TX_PAGE_SIZE}&offset=0`);
   if (transactions.length === 0) {
     replaceRows(tbody, [emptyRow(6, 'No transactions yet.')]);
-    return;
+  } else {
+    replaceRows(tbody, transactions.map(renderTransactionRow));
   }
-  replaceRows(
-    tbody,
-    transactions.map((t) => {
-      const badge = document.createElement('span');
-      badge.className = `badge badge-${t.status === 'settled' ? 'resolved' : 'pending'}`;
-      badge.textContent = t.status || '—';
-      const statusCell = document.createElement('td');
-      statusCell.appendChild(badge);
-
-      return row([
-        td(truncateAddress(String(t.questionId)), { title: t.questionId }),
-        td(truncateAddress(t.payer), { title: t.payer || '' }),
-        td(`${t.amountStroops ? (Number(t.amountStroops) / 1e7).toFixed(2) : '—'} USDC`),
-        statusCell,
-        td(t.outcome || '—'),
-        td(t.createdAt ? new Date(t.createdAt).toLocaleString() : '—', { className: 'muted small' }),
-      ]);
-    }),
-  );
+  txOffset = transactions.length;
+  updateTxLoadMoreVisibility(transactions.length);
 }
+
+async function loadMoreTransactions() {
+  const btn = document.getElementById('btn-tx-load-more');
+  const tbody = document.getElementById('tx-body');
+  btn.disabled = true;
+  try {
+    const { transactions } = await fetchAdmin(`/admin/transactions?limit=${TX_PAGE_SIZE}&offset=${txOffset}`);
+    // Append rather than re-rendering the whole table, so already-rendered
+    // rows and scroll position aren't disturbed.
+    for (const t of transactions) tbody.appendChild(renderTransactionRow(t));
+    txOffset += transactions.length;
+    updateTxLoadMoreVisibility(transactions.length);
+  } catch (err) {
+    if (err.message !== 'unauthorized') console.error('failed to load more transactions:', err);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('btn-tx-load-more')?.addEventListener('click', loadMoreTransactions);
 
 async function renderWorkers() {
   const tbody = document.getElementById('workers-body');
@@ -304,6 +342,15 @@ document.getElementById('btn-admin-login').addEventListener('click', () => {
   localStorage.setItem(TOKEN_KEY, token);
   showShell();
   selectView('overview');
+});
+
+// Issue #17: this console holds a real, privileged bearer token — give it
+// an in-app way to end that session, instead of the token persisting in
+// localStorage forever with no way to clear it short of devtools.
+document.getElementById('btn-admin-logout').addEventListener('click', () => {
+  localStorage.removeItem(TOKEN_KEY);
+  loaded.clear(); // so a previously-loaded view is refetched, not shown stale, next login
+  showLogin();
 });
 
 if (localStorage.getItem(TOKEN_KEY)) {
