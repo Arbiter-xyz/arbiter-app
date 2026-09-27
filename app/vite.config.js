@@ -14,14 +14,15 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      // Multi-page build: the worker console (index.html) and the
-      // read-only buyer dashboard (dashboard.html) are separate front
-      // doors for separate audiences, but ship from the same static site.
+      // Multi-page build: index.html is now the unified, role-aware shell
+      // for both the worker console and the (former dashboard.html) buyer
+      // dashboard — one wallet connection, switchable views (issue #34) —
+      // plus the separate public leaderboard and operator admin console.
       input: {
         main: resolve(__dirname, 'index.html'),
-        dashboard: resolve(__dirname, 'dashboard.html'),
         leaderboard: resolve(__dirname, 'leaderboard.html'),
         admin: resolve(__dirname, 'admin.html'),
+        customer: resolve(__dirname, 'customer.html'),
       },
       output: {
         // Real per-adapter code splitting: each wallet-adapter SDK is loaded

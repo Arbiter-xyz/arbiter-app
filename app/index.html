@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Arbiter — Worker Console</title>
+    <title>Arbiter</title>
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" href="#5b4cf0" />
     <link rel="stylesheet" href="/src/style.css" />
@@ -11,10 +11,10 @@
   <body>
     <main class="app">
       <header>
-        <h1>Arbiter <span class="tag">worker console</span></h1>
+        <h1>Arbiter</h1>
         <p class="sub">
-          Answer paid questions, get settled on-chain automatically.
-          <a href="/dashboard.html">Buyer dashboard →</a>
+          Answer paid questions as a worker, or track what you've paid for as a payer — one
+          wallet connection, both views.
           <a href="/leaderboard.html">Leaderboard →</a>
           <a href="/admin.html">Admin →</a>
         </p>
@@ -28,6 +28,11 @@
           it's just stored locally instead of in an extension), zero setup, zero XLM required.
         </p>
       </section>
+
+      <nav id="role-tabs" class="role-tabs hidden">
+        <button id="role-tab-worker" class="role-tab active" data-role="worker" type="button">Worker</button>
+        <button id="role-tab-payer" class="role-tab" data-role="payer" type="button">Payer</button>
+      </nav>
 
       <section id="panel-backup" class="panel hidden warning">
         <h2>⚠ Back up your quick-start key</h2>
@@ -46,6 +51,7 @@
         <p class="muted small" id="backup-copy-status"></p>
       </section>
 
+      <div id="view-worker">
       <section id="panel-onboard" class="panel hidden">
         <h2>One more step</h2>
         <p>Your wallet has no USDC trustline yet. Onboarding is sponsored — free, no XLM required.</p>
@@ -153,6 +159,38 @@
           <button id="btn-answer" type="submit">Submit answer</button>
         </form>
       </section>
+      </div>
+
+      <div id="view-payer" class="hidden">
+        <section id="panel-payer-dashboard" class="panel">
+          <div class="row">
+            <div>
+              <strong id="payer-address"></strong>
+              <div class="muted small">connected</div>
+            </div>
+            <button id="btn-payer-refresh" class="secondary">Refresh</button>
+          </div>
+
+          <div class="dashboard-stats">
+            <div>
+              <div class="muted small">Total spent</div>
+              <strong id="payer-stat-spend">0.00 USDC</strong>
+            </div>
+            <div>
+              <div class="muted small">Questions tracked</div>
+              <strong id="payer-stat-count">0</strong>
+            </div>
+            <div>
+              <div class="muted small">Success rate</div>
+              <strong id="payer-stat-success">—</strong>
+            </div>
+          </div>
+
+          <ul id="payer-question-list" class="question-list">
+            <li class="muted small">No questions yet.</li>
+          </ul>
+        </section>
+      </div>
 
       <section class="panel">
         <h2>Activity log</h2>

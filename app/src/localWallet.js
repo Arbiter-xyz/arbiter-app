@@ -18,6 +18,13 @@ import { Keypair, TransactionBuilder, Networks } from '@stellar/stellar-sdk';
  * entirely in this module — no share, and never the secret, is sent to the
  * backend, so the non-custodial trust model above is unchanged. Arbiter's
  * backend has no new capability to reconstruct a user's key.
+ *
+ * The same keypair is also reused by the Chrome/Firefox extension worker
+ * console (issue #91): the extension background service worker has no
+ * `localStorage`, so it passes `chrome.storage.local` (or any async
+ * get/set/remove store) as `storage` and gets the identical
+ * {getAddress, signTransaction} shape. The secret is still never sent to
+ * the backend — only the signed challenge/response is.
  */
 const STORAGE_KEY = 'arbiter_local_wallet_secret';
 
@@ -184,17 +191,6 @@ export function recoverKeypairFromShares(shares) {
   return Keypair.fromSecret(combineShares(shares));
 }
 
-export function hasLocalWallet() {
-  return !!localStorage.getItem(STORAGE_KEY);
- * The same keypair is also reused by the Chrome/Firefox extension worker
- * console (issue #91): the extension background service worker has no
- * `localStorage`, so it passes `chrome.storage.local` (or any async
- * get/set/remove store) as `storage` and gets the identical
- * {getAddress, signTransaction} shape. The secret is still never sent to
- * the backend — only the signed challenge/response is.
- */
-const STORAGE_KEY = 'arbiter_local_wallet_secret';
-
 /** Resolves the storage backend: the default browser `localStorage` for the
  * web app, or an injected async store (e.g. `chrome.storage.local`) for the
  * extension service worker. */
@@ -215,26 +211,99 @@ export function clearLocalWallet(storage) {
   resolveStorage(storage).removeItem(STORAGE_KEY);
 }
 
+// --- At-rest encryption for the quick-start secret (issue #29) -------------
+//
+// Previously the raw Stellar secret was written straight to storage, in the
+// clear — disclosed as a known tradeoff in this module's original comment,
+// but one worth narrowing rather than accepting outright. Now it's wrapped
+// with AES-GCM, keyed by a PIN/passphrase the user enters once per session
+// (held only in `cachedSecret`/in-memory here — the PIN itself is never
+// stored anywhere, including here, past the synchronous call that derives
+// the key from it).
+//
+// This raises the bar meaningfully against casual localStorage scraping — a
+// stolen browser-profile backup, or a non-JS-executing extension/malware
+// that only reads storage. It does NOT defend against a same-origin XSS
+// with full JS execution, which could intercept the plaintext secret at
+// unlock time regardless (the PIN would be typed into the same compromised
+// page). That's a different, explicit non-goal here — see the CSP issue,
+// Arbiter-xyz/arbiter-backend#42 — not something silently implied as fixed.
+const ENCRYPTED_PREFIX = 'arbiter-enc-v1:';
+const PBKDF2_ITERATIONS = 250_000;
+
+async function deriveAesKey(pin, saltBytes) {
+  const baseKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: saltBytes, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+}
+
+async function encryptSecretWithPin(secret, pin) {
+  const salt = randomBytes(16);
+  const iv = randomBytes(12);
+  const key = await deriveAesKey(pin, salt);
+  const ciphertext = new Uint8Array(
+    await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(secret)),
+  );
+  return `${ENCRYPTED_PREFIX}${bytesToHex(salt)}.${bytesToHex(iv)}.${bytesToHex(ciphertext)}`;
+}
+
+async function decryptSecretWithPin(stored, pin) {
+  const [saltHex, ivHex, ciphertextHex] = stored.slice(ENCRYPTED_PREFIX.length).split('.');
+  const key = await deriveAesKey(pin, hexToBytes(saltHex));
+  try {
+    const plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: hexToBytes(ivHex) }, key, hexToBytes(ciphertextHex));
+    return new TextDecoder().decode(plaintext);
+  } catch {
+    throw new Error('incorrect PIN, or the stored wallet data is corrupted');
+  }
+}
+
+// In-memory only for the lifetime of this page — never written to storage.
+// Lets getLocalWalletSecret() (the backup/reveal panel) return the
+// plaintext without re-prompting for the PIN on every reveal/copy click.
+let cachedSecret = null;
+
 /** Returns the raw secret for a one-time "back this up somewhere safe"
  * reveal — this wallet holds real staked USDC and accrued earnings, and
  * there is no recovery path if localStorage is cleared (browser reset,
- * private browsing, different device). Never logged, never sent to the
- * backend — only ever read back out for the user to copy themselves. */
-export function getLocalWalletSecret(storage) {
-  return resolveStorage(storage).getItem(STORAGE_KEY);
+ * private browsing, different device) or the PIN is forgotten (there is no
+ * "forgot PIN" recovery — that's the whole point of it not being stored).
+ * Never logged, never sent to the backend — only ever read back out for the
+ * user to copy themselves. Returns null until the wallet has been unlocked
+ * once this session via createOrLoadLocalWallet(). */
+export function getLocalWalletSecret() {
+  return cachedSecret;
 }
 
 /** Returns an object matching the same {getAddress, signTransaction} shape
  * as StellarWalletsKit, so the rest of the app doesn't need to know which
- * wallet is active. Pass `storage` (e.g. `chrome.storage.local`) to reuse
+ * wallet is active. `pin` protects the secret at rest (issue #29) — the
+ * same PIN must be supplied on every call for a given browser/storage, or
+ * decryption fails. Pass `storage` (e.g. `chrome.storage.local`) to reuse
  * the same keypair from the extension background service worker. */
-export function createOrLoadLocalWallet(storage) {
+export async function createOrLoadLocalWallet(pin, storage) {
+  if (!pin) throw new Error('a PIN/passphrase is required to unlock or create the quick-start wallet');
   const store = resolveStorage(storage);
-  let secret = store.getItem(STORAGE_KEY);
-  if (!secret) {
+  const stored = store.getItem(STORAGE_KEY);
+  let secret;
+  if (!stored) {
     secret = Keypair.random().secret();
-    store.setItem(STORAGE_KEY, secret);
+    store.setItem(STORAGE_KEY, await encryptSecretWithPin(secret, pin));
+  } else if (stored.startsWith(ENCRYPTED_PREFIX)) {
+    secret = await decryptSecretWithPin(stored, pin);
+  } else {
+    // Pre-existing plaintext wallet from before at-rest encryption was
+    // added — migrate it to encrypted storage transparently on next
+    // unlock, rather than leaving it silently exposed forever.
+    secret = stored;
+    store.setItem(STORAGE_KEY, await encryptSecretWithPin(secret, pin));
   }
+  cachedSecret = secret;
   const keypair = Keypair.fromSecret(secret);
 
   return {

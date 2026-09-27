@@ -35,8 +35,12 @@ jobs:
       - name: Enforce bundle-size budget
         run: node scripts/check-bundle-budget.mjs
         working-directory: app
-      - name: Dependency audit (fails only on high/critical)
-        run: npm audit --omit=dev --audit-level=high
+      # Issue #28: raw `npm audit --audit-level=high` was failing on advisories
+      # rooted entirely in unused Trezor/Solana wallet-adapter dependency trees
+      # (dead code — see scripts/check-audit.mjs for the verification and the
+      # reasoning for filtering rather than silencing this step outright).
+      - name: Dependency audit (fails on anything not confirmed unused-adapter dead code)
+        run: node scripts/check-audit.mjs
         working-directory: app
 
   e2e:

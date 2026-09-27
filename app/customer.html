@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arbiter — API Customer Dashboard</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <section id="panel-login" class="panel" style="max-width: 420px; margin: 3rem auto">
+      <h2>API customer dashboard</h2>
+      <p class="muted small">Paste your Arbiter API key to see your balance, spend, and usage.</p>
+      <div class="row">
+        <input id="customer-key-input" type="password" placeholder="API key" style="flex: 1; padding: 0.5rem 0.7rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)" />
+        <button id="btn-customer-login">Enter</button>
+      </div>
+      <p id="customer-login-status" class="muted small"></p>
+    </section>
+
+    <main id="customer-shell" class="app hidden">
+      <header>
+        <h1>Arbiter <span class="tag">API customer</span></h1>
+        <p class="sub">
+          <strong id="customer-account-id"></strong>
+          <button id="btn-customer-logout" class="secondary" type="button" style="margin-left: 0.75rem">Log out</button>
+        </p>
+      </header>
+
+      <section class="panel">
+        <h2>Balance</h2>
+        <strong id="customer-balance">—</strong>
+        <p class="muted small">Prepaid credit remaining on this API account.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Spend over time</h2>
+        <p id="spend-status" class="muted small">Loading…</p>
+        <ul id="spend-list" class="spend-list"></ul>
+      </section>
+
+      <section class="panel">
+        <h2>Success rate</h2>
+        <p id="success-status" class="muted small">Loading…</p>
+        <div class="dashboard-stats" id="success-stats" style="display: none">
+          <div>
+            <div class="muted small">Resolved</div>
+            <strong id="success-resolved">0</strong>
+          </div>
+          <div>
+            <div class="muted small">Refunded</div>
+            <strong id="success-refunded">0</strong>
+          </div>
+          <div>
+            <div class="muted small">Success rate</div>
+            <strong id="success-rate">—</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Spend by category</h2>
+        <p id="category-status" class="muted small">Loading…</p>
+        <table class="leaderboard-table" id="category-table" style="display: none">
+          <thead><tr><th>Category</th><th>Questions</th><th>Spend</th></tr></thead>
+          <tbody id="category-body"></tbody>
+        </table>
+      </section>
+    </main>
+
+    <script type="module" src="/src/customer.js"></script>
+  </body>
+</html>
