@@ -169,6 +169,44 @@ button.secondary {
   flex-direction: column;
   gap: 0.5rem;
 }
+
+/* Spend-over-time sparkline (issue #31) — a plain bar list, deliberately
+   not a charting library; see customer.js. */
+.spend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+}
+.spend-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.spend-date {
+  width: 6rem;
+  flex-shrink: 0;
+}
+.spend-track {
+  flex: 1;
+  height: 0.6rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 60%, transparent);
+  overflow: hidden;
+}
+.spend-bar {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+}
+.spend-value {
+  width: 5.5rem;
+  flex-shrink: 0;
+  text-align: right;
+}
 .question-item {
   padding: 0.65rem 0.8rem;
   border: 1px solid var(--border);
@@ -265,6 +303,34 @@ button.secondary {
   flex: 1;
   padding: 1.75rem 2rem 4rem;
   max-width: 1000px;
+}
+
+/* Role-aware shell (issue #34): switches between the Worker and Payer
+   views for a single connected address, without reconnecting. */
+.role-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.role-tab {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg);
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.role-tab:hover {
+  background: color-mix(in srgb, var(--border) 40%, transparent);
+}
+
+.role-tab.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
 }
 
 .admin-view {
