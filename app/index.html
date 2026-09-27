@@ -129,7 +129,7 @@
             <strong id="stake-amount">0.00 USDC</strong>
           </div>
           <form id="stake-form" class="inline-form">
-            <input id="stake-input" type="number" min="0.01" step="0.01" placeholder="Amount" />
+            <input id="stake-input" type="number" min="0.01" step="0.0000001" placeholder="Amount" />
             <button id="btn-stake" type="submit">Stake</button>
           </form>
         </div>
@@ -148,6 +148,7 @@
         <h2 id="question-heading">Incoming question</h2>
         <div class="timer-track"><div class="timer-bar" id="timer-bar"></div></div>
         <p id="question-text"></p>
+        <p id="answer-suggested-badge" class="muted small hidden">Suggested — edit or replace before submitting</p>
         <form id="answer-form">
           <input id="answer-input" type="text" placeholder="Type your answer…" autocomplete="off" />
           <button id="btn-answer" type="submit">Submit answer</button>

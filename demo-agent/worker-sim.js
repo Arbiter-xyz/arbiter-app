@@ -176,11 +176,12 @@ async function autoWithdrawLoop() {
   }
 }
 
-async function main() {
-  const token = await ensureSession();
-  await stakeIfRequested();
-  autoWithdrawLoop().catch((err) => console.error(`[${workerId}] auto-withdraw loop crashed:`, err.message));
-
+/**
+ * Opens exactly one SSE connection and consumes it until the stream ends
+ * or errors. Returns normally on a clean end (server closed the stream);
+ * throws on a connect failure so the caller's reconnect loop can back off.
+ */
+async function connectAndConsumeOnce(token) {
   const qs = new URLSearchParams({ worker: workerId });
   if (categories.length) qs.set('categories', categories.join(','));
   if (token) qs.set('token', token);
@@ -198,6 +199,52 @@ async function main() {
   }
 
   console.log(`[${workerId}] dispatch channel closed`);
+}
+
+/**
+ * Issue #15: worker-sim.js is meant to run unattended for extended periods
+ * (staking, then periodically auto-withdrawing) — a transient disconnect
+ * (server restart, an ordinary network blip, the same kind of proxy
+ * behavior Round 8 found and fixed for the answer request) used to end the
+ * process outright, with no reconnect and no human watching the terminal to
+ * restart it. This wraps the connect-and-consume loop above in a reconnect
+ * loop with an increasing backoff (capped), re-running ensureSession()
+ * first since the cached token may have expired or the backend may have
+ * restarted and lost it. stakeIfRequested()/autoWithdrawLoop() are started
+ * once, outside this loop, and are never re-invoked on reconnect.
+ */
+const RECONNECT_BASE_DELAY_MS = 2000;
+const RECONNECT_MAX_DELAY_MS = 30_000;
+
+async function runWithReconnect() {
+  let attempt = 0;
+  for (;;) {
+    try {
+      const token = await ensureSession();
+      await connectAndConsumeOnce(token);
+      // Clean end (server closed the stream normally): treat like any other
+      // disconnect and reconnect, rather than letting the process exit.
+      attempt = 0;
+    } catch (err) {
+      console.error(`[${workerId}] dispatch channel error/disconnected:`, err.message);
+      // The cached session token may no longer be valid (expired, or the
+      // backend restarted and lost it) — force ensureSession() to
+      // re-authenticate on the next attempt rather than retrying with a
+      // token that's likely stale.
+      sessionToken = null;
+    }
+
+    const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** attempt, RECONNECT_MAX_DELAY_MS);
+    attempt += 1;
+    console.log(`[${workerId}] reconnecting in ${Math.round(delay / 1000)}s…`);
+    await sleep(delay);
+  }
+}
+
+async function main() {
+  await stakeIfRequested();
+  autoWithdrawLoop().catch((err) => console.error(`[${workerId}] auto-withdraw loop crashed:`, err.message));
+  await runWithReconnect();
 }
 
 main().catch((err) => {

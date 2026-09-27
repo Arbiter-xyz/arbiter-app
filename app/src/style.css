@@ -381,6 +381,13 @@ fieldset label {
   color: var(--fg);
 }
 
+/* Issue #33: marks an unreviewed, dispatched draft answer so a worker can't
+   mistake it for something already sent. Cleared as soon as they edit it. */
+#answer-input.answer-suggested {
+  border-color: var(--accent);
+  background: rgba(91, 76, 240, 0.08);
+}
+
 #log {
   list-style: none;
   margin: 0.5rem 0 0;
