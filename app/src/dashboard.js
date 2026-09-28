@@ -12,6 +12,7 @@ import {
 import { createOrLoadLocalWallet } from './localWallet.js';
 import { renderMarkdown } from './markdown.js';
 import { createStarButton, filterStarred, mountStarredFilter } from './starredQuestions.js';
+import { filterQuestions } from './questionFilter.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
@@ -34,10 +35,12 @@ const el = {
   statCount: document.getElementById('stat-count'),
   statSuccess: document.getElementById('stat-success'),
   questionList: document.getElementById('question-list'),
+  questionSearch: document.getElementById('question-search'),
+  questionStatus: document.getElementById('question-status'),
   log: document.getElementById('log'),
 };
 
-const state = { address: null, activeWallet: null, sessionToken: null, sessionExpiresAt: 0, questions: [], starredOnly: false };
+const state = { address: null, activeWallet: null, sessionToken: null, sessionExpiresAt: 0, data: null, starredOnly: false };
 
 mountStarredFilter(el.questionList, (checked) => {
   state.starredOnly = checked;
@@ -147,29 +150,45 @@ async function loadQuestions() {
 }
 
 function render(data) {
+  state.data = data;
+  // Stats always reflect the full history, never the filtered subset.
   el.statSpend.textContent = `${data.totalSpend} USDC`;
   el.statCount.textContent = String(data.totalTracked);
   el.statSuccess.textContent = data.successRate === null ? '—' : `${Math.round(data.successRate * 100)}%`;
-
-  state.questions = data.questions;
   renderQuestionList();
 }
 
+/**
+ * Re-renders the list from the retained data — no refetch, no session.
+ * Search/status narrow the list first; "Starred only" applies on top.
+ */
 function renderQuestionList() {
-  const questions = state.starredOnly ? filterStarred(state.questions, state.address) : state.questions;
+  if (!state.data) return;
+  const all = state.data.questions;
+  const matching = filterQuestions(all, { query: el.questionSearch.value, status: el.questionStatus.value });
+  const visible = state.starredOnly ? filterStarred(matching, state.address) : matching;
+
   el.questionList.innerHTML = '';
-  if (questions.length === 0) {
+  if (visible.length === 0) {
     const li = document.createElement('li');
     li.className = 'muted small';
-    li.textContent = state.starredOnly && state.questions.length > 0 ? 'No starred questions.' : 'No questions yet.';
+    li.textContent =
+      all.length === 0
+        ? 'No questions yet.'
+        : state.starredOnly && matching.length > 0
+          ? 'No starred questions.'
+          : 'No questions match your search.';
     el.questionList.appendChild(li);
     return;
   }
 
-  for (const q of questions) {
+  for (const q of visible) {
     el.questionList.appendChild(renderQuestionItem(q));
   }
 }
+
+el.questionSearch.addEventListener('input', renderQuestionList);
+el.questionStatus.addEventListener('change', renderQuestionList);
 
 function renderQuestionItem(q) {
   const li = document.createElement('li');

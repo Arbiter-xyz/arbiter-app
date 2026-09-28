@@ -164,6 +164,24 @@ button.secondary {
   font-size: 1.1rem;
 }
 
+.question-filters {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+.question-filters input,
+.question-filters select {
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+}
+.question-filters input {
+  flex: 1;
+  min-width: 0;
+}
+
 .question-list {
   display: flex;
   flex-direction: column;

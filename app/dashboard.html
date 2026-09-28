@@ -47,6 +47,21 @@
           </div>
         </div>
 
+        <div class="question-filters">
+          <input
+            id="question-search"
+            type="search"
+            placeholder="Search questions or IDs…"
+            aria-label="Search questions"
+          />
+          <select id="question-status" aria-label="Filter by status">
+            <option value="all">All statuses</option>
+            <option value="in-progress">In progress</option>
+            <option value="resolved">Resolved</option>
+            <option value="refunded">Refunded</option>
+          </select>
+        </div>
+
         <ul id="question-list" class="question-list">
           <li class="muted small" id="question-list-empty">No questions yet.</li>
         </ul>
