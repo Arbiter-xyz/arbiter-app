@@ -61,3 +61,6 @@ executions, transaction links included.)
 
 <!-- handsoff-issue-154 -->
 - #154: Build a real docs page — README link is a stopgap, not documentation
+
+<!-- handsoff-issue-155 -->
+- #155: Give the leaderboard and future red-team results a real place in the marketing site
