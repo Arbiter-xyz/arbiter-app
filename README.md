@@ -56,3 +56,8 @@ run predates this repo's split; see "Round 6" in the archived
 [`arbiter`](https://github.com/rudeus112266/arbiter) monorepo README for
 the full run — real `ask.js`/`worker-sim.js`/`sponsored-demo.js`
 executions, transaction links included.)
+
+## Handsoff notes
+
+<!-- handsoff-issue-154 -->
+- #154: Build a real docs page — README link is a stopgap, not documentation
