@@ -32,6 +32,8 @@ const el = {
   statSpend: document.getElementById('stat-spend'),
   statCount: document.getElementById('stat-count'),
   statSuccess: document.getElementById('stat-success'),
+  spendCalendarGrid: document.getElementById('spend-calendar-grid'),
+  spendCalendarTotal: document.getElementById('spend-calendar-total'),
   questionList: document.getElementById('question-list'),
   log: document.getElementById('log'),
 };
@@ -144,6 +146,7 @@ function render(data) {
   el.statSpend.textContent = `${data.totalSpend} USDC`;
   el.statCount.textContent = String(data.totalTracked);
   el.statSuccess.textContent = data.successRate === null ? '—' : `${Math.round(data.successRate * 100)}%`;
+  renderSpendCalendar(data.questions, data.totalSpend);
 
   el.questionList.innerHTML = '';
   if (data.questions.length === 0) {
@@ -157,6 +160,33 @@ function render(data) {
   for (const q of data.questions) {
     el.questionList.appendChild(renderQuestionItem(q));
   }
+}
+
+function renderSpendCalendar(questions, totalSpend) {
+  const daily = new Map();
+  for (const question of questions) {
+    const dateValue = question.createdAt || question.created_at || question.timestamp;
+    const date = dateValue ? new Date(dateValue) : null;
+    const amount = Number(question.amount || 0);
+    if (!date || Number.isNaN(date.valueOf()) || !Number.isFinite(amount)) continue;
+    const day = date.toISOString().slice(0, 10);
+    daily.set(day, (daily.get(day) || 0) + amount);
+  }
+  const entries = [...daily.entries()].sort(([left], [right]) => left.localeCompare(right)).slice(-84);
+  const max = Math.max(...entries.map(([, amount]) => amount), 1);
+  el.spendCalendarGrid.replaceChildren();
+  for (const [day, amount] of entries) {
+    const cell = document.createElement('div');
+    cell.className = 'spend-calendar-cell';
+    cell.style.setProperty('--spend-intensity', String(Math.max(0.12, amount / max)));
+    cell.setAttribute('role', 'listitem');
+    cell.title = `${day}: ${amount.toFixed(2)} USDC`;
+    cell.setAttribute('aria-label', cell.title);
+    cell.textContent = day.slice(8);
+    el.spendCalendarGrid.append(cell);
+  }
+  if (!entries.length) el.spendCalendarGrid.textContent = 'No dated question records are available yet.';
+  el.spendCalendarTotal.textContent = `${Number(totalSpend || 0).toFixed(2)} USDC total`;
 }
 
 function renderQuestionItem(q) {
