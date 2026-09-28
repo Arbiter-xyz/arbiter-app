@@ -7,6 +7,9 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
+    <div class="accessibility-controls admin-accessibility-controls" aria-label="Accessibility controls">
+      <button type="button" class="secondary" data-font-decrease aria-label="Decrease text size">A−</button><output class="muted small" data-font-status>100% text size</output><button type="button" class="secondary" data-font-increase aria-label="Increase text size">A+</button><button type="button" class="secondary" data-contrast-toggle aria-pressed="false">High contrast</button>
+    </div>
     <section id="panel-login" class="panel" style="max-width: 420px; margin: 3rem auto">
       <h2>Admin console</h2>
       <p class="muted small">Paste the operator token (ADMIN_TOKEN on the backend) to continue.</p>
@@ -174,6 +177,7 @@
       </main>
     </div>
 
+    <script type="module" src="/src/a11y.js"></script>
     <script type="module" src="/src/admin.js"></script>
   </body>
 </html>

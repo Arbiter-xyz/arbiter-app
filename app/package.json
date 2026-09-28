@@ -11,7 +11,9 @@
     "check": "node --check src/main.js",
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
-    "e2e:report": "playwright show-report"
+    "e2e:report": "playwright show-report",
+    "visual": "playwright test -c visual/playwright.config.js",
+    "visual:update": "playwright test -c visual/playwright.config.js --update-snapshots"
   },
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "^1.7.5",
