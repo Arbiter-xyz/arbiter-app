@@ -79,6 +79,16 @@
         <section id="view-transactions" class="admin-view">
           <h2>Transactions</h2>
           <div class="panel">
+            <div id="tx-filters" class="tx-filters">
+              <label class="muted small">From <input id="tx-filter-from" type="date" /></label>
+              <label class="muted small">To <input id="tx-filter-to" type="date" /></label>
+              <label class="muted small">Min USDC <input id="tx-filter-min" type="number" min="0" step="any" placeholder="0" /></label>
+              <label class="muted small">Max USDC <input id="tx-filter-max" type="number" min="0" step="any" placeholder="any" /></label>
+              <label class="muted small">Status <select id="tx-filter-status"><option value="">All</option></select></label>
+              <label class="muted small">Outcome <select id="tx-filter-outcome"><option value="">All</option></select></label>
+              <button id="tx-filter-reset" type="button">Reset</button>
+            </div>
+            <p id="tx-filter-summary" class="muted small">Filters apply only to the most recent 100 transactions loaded, not the full history.</p>
             <table class="leaderboard-table">
               <thead>
                 <tr><th>Question</th><th>Payer</th><th>Amount</th><th>Status</th><th>Outcome</th><th>Created</th></tr>

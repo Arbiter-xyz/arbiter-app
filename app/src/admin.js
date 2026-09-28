@@ -1,3 +1,5 @@
+import { filterTransactions, distinctValues } from './txFilters.js';
+
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';
 
@@ -90,11 +92,57 @@ async function renderOverview() {
   document.getElementById('ov-payers').textContent = payers.payers.length;
 }
 
-async function renderTransactions() {
+const TX_LIMIT = 100;
+let loadedTransactions = [];
+
+function readTxFilters() {
+  const val = (id) => document.getElementById(id).value;
+  return {
+    from: val('tx-filter-from'),
+    to: val('tx-filter-to'),
+    minUsdc: val('tx-filter-min'),
+    maxUsdc: val('tx-filter-max'),
+    status: val('tx-filter-status'),
+    outcome: val('tx-filter-outcome'),
+  };
+}
+
+function fillSelect(id, values) {
+  const select = document.getElementById(id);
+  const current = select.value;
+  const all = document.createElement('option');
+  all.value = '';
+  all.textContent = 'All';
+  select.replaceChildren(
+    all,
+    ...values.map((v) => {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      return opt;
+    }),
+  );
+  if (values.includes(current)) select.value = current;
+}
+
+function renderTxRows() {
   const tbody = document.getElementById('tx-body');
-  const { transactions } = await fetchAdmin('/admin/transactions?limit=100');
-  if (transactions.length === 0) {
+  const summary = document.getElementById('tx-filter-summary');
+  const filters = readTxFilters();
+  const active = Object.values(filters).some((v) => v !== '');
+  const transactions = filterTransactions(loadedTransactions, filters);
+
+  const scope = `the most recent ${loadedTransactions.length} loaded transactions (up to ${TX_LIMIT}), not the full history`;
+  summary.textContent = active
+    ? `Showing ${transactions.length} of ${scope}. Older matches may exist.`
+    : `Filters apply only to ${scope}.`;
+
+  if (loadedTransactions.length === 0) {
     replaceRows(tbody, [emptyRow(6, 'No transactions yet.')]);
+    return;
+  }
+  if (transactions.length === 0) {
+    replaceRows(tbody, [emptyRow(6, `No transactions match these filters within the most recent ${loadedTransactions.length}.`)]);
     return;
   }
   replaceRows(
@@ -117,6 +165,22 @@ async function renderTransactions() {
     }),
   );
 }
+
+async function renderTransactions() {
+  const { transactions } = await fetchAdmin(`/admin/transactions?limit=${TX_LIMIT}`);
+  loadedTransactions = transactions;
+  fillSelect('tx-filter-status', distinctValues(transactions, 'status'));
+  fillSelect('tx-filter-outcome', distinctValues(transactions, 'outcome'));
+  renderTxRows();
+}
+
+document.getElementById('tx-filters').addEventListener('input', renderTxRows);
+document.getElementById('tx-filter-reset').addEventListener('click', () => {
+  document.querySelectorAll('#tx-filters input, #tx-filters select').forEach((el) => {
+    el.value = '';
+  });
+  renderTxRows();
+});
 
 async function renderWorkers() {
   const tbody = document.getElementById('workers-body');

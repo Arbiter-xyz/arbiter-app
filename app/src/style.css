@@ -429,3 +429,25 @@ fieldset label {
 .question-item .star-toggle + div {
   flex: 1;
 }
+.tx-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+.tx-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.tx-filters input,
+.tx-filters select {
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+}
+.tx-filters input[type='number'] {
+  width: 7rem;
+}
