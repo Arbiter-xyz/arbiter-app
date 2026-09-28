@@ -416,4 +416,23 @@ fieldset label {
   padding: 1.25rem;
   max-width: 420px;
   width: 100%;
+
+/* Print: buyer dashboard question history (dashboard.html) */
+@media print {
+  body { background: #fff; color: #000; }
+  #panel-connect,
+  #btn-refresh,
+  .panel:has(#log),
+  header .sub a { display: none !important; }
+
+  #panel-dashboard { background: none; border: 0; box-shadow: none; padding: 0; }
+  /* Decision: keep #payer-address in print so the record is attributable for expense tracking. */
+  #panel-dashboard, #panel-dashboard * { color: #000 !important; }
+
+  .question-list li { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Badges: rely on border + brackets, not background color. */
+  .badge { background: none !important; border: 1px solid #000; }
+  .badge::before { content: "["; }
+  .badge::after { content: "]"; }
 }
