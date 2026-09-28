@@ -69,3 +69,7 @@ executions, transaction links included.)
 ## Performance budget (Lighthouse CI)
 
 `.github/workflows/lighthouse.yml` builds `app/` and runs Lighthouse CI against `dist/index.html` and `dist/dashboard.html`. Budgets (performance score, LCP, TBT, CLS, total byte weight) live in `app/lighthouserc.json`; CI fails on any regression past them. Run locally with `cd app && npm run build && npx @lhci/cli@0.14.0 autorun`. The initial thresholds are deliberately loose and should be tightened to the measured baseline from the first CI run's report.
+
+## Bundle-size budget
+
+CI runs `node app/scripts/check-bundle-budget.mjs` after `vite build` and fails if any emitted JS chunk exceeds 1500 KB (CSS: 100 KB). Override locally with `BUDGET_JS_KB` / `BUDGET_CSS_KB`; lower the defaults in the script as the stellar-sdk code-splitting lands.
