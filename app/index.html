@@ -18,6 +18,7 @@
           <a href="/leaderboard.html">Leaderboard →</a>
           <a href="/admin.html">Admin →</a>
         </p>
+        <button class="secondary" type="button" data-usdc-precision-toggle>2-decimal USDC</button>
       </header>
 
       <section id="panel-connect" class="panel">
@@ -27,6 +28,7 @@
           Quick start generates a wallet in this browser — non-custodial (only you hold the key,
           it's just stored locally instead of in an extension), zero setup, zero XLM required.
         </p>
+        <p class="muted small">Set <code>VITE_WALLETCONNECT_PROJECT_ID</code> to offer QR pairing with compatible mobile wallets.</p>
       </section>
 
       <section id="panel-backup" class="panel hidden warning">
@@ -36,7 +38,8 @@
           browsing, or switch devices, <strong>any staked or accrued USDC on this address is
           permanently unrecoverable</strong> — there is no password reset and no support line
           that can get it back. Copy your secret key somewhere safe (a password manager is ideal)
-          before you stake anything or let earnings accrue.
+          before you stake anything or let earnings accrue. On compatible devices, revealing or
+          copying the key asks for your device biometric/PIN after quick start.
         </p>
         <div class="row">
           <input id="backup-secret" type="password" readonly value="" />
@@ -161,5 +164,6 @@
     </main>
 
     <script type="module" src="/src/main.js"></script>
+    <script type="module" src="/src/amountDisplay.js"></script>
   </body>
 </html>

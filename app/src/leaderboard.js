@@ -1,4 +1,5 @@
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+import { formatUsdc } from './units.js';
 
 function truncateAddress(id) {
   if (id.length <= 16 || !id.startsWith('G')) return id;
@@ -35,7 +36,7 @@ function renderRow(row, rank) {
   totalCell.textContent = row.totalAnswers;
 
   const stakeCell = document.createElement('td');
-  stakeCell.textContent = `${row.stake} USDC`;
+  stakeCell.textContent = formatUsdc(row.stake);
 
   tr.append(rankCell, idCell, ratioCell, totalCell, stakeCell);
   return tr;
@@ -79,7 +80,7 @@ function renderActivityItem(event) {
 
   const detail = document.createElement('span');
   detail.className = 'muted small';
-  detail.textContent = `${event.category} · tier ${event.tier} · ${event.amount} USDC`;
+  detail.textContent = `${event.category} · tier ${event.tier} · ${formatUsdc(event.amount)}`;
 
   li.append(outcome, ' ', detail);
   return li;

@@ -8,16 +8,19 @@ import {
   AlbedoModule,
   HotWalletModule,
   LedgerModule,
+  WalletConnectModule,
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet, getLocalWalletSecret } from './localWallet.js';
 import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
+import { enrollBiometricUnlock, unlockLocalWalletSecret } from './biometricUnlock.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
 const USDC_ASSET_CODE = import.meta.env.VITE_USDC_ASSET_CODE || 'USDC';
+const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
 
 // Hand-picked, not allowAllModules(): explicit about which wallets we
 // support (matching the original spec's list) rather than automatically
@@ -36,7 +39,7 @@ const USDC_ASSET_CODE = import.meta.env.VITE_USDC_ASSET_CODE || 'USDC';
 // confirming the critical/high count stays at zero.
 const kit = new StellarWalletsKit({
   network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule()],
+  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule(), ...(WALLETCONNECT_PROJECT_ID ? [new WalletConnectModule({ projectId: WALLETCONNECT_PROJECT_ID, metadata: { name: 'Arbiter', description: 'Arbiter worker console', url: window.location.origin, icons: [] } })] : [])],
 });
 
 const el = {
@@ -207,6 +210,7 @@ el.btnQuickStart.addEventListener('click', async () => {
     const { address } = await localWallet.getAddress();
     log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
     showBackupPanel();
+    await enrollBiometricUnlock();
     await activateWallet(localWallet, address);
   } catch (err) {
     setConnectButtonsBusy(false);
@@ -221,7 +225,8 @@ function showBackupPanel() {
   el.backupCopyStatus.textContent = '';
 }
 
-el.btnRevealSecret.addEventListener('click', () => {
+el.btnRevealSecret.addEventListener('click', async () => {
+  try { await unlockLocalWalletSecret(); } catch { log('Biometric unlock was cancelled; secret remains hidden.'); return; }
   const revealed = el.backupSecret.type === 'password';
   if (revealed) el.backupSecret.value = getLocalWalletSecret() || '';
   el.backupSecret.type = revealed ? 'text' : 'password';
@@ -229,6 +234,7 @@ el.btnRevealSecret.addEventListener('click', () => {
 });
 
 el.btnCopySecret.addEventListener('click', async () => {
+  try { await unlockLocalWalletSecret(); } catch { el.backupCopyStatus.textContent = 'Biometric unlock was cancelled.'; return; }
   const secret = getLocalWalletSecret();
   if (!secret) return;
   try {
