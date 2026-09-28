@@ -33,6 +33,33 @@ This mirrors `arbiter-backend`'s own pin against `arbiter-contract`: the
 version is declared in one place and checked at runtime, rather than
 assumed to stay in lockstep by hand.
 
+## Frontend surfaces
+
+Today the repo ships five disconnected entry points, each requiring its
+own wallet connection with no shared session between them:
+
+- `landing/` — static marketing site + live "try it now" sandbox widget
+- `app/index.html` — worker console
+- `app/dashboard.html` — buyer dashboard
+- `app/leaderboard.html` — leaderboard
+- `app/admin.html` — bearer-token-gated read-only ops console
+
+A wallet holder who both asks and answers questions reconnects twice, in
+two different tabs, because nothing carries that connection across pages
+(`ensureSession()` is duplicated near-identically in `app/src/main.js`
+and `app/src/dashboard.js`).
+
+The target is one unified app shell behind a single connection, with
+role-aware views and a consistent design system applied across every
+surface including admin. This is tracked as an epic (#151) and broken
+into dependency-ordered work:
+
+- #143 — shared app shell with router and one wallet-connect/session module
+- #144 — migrate buyer dashboard into the unified app shell (depends on #143)
+- #145 — migrate leaderboard into the unified app shell as a public route (depends on #143)
+- #146 — extract shared design tokens from `landing/` into an app-wide stylesheet
+- #147 — apply the shared design system to the admin console (depends on #146)
+
 ## Layout
 
 ```
