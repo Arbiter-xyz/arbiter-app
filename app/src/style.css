@@ -196,6 +196,10 @@ button.secondary {
 .badge-resolved { background: #16a34a33; color: #16a34a; }
 .badge-refunded { background: #d9770633; color: #d97706; }
 .badge-pending { background: #5b4cf033; color: #5b4cf0; }
+.answer-feedback { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem; }
+.answer-feedback-btn { padding: 0.15rem 0.5rem; font-size: 0.85rem; }
+.answer-feedback-btn[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+.answer-feedback-status { font-size: 0.75rem; color: var(--muted); }
 
 /* ------------------------------------------------------------------ */
 /* Admin console — a nav-shell layout, distinct from the single-column   */
