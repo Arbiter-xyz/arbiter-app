@@ -1,5 +1,20 @@
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';
+const DENSITY_KEY = 'arbiter-admin-density';
+
+function applyDensity(compact) {
+  document.getElementById('admin-shell').classList.toggle('density-compact', compact);
+  const toggle = document.getElementById('density-toggle');
+  toggle.classList.toggle('active', compact);
+  toggle.setAttribute('aria-pressed', String(compact));
+}
+
+applyDensity(localStorage.getItem(DENSITY_KEY) === 'compact');
+document.getElementById('density-toggle').addEventListener('click', () => {
+  const compact = !document.getElementById('admin-shell').classList.contains('density-compact');
+  localStorage.setItem(DENSITY_KEY, compact ? 'compact' : 'comfortable');
+  applyDensity(compact);
+});
 
 function truncateAddress(id) {
   if (!id || id.length <= 16 || !id.startsWith('G')) return id || '—';
