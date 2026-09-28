@@ -39,6 +39,13 @@ e2e/          # browser click-through harness (stubbed)
   (transactions, workers, payers, live treasury balance, fee revenue,
   fraud/trust monitoring) served against arbiter-backend's `/admin/*`.
 
+- `app/src/abTest.js` — deterministic A/B bucketing for the onboarding
+  panel copy (#108): the connected address is hashed into a variant
+  (`control`/`short`/`detailed`), persisted in `localStorage`, and logged
+  to the activity log. **Scaffolding only** — nothing is reported or
+  measured; turning it into a real experiment needs an events endpoint
+  (exposure + onboarding-completed) on arbiter-backend.
+
 ## Session replay (opt-in)
 
 `app/src/sessionReplay.js` can record PostHog session replays of the worker

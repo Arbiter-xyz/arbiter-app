@@ -15,6 +15,7 @@ import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractC
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
 import { initSessionReplay } from './sessionReplay.js';
+import { applyOnboardingVariant } from './abTest.js';
 
 initSessionReplay();
 
@@ -190,6 +191,7 @@ el.btnConnect.addEventListener('click', async () => {
         kit.setWallet(option.id);
         const { address } = await kit.getAddress();
         el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
+        applyOnboardingVariant(address, log);
         await activateWallet(kit, address);
       },
       onClosed: (err) => {
@@ -210,6 +212,7 @@ el.btnQuickStart.addEventListener('click', async () => {
     const { address } = await localWallet.getAddress();
     log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
     showBackupPanel();
+    applyOnboardingVariant(address, log);
     await activateWallet(localWallet, address);
   } catch (err) {
     setConnectButtonsBusy(false);
