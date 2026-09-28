@@ -186,7 +186,34 @@ function renderQuestionItem(q) {
 
   row.append(left, badge);
   li.appendChild(row);
+
+  // Surface the real, load-bearing guarantee for still-pending questions:
+  // refund_timeout() is permissionless (no require_auth()), so anyone can
+  // force a refund once the timeout window elapses — even if Arbiter's
+  // backend disappears. Stated plainly, not oversold.
+  if (q.status !== 'settled') {
+    const safety = document.createElement('p');
+    safety.className = 'q-safety muted small';
+    safety.textContent = refundSafetyLine(q);
+    li.appendChild(safety);
+  }
+
   return li;
+}
+
+/** Plain-language statement of the on-chain refund guarantee. The contract's
+ * refund_timeout() is permissionless, so this is checkable against real
+ * behavior — not marketing copy. Kept as a single helper so future guarantees
+ * (pause switch, threshold custody) can be appended without a rewrite. */
+function refundSafetyLine(q) {
+  const base = 'Your funds are recoverable even if Arbiter goes down: after the refund timeout window, anyone can trigger an automatic refund on-chain — no action from Arbiter required.';
+  if (q.refundAvailableAt) {
+    const when = new Date(q.refundAvailableAt);
+    if (!Number.isNaN(when.getTime())) {
+      return `${base} Refund available from ${when.toLocaleString()}.`;
+    }
+  }
+  return base;
 }
 
 function describeStatus(q) {
