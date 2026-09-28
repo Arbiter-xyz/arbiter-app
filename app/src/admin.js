@@ -1,4 +1,5 @@
 import { filterTransactions, distinctValues } from './txFilters.js';
+import { downloadCsv } from './csv.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';
@@ -342,6 +343,54 @@ const VIEWS = {
   blockchain: renderBlockchain,
   fraud: renderFraud,
 };
+
+// ---------------------------------------------------------------------
+// CSV export (#118). One shared exporter for every genuinely tabular view.
+// It reads the rendered table rather than re-fetching, so the file matches
+// exactly what the operator is looking at (including any active filter —
+// hidden rows are skipped). Cells prefer their `title` (the full, untruncated
+// address) over the displayed truncated text.
+//
+// Deliberately excluded: overview (summary tiles aggregating other views),
+// treasury and blockchain — those panels are innerHTML prose/key-value
+// blocks, not row data, so forcing them through a CSV would be misleading.
+// ---------------------------------------------------------------------
+
+const EXPORTABLE_VIEWS = ['transactions', 'workers', 'payers', 'fees', 'kyc', 'payouts', 'fraud'];
+
+function viewTableData(name) {
+  if (name === 'fees') {
+    return {
+      columns: ['Metric', 'Value'],
+      rows: [
+        ['Total resolved questions', document.getElementById('fees-count').textContent],
+        ['Total platform fee revenue (USDC)', document.getElementById('fees-total').textContent],
+      ],
+    };
+  }
+  const table = document.querySelector(`#view-${name} table`);
+  const columns = [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+  const rows = [...table.querySelectorAll('tbody tr')]
+    // Skip hidden (filtered-out) rows and the colspan'd empty/loading placeholder.
+    .filter((tr) => !tr.hidden && tr.style.display !== 'none' && !tr.querySelector('td[colspan]'))
+    .map((tr) => [...tr.cells].map((cell) => cell.title || cell.textContent.trim()));
+  return { columns, rows };
+}
+
+function exportView(name) {
+  const { columns, rows } = viewTableData(name);
+  const date = new Date().toISOString().slice(0, 10);
+  downloadCsv(`arbiter-${name}-${date}.csv`, columns, rows);
+}
+
+EXPORTABLE_VIEWS.forEach((name) => {
+  const heading = document.querySelector(`#view-${name} h2`);
+  const button = document.createElement('button');
+  button.className = 'secondary small';
+  button.textContent = 'Export CSV';
+  button.addEventListener('click', () => exportView(name));
+  heading.append(button);
+});
 
 async function selectView(name) {
   document.querySelectorAll('.admin-nav-link[data-view]').forEach((el) => el.classList.toggle('active', el.dataset.view === name));
