@@ -11,6 +11,7 @@ import {
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet } from './localWallet.js';
 import { renderMarkdown } from './markdown.js';
+import { ensureSession as ensureSharedSession } from './session.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
@@ -49,33 +50,23 @@ function setConnectButtonsBusy(busy) {
   el.btnQuickStart.disabled = busy;
 }
 
-/** Proves control of this address once, same primitive as the worker
- * console's ensureSession() — these questions/balance are only readable
- * with a valid session now, not by anyone who just knows the address. */
+/** Delegates to the shared session module (#143) so the buyer dashboard
+ * reuses the same session primitive as the worker console instead of
+ * duplicating it. The shared module caches the token on the wallet/session
+ * it is given, so a wallet connected on the worker-console route stays
+ * connected here without a second prompt. */
 async function ensureSession() {
-  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) return state.sessionToken;
-
-  log('Proving control of your address (one signature)…');
-  const challengeRes = await fetch(`${BACKEND_URL}/payers/${state.address}/session/challenge`, { method: 'POST' });
-  if (!challengeRes.ok) throw new Error((await challengeRes.json()).error || 'failed to get session challenge');
-  const { xdr } = await challengeRes.json();
-
-  const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
+  return ensureSharedSession({
     address: state.address,
-    networkPassphrase: WalletNetwork.TESTNET,
+    activeWallet: state.activeWallet,
+    sessionToken: state.sessionToken,
+    sessionExpiresAt: state.sessionExpiresAt,
+    onSession: ({ token, expiresAt }) => {
+      state.sessionToken = token;
+      state.sessionExpiresAt = expiresAt;
+    },
+    log,
   });
-
-  const sessionRes = await fetch(`${BACKEND_URL}/payers/${state.address}/session`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ signedXdr: signedTxXdr }),
-  });
-  if (!sessionRes.ok) throw new Error((await sessionRes.json()).error || 'failed to establish session');
-  const { token, expiresAt } = await sessionRes.json();
-  state.sessionToken = token;
-  state.sessionExpiresAt = expiresAt;
-  log('Session established.');
-  return token;
 }
 
 el.btnConnect.addEventListener('click', async () => {
