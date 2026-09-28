@@ -11,6 +11,7 @@ import {
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet } from './localWallet.js';
 import { renderMarkdown } from './markdown.js';
+import { exportQuestions } from './exportQuestions.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
@@ -28,6 +29,8 @@ const el = {
   btnConnect: document.getElementById('btn-connect'),
   btnQuickStart: document.getElementById('btn-quick-start'),
   btnRefresh: document.getElementById('btn-refresh'),
+  btnExportCsv: document.getElementById('btn-export-csv'),
+  btnExportJson: document.getElementById('btn-export-json'),
   payerAddress: document.getElementById('payer-address'),
   statSpend: document.getElementById('stat-spend'),
   statCount: document.getElementById('stat-count'),
@@ -36,7 +39,7 @@ const el = {
   log: document.getElementById('log'),
 };
 
-const state = { address: null, activeWallet: null, sessionToken: null, sessionExpiresAt: 0 };
+const state = { address: null, activeWallet: null, sessionToken: null, sessionExpiresAt: 0, data: null };
 
 function log(message) {
   const li = document.createElement('li');
@@ -122,6 +125,9 @@ async function activate(wallet, address) {
 }
 
 el.btnRefresh.addEventListener('click', loadQuestions);
+// Exports exactly what is loaded (full history, not a filtered view).
+el.btnExportCsv.addEventListener('click', () => state.data && exportQuestions(state.data.questions, 'csv'));
+el.btnExportJson.addEventListener('click', () => state.data && exportQuestions(state.data.questions, 'json'));
 
 async function loadQuestions() {
   if (!state.address) return;
@@ -131,6 +137,9 @@ async function loadQuestions() {
     const res = await fetch(`${BACKEND_URL}/payers/${state.address}/questions?token=${encodeURIComponent(token)}`);
     if (!res.ok) throw new Error(`unexpected status ${res.status}`);
     const data = await res.json();
+    state.data = data;
+    el.btnExportCsv.disabled = false;
+    el.btnExportJson.disabled = false;
     render(data);
     log(`Loaded ${data.questions.length} question(s) — this address has asked ${data.totalTracked} total.`);
   } catch (err) {
