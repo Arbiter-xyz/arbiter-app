@@ -10,7 +10,7 @@ import {
   LedgerModule,
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet } from './localWallet.js';
-import { renderMarkdown } from './markdown.js';
+import { renderFencedCode } from './codeBlocks.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
@@ -169,15 +169,23 @@ function renderQuestionItem(q) {
   const left = document.createElement('div');
   const qText = document.createElement('p');
   qText.className = 'q-text';
-  // Markdown is rendered through a sanitizing renderer (markdown.js) that
-  // builds safe DOM nodes — never innerHTML of raw user content.
-  renderMarkdown(qText, q.question || q.questionId);
+  // This renderer only creates DOM nodes and assigns textContent to untrusted
+  // text. Fenced code is tokenised into isolated safe spans; raw HTML is never
+  // interpreted.
+  renderFencedCode(qText, q.question || q.questionId);
   const qMeta = document.createElement('div');
   qMeta.className = 'q-meta';
   const parts = [q.tier, q.amount ? `${q.amount} USDC` : null];
   if (q.status === 'settled' && q.outcome === 'resolved') parts.push(`confidence ${q.confidence}`);
   qMeta.textContent = parts.filter(Boolean).join(' · ');
   left.append(qText, qMeta);
+
+  if (q.answer) {
+    const answerText = document.createElement('div');
+    answerText.className = 'answer-text';
+    renderFencedCode(answerText, q.answer);
+    left.append(answerText);
+  }
 
   const badge = document.createElement('span');
   const { label, cls } = describeStatus(q);
