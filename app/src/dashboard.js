@@ -11,6 +11,8 @@ import {
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet } from './localWallet.js';
 import { renderMarkdown } from './markdown.js';
+import { initErrorReporting } from './errorReporting.js';
+initErrorReporting('dashboard');
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 

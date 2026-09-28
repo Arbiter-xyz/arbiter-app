@@ -39,6 +39,14 @@ e2e/          # browser click-through harness (stubbed)
   (transactions, workers, payers, live treasury balance, fee revenue,
   fraud/trust monitoring) served against arbiter-backend's `/admin/*`.
 
+## Error reporting (optional)
+
+Set `VITE_SENTRY_DSN` in `app/.env` to send uncaught client errors to Sentry
+(`app/src/errorReporting.js`). Unset, it is a no-op and `@sentry/browser` is
+never loaded. Events and breadcrumbs are scrubbed of Stellar keys, tokens and
+addresses, and breadcrumbs touching `#backup-secret` / `#admin-token-input`
+are dropped. The on-page logs and `console.error` calls are unchanged.
+
 ## Running it
 
 ```sh

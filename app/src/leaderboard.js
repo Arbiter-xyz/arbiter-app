@@ -1,3 +1,6 @@
+import { initErrorReporting } from './errorReporting.js';
+initErrorReporting('leaderboard');
+
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
 function truncateAddress(id) {
