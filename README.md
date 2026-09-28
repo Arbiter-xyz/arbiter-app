@@ -51,6 +51,15 @@ node sandbox-ask.js "What year did Stellar launch?"   # zero setup
 node ask.js "What is the capital of France?"           # real on-chain flow
 ```
 
+### Design-system docs (Storybook)
+
+`cd app && npm run storybook` serves stories for the shared classes in
+`app/src/style.css` (`.panel`, `.badge-*`, buttons, `.row`, `.muted`/`.small`,
+`.leaderboard-table`). Storybook (`@storybook/html-vite`) is used because it
+runs against the existing vanilla-JS/Vite setup with no framework rewrite;
+stories live in `app/src/stories/`. Extracting the duplicated table-row
+helpers from `admin.js`/`leaderboard.js` into a shared module is not done yet.
+
 Verified live against a real deployed contract on Stellar testnet. (That
 run predates this repo's split; see "Round 6" in the archived
 [`arbiter`](https://github.com/rudeus112266/arbiter) monorepo README for
