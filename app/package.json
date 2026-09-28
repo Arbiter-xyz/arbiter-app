@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "^1.7.5",
-    "@stellar/stellar-sdk": "^16.2.0"
+    "@stellar/stellar-sdk": "^16.2.0",
+    "posthog-js": "^1.200.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.48.0",

@@ -14,6 +14,9 @@ import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
+import { initSessionReplay } from './sessionReplay.js';
+
+initSessionReplay();
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
