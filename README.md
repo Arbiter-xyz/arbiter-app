@@ -98,3 +98,31 @@ run predates this repo's split; see "Round 6" in the archived
 [`arbiter`](https://github.com/rudeus112266/arbiter) monorepo README for
 the full run — real `ask.js`/`worker-sim.js`/`sponsored-demo.js`
 executions, transaction links included.)
+
+## Feature flags (runtime, not build-time)
+
+`app/src/flags.js` gates UI for gradual rollout. It is deliberately distinct
+from the `VITE_*` env vars: those are baked into the bundle by `vite build`,
+so changing one needs a rebuild. Flag *values* are fetched with `fetch()` at
+page load, so toggling a flag needs no rebuild; only the flag source's
+*location* is a `VITE_*` var (see `app/.env.example`).
+
+- **Default:** static `/flags.json` (`app/public/flags.json`, override with
+  `VITE_FLAGS_URL`). A flag is `true`/`false` or
+  `{ "enabled": true, "rollout": 25 }`, where `rollout` is a percentage
+  bucketed client-side by a stable hash of a per-browser id. Simple and
+  infra-free, but no server-side targeting, and on a static host editing the
+  file still means a redeploy (just not a rebuild) unless `VITE_FLAGS_URL`
+  points at a separately hosted file.
+- **Unleash (optional):** set `VITE_UNLEASH_URL` (Frontend API / Edge / proxy
+  endpoint) and `VITE_UNLEASH_CLIENT_KEY`. Targeting and rollout strategies
+  are then evaluated by Unleash. Hosting Unleash is out of scope for this
+  repo. Note that Unleash only returns enabled toggles, so a flag must exist
+  and be on there for its UI to show.
+- **Failure:** unconfigured, unreachable (2s timeout), or malformed sources
+  fall back to `DEFAULTS` in `flags.js`, i.e. current behavior, the same way
+  other optional features hide or degrade instead of erroring.
+
+Gate markup with `data-flag="<name>"`; `applyFlagGates()` hides it when the
+flag evaluates off. The worker console's push-notification panel
+(`pushNotifications`) is the first gated feature.

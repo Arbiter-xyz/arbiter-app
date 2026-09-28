@@ -16,12 +16,14 @@ import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
 import { initSessionReplay } from './sessionReplay.js';
 import { applyOnboardingVariant } from './abTest.js';
+import { applyFlagGates } from './flags.js';
 
 initSessionReplay();
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
 const USDC_ASSET_CODE = import.meta.env.VITE_USDC_ASSET_CODE || 'USDC';
+applyFlagGates(); // runtime feature flags (see flags.js); fails open to defaults
 
 // Hand-picked, not allowAllModules(): explicit about which wallets we
 // support (matching the original spec's list) rather than automatically
