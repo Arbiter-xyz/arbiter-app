@@ -99,6 +99,17 @@
           </div>
           <button id="btn-enable-push" class="secondary" type="button">Enable</button>
         </div>
+        <div class="push-row">
+          <div>
+            <div class="muted small">Notification digest <strong>(coming soon)</strong></div>
+            <p id="digest-status" class="muted small">Not active yet — needs backend digest support. Your choice is not saved.</p>
+          </div>
+          <select id="digest-select" aria-label="Notification digest frequency">
+            <option value="instant">Instant</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </div>
         <p class="muted small">
           Push only helps for longer-timeout questions (~20s+) — a notification round-trip is too
           slow for the fastest tier. It supplements the tab, it doesn't replace it.

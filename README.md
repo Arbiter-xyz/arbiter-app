@@ -39,6 +39,20 @@ e2e/          # browser click-through harness (stubbed)
   (transactions, workers, payers, live treasury balance, fee revenue,
   fraud/trust monitoring) served against arbiter-backend's `/admin/*`.
 
+## Notification digest (pending backend)
+
+The push panel has an instant / daily / weekly digest toggle, marked "coming
+soon" and non-functional until the backend supports it. It POSTs
+`{ token, digest: 'instant' | 'daily' | 'weekly' }` (session token from
+`ensureSession()`) to `/workers/:address/digest`, and shows a "not supported
+yet" message on 404/405/501. Required from arbiter-backend, none of which exists
+today:
+
+- that endpoint, persisting the per-worker preference;
+- email (or other digest) delivery — `push.js` only does instant Web Push;
+- per-worker "eligible but missed" question history to aggregate — only
+  outcome/reputation (`rep:`) records are kept now.
+
 ## Running it
 
 ```sh
