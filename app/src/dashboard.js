@@ -11,6 +11,7 @@ import {
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet } from './localWallet.js';
 import { renderMarkdown } from './markdown.js';
+import { createStarButton, filterStarred, mountStarredFilter } from './starredQuestions.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
@@ -36,7 +37,12 @@ const el = {
   log: document.getElementById('log'),
 };
 
-const state = { address: null, activeWallet: null, sessionToken: null, sessionExpiresAt: 0 };
+const state = { address: null, activeWallet: null, sessionToken: null, sessionExpiresAt: 0, questions: [], starredOnly: false };
+
+mountStarredFilter(el.questionList, (checked) => {
+  state.starredOnly = checked;
+  renderQuestionList();
+});
 
 function log(message) {
   const li = document.createElement('li');
@@ -145,16 +151,22 @@ function render(data) {
   el.statCount.textContent = String(data.totalTracked);
   el.statSuccess.textContent = data.successRate === null ? '—' : `${Math.round(data.successRate * 100)}%`;
 
+  state.questions = data.questions;
+  renderQuestionList();
+}
+
+function renderQuestionList() {
+  const questions = state.starredOnly ? filterStarred(state.questions, state.address) : state.questions;
   el.questionList.innerHTML = '';
-  if (data.questions.length === 0) {
+  if (questions.length === 0) {
     const li = document.createElement('li');
     li.className = 'muted small';
-    li.textContent = 'No questions yet.';
+    li.textContent = state.starredOnly && state.questions.length > 0 ? 'No starred questions.' : 'No questions yet.';
     el.questionList.appendChild(li);
     return;
   }
 
-  for (const q of data.questions) {
+  for (const q of questions) {
     el.questionList.appendChild(renderQuestionItem(q));
   }
 }
@@ -184,7 +196,12 @@ function renderQuestionItem(q) {
   badge.className = `badge ${cls}`;
   badge.textContent = label;
 
-  row.append(left, badge);
+  // Unstarring while "Starred only" is on should drop the row immediately.
+  const star = createStarButton(state.address, q.questionId, () => {
+    if (state.starredOnly) renderQuestionList();
+  });
+
+  row.append(star, left, badge);
   li.appendChild(row);
   return li;
 }

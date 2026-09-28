@@ -396,3 +396,18 @@ fieldset label {
   padding: 0.2rem 0;
   border-bottom: 1px dashed var(--border);
 }
+
+.starred-filter {
+  margin: 0.75rem 0 0.5rem;
+}
+.question-item .star-toggle {
+  background: transparent;
+  color: #d97706;
+  border: none;
+  padding: 0 0.4rem 0 0;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.question-item .star-toggle + div {
+  flex: 1;
+}
