@@ -19,6 +19,14 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
 const USDC_ASSET_CODE = import.meta.env.VITE_USDC_ASSET_CODE || 'USDC';
 
+// The backend API version this app is built against. arbiter-backend and
+// this app are independently deployed repos, so a backend API change (a
+// renamed field, a new required parameter) would otherwise only surface as
+// a broken request mid-flow. On load we compare this against the version
+// the backend reports at GET /health and surface a non-blocking notice on
+// mismatch. See the README's "Backend API compatibility" section.
+const COMPATIBLE_BACKEND_VERSION = '1';
+
 // Hand-picked, not allowAllModules(): explicit about which wallets we
 // support (matching the original spec's list) rather than automatically
 // inheriting whatever the kit adds in a future version — including
@@ -96,6 +104,57 @@ function log(message) {
   const time = new Date().toLocaleTimeString();
   li.textContent = `[${time}] ${message}`;
   el.log.prepend(li);
+}
+
+// --- Backend API version check (issue #150) -------------------------------
+//
+// arbiter-backend and this app are independently deployed repos, so a
+// backend API change would otherwise only surface as a broken request
+// mid-flow. On load we read the version the backend reports at GET /health
+// and, on mismatch, show a visible-but-non-blocking banner. HTTP APIs are
+// forgiving, so this informs rather than gates: a mismatch never blocks
+// app usage.
+
+function showVersionMismatchNotice(reportedVersion) {
+  const banner = document.createElement('div');
+  banner.id = 'backend-version-notice';
+  banner.setAttribute('role', 'status');
+  banner.style.cssText = [
+    'position:fixed',
+    'top:0',
+    'left:0',
+    'right:0',
+    'z-index:9999',
+    'padding:8px 12px',
+    'background:#7a1f1f',
+    'color:#fff',
+    'font:13px/1.4 system-ui,sans-serif',
+    'text-align:center',
+  ].join(';');
+  banner.textContent =
+    `Backend API version mismatch: this app expects v${COMPATIBLE_BACKEND_VERSION}, ` +
+    `but the backend reports v${reportedVersion}. Some features may not work as expected.`;
+  document.body.prepend(banner);
+}
+
+async function checkBackendVersion() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/health`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const reportedVersion = data.apiVersion ?? data.version;
+    if (reportedVersion == null) {
+      // Backend predates the /health version field; nothing to compare.
+      return;
+    }
+    if (String(reportedVersion) !== String(COMPATIBLE_BACKEND_VERSION)) {
+      showVersionMismatchNotice(reportedVersion);
+      log(`Backend API version mismatch: expected v${COMPATIBLE_BACKEND_VERSION}, got v${reportedVersion}`);
+    }
+  } catch (err) {
+    // Backend unreachable or malformed: don't block or alarm the user here;
+    // the existing request paths already surface connectivity problems.
+  }
 }
 
 function showPanel(name) {
@@ -186,66 +245,6 @@ el.btnConnect.addEventListener('click', async () => {
       onWalletSelected: async (option) => {
         kit.setWallet(option.id);
         const { address } = await kit.getAddress();
-        el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
-        await activateWallet(kit, address);
-      },
-      onClosed: (err) => {
-        setConnectButtonsBusy(false);
-        if (err) log(`Wallet selection closed: ${err.message}`);
-      },
-    });
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(`Wallet connect failed: ${err.message}`);
-  }
-});
+        el.backup.classList.add('hidden'); // backup/reveal only
 
-el.btnQuickStart.addEventListener('click', async () => {
-  setConnectButtonsBusy(true);
-  try {
-    const localWallet = createOrLoadLocalWallet();
-    const { address } = await localWallet.getAddress();
-    log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
-    showBackupPanel();
-    await activateWallet(localWallet, address);
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(`Quick start failed: ${err.message}`);
-  }
-});
-
-function showBackupPanel() {
-  el.backup.classList.remove('hidden');
-  el.backupSecret.value = '••••••••••••••••••••••••••••••••••••••••••••••••••';
-  el.backupSecret.type = 'password';
-  el.backupCopyStatus.textContent = '';
-}
-
-el.btnRevealSecret.addEventListener('click', () => {
-  const revealed = el.backupSecret.type === 'password';
-  if (revealed) el.backupSecret.value = getLocalWalletSecret() || '';
-  el.backupSecret.type = revealed ? 'text' : 'password';
-  el.btnRevealSecret.textContent = revealed ? 'Hide' : 'Reveal';
-});
-
-el.btnCopySecret.addEventListener('click', async () => {
-  const secret = getLocalWalletSecret();
-  if (!secret) return;
-  try {
-    await navigator.clipboard.writeText(secret);
-    el.backupCopyStatus.textContent = 'Copied to clipboard — store it somewhere safe, then clear your clipboard.';
-  } catch (err) {
-    el.backupCopyStatus.textContent = `Could not copy automatically (${err.message}) — reveal and copy it manually.`;
-  }
-});
-
-// --- Social recovery (client-side Shamir split, no backend involvement) ---
-//
-// The quick-start secret is split into N shares entirely in this browser.
-// Arbiter's backend never sees the secret or any share: distribution is the
-// user's own (contacts, a second device, a password manager). Reconstructing
-// from any k shares reproduces the original Keypair/address, so the README's
-// non-custodial framing is unchanged — there is no server-side capability to
-// rebuild a u
-
-/* … truncated 599 chars — edit only what you need near the top … */
+/* … truncated 2371 chars — edit only what you need near the top … */
