@@ -33,6 +33,34 @@ This mirrors `arbiter-backend`'s own pin against `arbiter-contract`: the
 version is declared in one place and checked at runtime, rather than
 assumed to stay in lockstep by hand.
 
+## Cross-repo integration harness
+
+Each of the three split repos (contract/backend/app) has its own CI, but
+nothing exercises them *together* — an interface change (a new contract
+method, a changed backend response shape) can pass all three repos' CI
+independently while silently breaking the real integrated system. The
+`e2e/` directory is the home for a harness that closes that gap from the
+consumer's side.
+
+`e2e/docker-compose.integration.yml` deploys the real stack together:
+
+- **contract** — `arbiter-contract` checked out at the version pinned in
+  `e2e/versions.env` (`CONTRACT_REF`), built and deployed to a local
+  Soroban sandbox.
+- **backend** — `arbiter-backend` checked out at its pinned-compatible
+  version (`BACKEND_REF`, per arbiter-backend#163), pointed at the
+  deployed contract and reporting its API version on `GET /health`.
+- **app** — this repo's `app/` built against the backend, with
+  `COMPATIBLE_BACKEND_VERSION` (per #150) asserted against the backend's
+  reported version before the lifecycle test runs.
+
+`e2e/integration/lifecycle.test.js` runs one full paid-question lifecycle
+against that real integrated stack — **payment → dispatch → reconcile →
+settle** — so an interface-breaking change fails loudly here rather than
+at deploy time. It is wired into this repo's CI (`.github/workflows/`),
+which brings up the compose stack, waits for the backend health check,
+and runs the lifecycle test.
+
 ## Frontend surfaces
 
 Today the repo ships five disconnected entry points, each requiring its
@@ -66,7 +94,7 @@ into dependency-ordered work:
 app/          # Vite worker console (index.html) + buyer dashboard (dashboard.html)
 landing/      # static marketing site + live "try it now" sandbox widget
 demo-agent/   # headless buyer/worker/proof scripts (ask.js, worker-sim.js, sponsored-demo.js)
-e2e/          # browser click-through harness (stubbed)
+e2e/          # browser click-through harness + cross-repo integration harness
 ```
 
 ## Notable pieces
@@ -94,6 +122,9 @@ cd demo-agent && npm install
 cp .env.example .env
 node sandbox-ask.js "What year did Stellar launch?"   # zero setup
 node ask.js "What is the capital of France?"           # real on-chain flow
+
+# cross-repo integration harness (real contract + backend + app together)
+docker compose -f e2e/docker-compose.integration.yml up --build --abort-on-container-exit
 ```
 
 Verified live against a real deployed contract on Stellar testnet. (That
