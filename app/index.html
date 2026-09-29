@@ -95,14 +95,14 @@
           <p id="category-demand-status" class="muted small"></p>
         </div>
 
-        <div class="push-row">
+        <div class="push-row" data-flag="pushNotifications">
           <div>
             <div class="muted small">Push notifications</div>
             <p id="push-status" class="muted small">Off — you'll only get questions while this tab is open.</p>
           </div>
           <button id="btn-enable-push" class="secondary" type="button">Enable</button>
         </div>
-        <p class="muted small">
+        <p class="muted small" data-flag="pushNotifications">
           Push only helps for longer-timeout questions (~20s+) — a notification round-trip is too
           slow for the fastest tier. It supplements the tab, it doesn't replace it.
         </p>

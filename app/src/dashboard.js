@@ -189,6 +189,7 @@ function renderQuestionItem(q) {
 
   row.append(left, badge);
   li.appendChild(row);
+  if (label === 'resolved') li.appendChild(renderAnswerFeedback(q, { backendUrl: BACKEND_URL, address: state.address, ensureSession, log }));
   return li;
 }
 

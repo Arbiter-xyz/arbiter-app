@@ -190,6 +190,7 @@ el.btnConnect.addEventListener('click', async () => {
         kit.setWallet(option.id);
         const { address } = await kit.getAddress();
         el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
+        applyOnboardingVariant(address, log);
         await activateWallet(kit, address);
       },
       onClosed: (err) => {
