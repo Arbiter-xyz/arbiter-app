@@ -8,6 +8,7 @@ import {
   AlbedoModule,
   HotWalletModule,
   LedgerModule,
+  WalletConnectModule,
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet } from './localWallet.js';
 import { renderMarkdown } from './markdown.js';
@@ -15,13 +16,14 @@ import { initErrorReporting } from './errorReporting.js';
 initErrorReporting('dashboard');
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
 
 // Same hand-picked module list as the worker console — see main.js.
 // Ledger is added explicitly (not via allowAllModules()) so the Trezor/
 // protobufjs surface stays excluded — see the round-5 note in main.js.
 const kit = new StellarWalletsKit({
   network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule()],
+  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule(), ...(WALLETCONNECT_PROJECT_ID ? [new WalletConnectModule({ projectId: WALLETCONNECT_PROJECT_ID, metadata: { name: 'Arbiter', description: 'Arbiter buyer dashboard', url: window.location.origin, icons: [] } })] : [])],
 });
 
 const el = {
@@ -143,7 +145,7 @@ async function loadQuestions() {
 }
 
 function render(data) {
-  el.statSpend.textContent = `${data.totalSpend} USDC`;
+  el.statSpend.textContent = formatUsdc(data.totalSpend);
   el.statCount.textContent = String(data.totalTracked);
   el.statSuccess.textContent = data.successRate === null ? '—' : `${Math.round(data.successRate * 100)}%`;
 
@@ -176,7 +178,7 @@ function renderQuestionItem(q) {
   renderMarkdown(qText, q.question || q.questionId);
   const qMeta = document.createElement('div');
   qMeta.className = 'q-meta';
-  const parts = [q.tier, q.amount ? `${q.amount} USDC` : null];
+  const parts = [q.tier, q.amount ? formatUsdc(q.amount) : null];
   if (q.status === 'settled' && q.outcome === 'resolved') parts.push(`confidence ${q.confidence}`);
   qMeta.textContent = parts.filter(Boolean).join(' · ');
   left.append(qText, qMeta);
@@ -188,6 +190,7 @@ function renderQuestionItem(q) {
 
   row.append(left, badge);
   li.appendChild(row);
+  if (label === 'resolved') li.appendChild(renderAnswerFeedback(q, { backendUrl: BACKEND_URL, address: state.address, ensureSession, log }));
   return li;
 }
 

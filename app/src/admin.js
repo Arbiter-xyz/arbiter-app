@@ -3,6 +3,15 @@ initErrorReporting('admin');
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';
+const LAYOUT_KEY = 'arbiter-admin-layout';
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// Views each role may open. A role missing from this map (or no role system
+// on the backend at all) keeps today's single-token full access.
+const ROLE_VIEWS = {
+  readonly: ['overview', 'transactions', 'workers', 'payers', 'blockchain', 'fraud'],
+};
+let allowedViews = null; // null = unrestricted
 
 function truncateAddress(id) {
   if (!id || id.length <= 16 || !id.startsWith('G')) return id || '—';
@@ -80,15 +89,17 @@ function showShell() {
 const loaded = new Set();
 
 async function renderOverview() {
-  const [{ resolvedCount, totalFeeRevenue }, treasury, workers, payers] = await Promise.all([
-    fetchAdmin('/admin/fees'),
-    fetchAdmin('/admin/treasury'),
+  const canFees = canView('fees');
+  const canTreasury = canView('treasury');
+  const [fees, treasury, workers, payers] = await Promise.all([
+    canFees ? fetchAdmin('/admin/fees') : null,
+    canTreasury ? fetchAdmin('/admin/treasury') : null,
     fetchAdmin('/admin/workers'),
     fetchAdmin('/admin/payers'),
   ]);
-  document.getElementById('ov-fees').textContent = `${totalFeeRevenue} USDC (${resolvedCount})`;
-  document.getElementById('ov-treasury-usdc').textContent = treasury.configured ? `${treasury.usdcBalance}` : 'not configured';
-  document.getElementById('ov-treasury-xlm').textContent = treasury.configured ? `${treasury.xlmBalance}` : 'not configured';
+  document.getElementById('ov-fees').textContent = fees ? `${fees.totalFeeRevenue} USDC (${fees.resolvedCount})` : 'restricted';
+  document.getElementById('ov-treasury-usdc').textContent = !treasury ? 'restricted' : treasury.configured ? `${treasury.usdcBalance}` : 'not configured';
+  document.getElementById('ov-treasury-xlm').textContent = !treasury ? 'restricted' : treasury.configured ? `${treasury.xlmBalance}` : 'not configured';
   document.getElementById('ov-workers').textContent = workers.workers.length;
   document.getElementById('ov-payers').textContent = payers.payers.length;
 }
@@ -201,9 +212,62 @@ function renderBlockchain() {
   `;
 }
 
+// Inline-SVG histogram of established workers' match ratios (10 buckets of
+// 10%). Colors come only from CSS classes backed by the --chart-* custom
+// properties in style.css, so the chart follows the light/dark theme.
+function svgEl(tag, attrs) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function renderMatchRatioChart(container, ratios, flagBelow = 0.5) {
+  const buckets = new Array(10).fill(0);
+  ratios.forEach((r) => buckets[Math.min(9, Math.floor(r * 10))]++);
+  const max = Math.max(1, ...buckets);
+  const W = 400;
+  const H = 140;
+  const pad = { top: 10, bottom: 20, left: 24 };
+  const plotH = H - pad.top - pad.bottom;
+  const bw = (W - pad.left) / 10;
+
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Worker match-ratio distribution' });
+  svg.append(svgEl('line', { class: 'grid', x1: pad.left, x2: W, y1: pad.top + plotH, y2: pad.top + plotH }));
+  svg.append(svgEl('line', { class: 'grid', x1: pad.left, x2: W, y1: pad.top, y2: pad.top }));
+  const maxLabel = svgEl('text', { x: pad.left - 4, y: pad.top + 4, 'text-anchor': 'end' });
+  maxLabel.textContent = max;
+  svg.append(maxLabel);
+
+  buckets.forEach((count, i) => {
+    const h = (count / max) * plotH;
+    const x = pad.left + i * bw + 2;
+    const bar = svgEl('rect', {
+      class: (i + 1) / 10 <= flagBelow ? 'bar flag' : 'bar',
+      x,
+      y: pad.top + plotH - h,
+      width: bw - 4,
+      height: h,
+    });
+    const tip = svgEl('title', {});
+    tip.textContent = `${i * 10}–${(i + 1) * 10}%: ${count} worker(s)`;
+    bar.append(tip);
+    svg.append(bar);
+    if (i % 2 === 0) {
+      const label = svgEl('text', { x: x + (bw - 4) / 2, y: H - 6, 'text-anchor': 'middle' });
+      label.textContent = `${i * 10}%`;
+      svg.append(label);
+    }
+  });
+  container.replaceChildren(svg);
+}
+
 async function renderFraud() {
   const tbody = document.getElementById('fraud-body');
   const { workers } = await fetchAdmin('/admin/workers');
+  renderMatchRatioChart(
+    document.getElementById('fraud-chart'),
+    workers.filter((w) => w.established && w.matchRatio !== null).map((w) => w.matchRatio),
+  );
   const flagged = workers
     .filter((w) => w.established && w.matchRatio !== null)
     .sort((a, b) => a.matchRatio - b.matchRatio);
@@ -269,6 +333,35 @@ async function renderPayouts() {
   );
 }
 
+async function renderAuditLog() {
+  const tbody = document.getElementById('audit-body');
+  let entries;
+  try {
+    ({ entries } = await fetchAdmin('/admin/audit'));
+  } catch (err) {
+    if (err.message === 'unauthorized') throw err;
+    replaceRows(tbody, [emptyRow(5, 'Audit log unavailable — this backend does not expose GET /admin/audit yet.')]);
+    return;
+  }
+  if (!entries || entries.length === 0) {
+    replaceRows(tbody, [emptyRow(5, 'No admin actions recorded yet.')]);
+    return;
+  }
+  // Same textContent-only rendering as every other view — never innerHTML.
+  replaceRows(
+    tbody,
+    entries.map((e) =>
+      row([
+        td(e.at ? new Date(e.at).toLocaleString() : '—', { className: 'muted small' }),
+        td(e.actor || '—'),
+        td(e.action || '—'),
+        td(truncateAddress(e.target), { title: e.target || '' }),
+        td(e.detail === undefined ? '—' : typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail)),
+      ]),
+    ),
+  );
+}
+
 const VIEWS = {
   overview: renderOverview,
   transactions: renderTransactions,
@@ -280,9 +373,145 @@ const VIEWS = {
   payouts: renderPayouts,
   blockchain: renderBlockchain,
   fraud: renderFraud,
+  audit: renderAuditLog,
 };
 
+function canView(name) {
+  return allowedViews === null || allowedViews.includes(name);
+}
+
+// ---------------------------------------------------------------------
+// Role-based access. GET /admin/whoami returning { role } narrows the nav;
+// a backend without it (404) keeps single-token full access unchanged.
+// ---------------------------------------------------------------------
+
+async function loadRole() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  let role = null;
+  try {
+    const res = await fetch(`${BACKEND_URL}/admin/whoami`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.ok) ({ role } = await res.json());
+  } catch {
+    // no role system reachable — fall through to full access
+  }
+  allowedViews = role && ROLE_VIEWS[role] ? ROLE_VIEWS[role] : null;
+  const label = document.getElementById('admin-role');
+  label.textContent = role ? `Role: ${role}` : '';
+  label.classList.toggle('hidden', !role);
+}
+
+// ---------------------------------------------------------------------
+// Layout preference: per-group order and hidden views, in localStorage.
+// No saved preference = the static default order from admin.html.
+// ---------------------------------------------------------------------
+
+function loadLayout() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAYOUT_KEY));
+    return { order: saved?.order || [], hidden: saved?.hidden || [] };
+  } catch {
+    return { order: [], hidden: [] };
+  }
+}
+
+function saveLayout(layout) {
+  localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+}
+
+function navLinks() {
+  return [...document.querySelectorAll('.admin-nav-link[data-view]')];
+}
+
+function applyLayout() {
+  const { order, hidden } = loadLayout();
+  document.querySelectorAll('.admin-nav-group').forEach((group) => {
+    const links = [...group.querySelectorAll('.admin-nav-link[data-view]')];
+    const rank = (el) => {
+      const i = order.indexOf(el.dataset.view);
+      return i === -1 ? order.length + links.indexOf(el) : i;
+    };
+    links.sort((a, b) => rank(a) - rank(b));
+    const anchor = group.querySelector('a.admin-nav-link');
+    links.forEach((el) => group.insertBefore(el, anchor));
+  });
+  navLinks().forEach((el) => {
+    el.classList.toggle('hidden', !canView(el.dataset.view) || hidden.includes(el.dataset.view));
+  });
+}
+
+function renderCustomizePanel() {
+  const panel = document.getElementById('admin-customize-panel');
+  const layout = loadLayout();
+  const links = navLinks().filter((el) => canView(el.dataset.view));
+  const rows = links.map((el) => {
+    const view = el.dataset.view;
+    const wrap = document.createElement('div');
+    wrap.className = 'admin-customize-row';
+    const label = document.createElement('label');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = !layout.hidden.includes(view);
+    box.addEventListener('change', () => {
+      layout.hidden = box.checked ? layout.hidden.filter((v) => v !== view) : [...layout.hidden, view];
+      saveLayout(layout);
+      applyLayout();
+    });
+    label.append(box, ` ${el.textContent}`);
+    const move = (dir) => {
+      const current = navLinks().map((l) => l.dataset.view);
+      const siblings = [...el.parentElement.querySelectorAll('.admin-nav-link[data-view]')].map((l) => l.dataset.view);
+      const i = siblings.indexOf(view);
+      const j = i + dir;
+      if (j < 0 || j >= siblings.length) return;
+      [siblings[i], siblings[j]] = [siblings[j], siblings[i]];
+      layout.order = [...siblings, ...current.filter((v) => !siblings.includes(v))];
+      saveLayout(layout);
+      applyLayout();
+      renderCustomizePanel();
+    };
+    const up = document.createElement('button');
+    up.type = 'button';
+    up.textContent = '↑';
+    up.addEventListener('click', () => move(-1));
+    const down = document.createElement('button');
+    down.type = 'button';
+    down.textContent = '↓';
+    down.addEventListener('click', () => move(1));
+    wrap.append(label, up, down);
+    return wrap;
+  });
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.className = 'admin-nav-customize';
+  reset.textContent = 'Reset to default';
+  reset.addEventListener('click', () => {
+    localStorage.removeItem(LAYOUT_KEY);
+    window.location.reload();
+  });
+  panel.replaceChildren(...rows, reset);
+}
+
+document.getElementById('btn-admin-customize').addEventListener('click', (e) => {
+  const panel = document.getElementById('admin-customize-panel');
+  const open = panel.classList.toggle('hidden') === false;
+  e.currentTarget.setAttribute('aria-expanded', String(open));
+  if (open) renderCustomizePanel();
+});
+
+function firstVisibleView() {
+  return navLinks().find((el) => !el.classList.contains('hidden'))?.dataset.view || 'overview';
+}
+
+async function enterConsole() {
+  showShell();
+  await loadRole();
+  applyLayout();
+  selectView(canView('overview') && !loadLayout().hidden.includes('overview') ? 'overview' : firstVisibleView());
+}
+
 async function selectView(name) {
+  // Fail closed: a role without access never triggers the view's fetches.
+  if (!canView(name)) return;
   document.querySelectorAll('.admin-nav-link[data-view]').forEach((el) => el.classList.toggle('active', el.dataset.view === name));
   document.querySelectorAll('.admin-view').forEach((el) => el.classList.toggle('active', el.id === `view-${name}`));
 
@@ -305,13 +534,11 @@ document.getElementById('btn-admin-login').addEventListener('click', () => {
   const token = document.getElementById('admin-token-input').value.trim();
   if (!token) return;
   localStorage.setItem(TOKEN_KEY, token);
-  showShell();
-  selectView('overview');
+  enterConsole();
 });
 
 if (localStorage.getItem(TOKEN_KEY)) {
-  showShell();
-  selectView('overview');
+  enterConsole();
 } else {
   showLogin();
 }

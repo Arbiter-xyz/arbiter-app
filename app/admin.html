@@ -20,6 +20,9 @@
     <div id="admin-shell" class="admin-shell hidden">
       <nav class="admin-nav">
         <h1>Arbiter <span class="tag">admin</span></h1>
+        <p id="admin-role" class="muted small admin-role hidden"></p>
+        <button id="btn-admin-customize" class="admin-nav-customize" type="button" aria-expanded="false">Customize</button>
+        <div id="admin-customize-panel" class="admin-customize-panel hidden"></div>
 
         <div class="admin-nav-group">
           <h3>Platform</h3>
@@ -41,6 +44,7 @@
           <h3>Infrastructure</h3>
           <button class="admin-nav-link" data-view="blockchain">Blockchain</button>
           <button class="admin-nav-link" data-view="fraud">Fraud &amp; Trust</button>
+          <button class="admin-nav-link" data-view="audit">Audit Log</button>
         </div>
 
         <div class="admin-nav-group">
@@ -162,12 +166,29 @@
         <section id="view-fraud" class="admin-view">
           <h2>Fraud &amp; Trust</h2>
           <div class="panel">
+            <p class="muted small">Match-ratio distribution across established workers.</p>
+            <div id="fraud-chart" class="admin-chart"></div>
+          </div>
+          <div class="panel">
             <p class="muted small">Workers below the minimum match ratio once established — candidates for review.</p>
             <table class="leaderboard-table">
               <thead>
                 <tr><th>Worker</th><th>Match ratio</th><th>Answers</th><th>Stake</th></tr>
               </thead>
               <tbody id="fraud-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="view-audit" class="admin-view">
+          <h2>Audit Log</h2>
+          <div class="panel">
+            <p class="muted small">Admin actions recorded by the backend (GET /admin/audit), newest first.</p>
+            <table class="leaderboard-table">
+              <thead>
+                <tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th></tr>
+              </thead>
+              <tbody id="audit-body"><tr><td colspan="5" class="muted small">Loading…</td></tr></tbody>
             </table>
           </div>
         </section>
