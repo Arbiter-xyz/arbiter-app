@@ -11,6 +11,7 @@ import {
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet } from './localWallet.js';
 import { renderMarkdown } from './markdown.js';
+import { renderAnswerFeedback } from './answerFeedback.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
@@ -186,6 +187,7 @@ function renderQuestionItem(q) {
 
   row.append(left, badge);
   li.appendChild(row);
+  if (label === 'resolved') li.appendChild(renderAnswerFeedback(q, { backendUrl: BACKEND_URL, address: state.address, ensureSession, log }));
   return li;
 }
 
