@@ -1,6 +1,5 @@
-import { initSessionReplay } from './sessionReplay.js';
-
-initSessionReplay({ page: 'admin' });
+import { initErrorReporting } from './errorReporting.js';
+initErrorReporting('admin');
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';
