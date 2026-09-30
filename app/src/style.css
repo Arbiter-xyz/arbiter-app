@@ -173,6 +173,24 @@ button.secondary {
   font-size: 1.1rem;
 }
 
+.question-filters {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+.question-filters input,
+.question-filters select {
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+}
+.question-filters input {
+  flex: 1;
+  min-width: 0;
+}
+
 .question-list {
   display: flex;
   flex-direction: column;
@@ -410,67 +428,39 @@ fieldset label {
   border-bottom: 1px dashed var(--border);
 }
 
-.admin-chart svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  margin-top: 0.5rem;
+.starred-filter {
+  margin: 0.75rem 0 0.5rem;
 }
-
-.admin-chart .bar {
-  fill: var(--chart-bar);
+.question-item .star-toggle {
+  background: transparent;
+  color: #d97706;
+  border: none;
+  padding: 0 0.4rem 0 0;
+  font-size: 1.1rem;
+  line-height: 1;
 }
-
-.admin-chart .bar.flag {
-  fill: var(--chart-flag);
-}
-
-.admin-chart .grid {
-  stroke: var(--chart-grid);
-  stroke-width: 1;
-}
-
-.admin-chart text {
-  fill: var(--chart-label);
-  font-size: 10px;
-}
-
-.admin-role {
-  margin: -0.9rem 0.5rem 0.75rem;
-}
-
-.admin-nav-customize {
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--muted);
-  font-size: 0.75rem;
-  padding: 0.25rem 0.6rem;
-  margin: 0 0.5rem 1rem;
-  cursor: pointer;
-}
-
-.admin-customize-panel {
-  margin: 0 0.5rem 1rem;
-  font-size: 0.8rem;
-}
-
-.admin-customize-row {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.15rem 0;
-}
-
-.admin-customize-row label {
+.question-item .star-toggle + div {
   flex: 1;
 }
-
-.admin-customize-row button {
-  background: none;
+.tx-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+.tx-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.tx-filters input,
+.tx-filters select {
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  background: transparent;
   color: var(--fg);
-  padding: 0 0.35rem;
-  cursor: pointer;
+}
+.tx-filters input[type='number'] {
+  width: 7rem;
 }
