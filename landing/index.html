@@ -76,6 +76,15 @@
               autocomplete="off"
             />
             <button type="submit" class="btn btn-primary" id="try-it-submit">Ask</button>
+            <input type="hidden" name="tier" id="try-it-tier" value="standard" />
+            <div class="tier-picker" id="tier-picker" hidden>
+              <p class="tier-summary" id="tier-summary" aria-live="polite"></p>
+              <details class="tier-advanced">
+                <summary>Advanced: choose a tier</summary>
+                <label for="tier-select" class="sr-only">Pricing tier</label>
+                <select id="tier-select"></select>
+              </details>
+            </div>
 
             <div class="try-it-result" id="try-it-result" role="status" aria-live="polite">
               <p class="try-it-placeholder">
@@ -83,6 +92,13 @@
               </p>
             </div>
           </form>
+
+          <p class="live-ticker" id="live-ticker" hidden aria-live="off">
+            <span class="live-dot" aria-hidden="true"></span>
+            <strong id="ticker-resolved">0</strong> paid questions settled on-chain
+            · <strong id="ticker-workers">0</strong> workers online
+            <span class="ticker-note">Live from /stats — sandbox calls excluded.</span>
+          </p>
         </div>
       </div>
     </section>
@@ -228,6 +244,15 @@
         <h2 id="pricing-heading" class="section-heading reveal" data-i18n="nav.pricing">Pricing</h2>
         <p class="section-sub reveal">Pay per question, with a wallet or a card. Price is locked
           in at quote time.</p>
+        <div class="surge-live reveal" id="surge-live" hidden>
+          <div class="surge-head">
+            <span>Surge multiplier now: <strong id="surge-now">1.00x</strong></span>
+            <span class="surge-status" id="surge-status">Connecting…</span>
+          </div>
+          <canvas id="surge-canvas" aria-label="Live surge multiplier over the last 10 minutes" role="img"></canvas>
+          <p class="surge-note">Streamed live from the backend's smoothed worker-supply signal.
+            Gaps mean the connection dropped — history is never filled in.</p>
+        </div>
       </div>
     </section>
 
@@ -269,5 +294,6 @@
 
   <script src="i18n.js"></script>
   <script src="script.js"></script>
+  <script src="live.js" defer></script>
 </body>
 </html>

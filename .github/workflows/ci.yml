@@ -105,8 +105,7 @@ jobs:
           retention-days: 7
 
   visual:
-    name: Visual regression (all app pages)
-    if: github.event_name == 'pull_request'
+    name: Visual regression (Playwright screenshots)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -118,19 +117,23 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm install --no-audit --no-fund
         working-directory: app
-      - run: npm run build
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
         working-directory: app
-      - run: npx playwright install --with-deps chromium
+      # Fails on any unintended pixel diff against committed baselines.
+      # See e2e/README.md "Visual regression" for the approval workflow.
+      - name: Run visual regression suite
+        run: npm run visual
         working-directory: app
-      - run: npm run visual
-        working-directory: app
-      - name: Upload visual artifacts
-        if: ${{ !cancelled() }}
+      - name: Upload visual diff report
+        if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
-          name: visual-regression-report
-          path: app/test-results/
-          retention-days: 7
+          name: visual-diff-report
+          path: |
+            app/playwright-report-visual/
+            app/test-results/
+          retention-days: 14
 
   demo-agent:
     name: Demo scripts (syntax check + audit)
