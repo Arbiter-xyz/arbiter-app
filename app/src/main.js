@@ -8,22 +8,20 @@ import {
   AlbedoModule,
   HotWalletModule,
   LedgerModule,
+  WalletConnectModule,
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet, getLocalWalletSecret } from './localWallet.js';
 import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
-import { initSessionReplay } from './sessionReplay.js';
-import { applyOnboardingVariant } from './abTest.js';
-import { applyFlagGates } from './flags.js';
-
-initSessionReplay();
+import { initErrorReporting } from './errorReporting.js';
+initErrorReporting('main');
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
 const USDC_ASSET_CODE = import.meta.env.VITE_USDC_ASSET_CODE || 'USDC';
-applyFlagGates(); // runtime feature flags (see flags.js); fails open to defaults
+const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
 
 // Hand-picked, not allowAllModules(): explicit about which wallets we
 // support (matching the original spec's list) rather than automatically
@@ -42,7 +40,7 @@ applyFlagGates(); // runtime feature flags (see flags.js); fails open to default
 // confirming the critical/high count stays at zero.
 const kit = new StellarWalletsKit({
   network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule()],
+  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule(), ...(WALLETCONNECT_PROJECT_ID ? [new WalletConnectModule({ projectId: WALLETCONNECT_PROJECT_ID, metadata: { name: 'Arbiter', description: 'Arbiter worker console', url: window.location.origin, icons: [] } })] : [])],
 });
 
 const el = {
@@ -176,6 +174,64 @@ function startCategoryDemandPolling() {
   demandRefreshHandle = setInterval(refreshCategoryDemand, DEMAND_REFRESH_MS);
 }
 
+// --- Live per-category online-worker counts (issue #140) ------------------
+//
+// Shows an inline "Math (3 online)" style count next to each category
+// checkbox, sourced from GET /categories/online-counts. This is a read-only
+// display feature: it does not touch dispatch.js's routing. If the backend
+// doesn't expose the endpoint yet (404/network error), the counts are hidden
+// and the checkboxes keep working exactly as before.
+
+const ONLINE_COUNTS_REFRESH_MS = 20_000;
+let onlineCountsRefreshHandle = null;
+
+function onlineCountFor(category) {
+  const label = el.categoryPicker.querySelector(`label[data-category="${category}"]`);
+  return label ? label.querySelector('.category-online-count') : null;
+}
+
+function renderCategoryOnlineCounts(counts) {
+  // counts: { [category]: onlineWorkerCount }
+  for (const input of el.categoryPicker.querySelectorAll('input[type=checkbox]')) {
+    const badge = onlineCountFor(input.value);
+    if (!badge) continue;
+    const count = counts[input.value];
+    if (!Number.isFinite(count)) {
+      badge.textContent = '';
+      badge.classList.add('hidden');
+      continue;
+    }
+    badge.textContent = `(${count} online)`;
+    badge.classList.remove('hidden');
+  }
+}
+
+function clearCategoryOnlineCounts() {
+  for (const badge of el.categoryPicker.querySelectorAll('.category-online-count')) {
+    badge.textContent = '';
+    badge.classList.add('hidden');
+  }
+}
+
+async function refreshCategoryOnlineCounts() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/categories/online-counts`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderCategoryOnlineCounts(data.counts || {});
+  } catch (err) {
+    // Endpoint missing or backend unreachable: hide counts, keep checkboxes
+    // fully functional.
+    clearCategoryOnlineCounts();
+  }
+}
+
+function startCategoryOnlineCountsPolling() {
+  if (onlineCountsRefreshHandle) return;
+  refreshCategoryOnlineCounts();
+  onlineCountsRefreshHandle = setInterval(refreshCategoryOnlineCounts, ONLINE_COUNTS_REFRESH_MS);
+}
+
 // --- Wallet connect (extension) or quick start (local, non-custodial) -----
 
 // A user clicking both connect options in quick succession could otherwise
@@ -216,7 +272,7 @@ el.btnQuickStart.addEventListener('click', async () => {
     const { address } = await localWallet.getAddress();
     log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
     showBackupPanel();
-    applyOnboardingVariant(address, log);
+    await enrollBiometricUnlock();
     await activateWallet(localWallet, address);
   } catch (err) {
     setConnectButtonsBusy(false);
@@ -231,7 +287,8 @@ function showBackupPanel() {
   el.backupCopyStatus.textContent = '';
 }
 
-el.btnRevealSecret.addEventListener('click', () => {
+el.btnRevealSecret.addEventListener('click', async () => {
+  try { await unlockLocalWalletSecret(); } catch { log('Biometric unlock was cancelled; secret remains hidden.'); return; }
   const revealed = el.backupSecret.type === 'password';
   if (revealed) el.backupSecret.value = getLocalWalletSecret() || '';
   el.backupSecret.type = revealed ? 'text' : 'password';
@@ -239,6 +296,7 @@ el.btnRevealSecret.addEventListener('click', () => {
 });
 
 el.btnCopySecret.addEventListener('click', async () => {
+  try { await unlockLocalWalletSecret(); } catch { el.backupCopyStatus.textContent = 'Biometric unlock was cancelled.'; return; }
   const secret = getLocalWalletSecret();
   if (!secret) return;
   try {
@@ -288,4 +346,4 @@ el.digestSelect.addEventListener('change', async () => {
 // non-custodial framing is unchanged — there is no server-side capability to
 // rebuild a u
 
-/* … truncated 599 chars — edit only what you need near the top … */
+/* … truncated 2371 chars — edit only what you need near the top … */

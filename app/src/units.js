@@ -16,3 +16,18 @@ export function usdcFromStroops(stroops) {
   const frac = (s % 10_000_000n).toString().padStart(7, '0');
   return `${whole}.${frac}`;
 }
+
+const DISPLAY_PRECISION_KEY = 'arbiter:usdc-display-precision';
+
+/** Display-only preference; all stroop parsing and contract math stay exact. */
+export function formatUsdc(value) {
+  const precision = localStorage.getItem(DISPLAY_PRECISION_KEY) === '7' ? 7 : 2;
+  const amount = Number(value);
+  return `${Number.isFinite(amount) ? amount.toFixed(precision) : '—'} USDC`;
+}
+
+export function toggleUsdcDisplayPrecision() {
+  const next = localStorage.getItem(DISPLAY_PRECISION_KEY) === '7' ? '2' : '7';
+  localStorage.setItem(DISPLAY_PRECISION_KEY, next);
+  return next;
+}
