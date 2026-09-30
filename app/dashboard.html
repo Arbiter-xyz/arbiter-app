@@ -16,8 +16,9 @@
           <a href="/index.html">Worker console →</a>
           <a href="/leaderboard.html">Leaderboard →</a>
         </p>
-        <div class="accessibility-controls" aria-label="Accessibility controls">
-          <button type="button" class="secondary" data-font-decrease aria-label="Decrease text size">A−</button><output class="muted small" data-font-status>100% text size</output><button type="button" class="secondary" data-font-increase aria-label="Increase text size">A+</button><button type="button" class="secondary" data-contrast-toggle aria-pressed="false">High contrast</button>
+        <div id="account-switcher" class="account-switcher hidden">
+          <select id="account-select" aria-label="Active wallet"></select>
+          <button id="btn-add-wallet" class="secondary small" type="button">+ Add wallet</button>
         </div>
       </header>
 

@@ -12,8 +12,7 @@ import {
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet } from './localWallet.js';
 import { renderMarkdown } from './markdown.js';
-import { createStarButton, filterStarred, mountStarredFilter } from './starredQuestions.js';
-import { filterQuestions } from './questionFilter.js';
+import { createNotificationCenter } from './notifications.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
@@ -42,19 +41,28 @@ const el = {
   questionSearch: document.getElementById('question-search'),
   questionStatus: document.getElementById('question-status'),
   log: document.getElementById('log'),
+  accountSwitcher: document.getElementById('account-switcher'),
+  accountSelect: document.getElementById('account-select'),
+  btnAddWallet: document.getElementById('btn-add-wallet'),
 };
 
-const state = { address: null, activeWallet: null, sessionToken: null, sessionExpiresAt: 0, data: null, starredOnly: false };
+// Connected identities keyed by address, each with its own cached session —
+// see the worker console's state (issue #132).
+const state = {
+  identities: new Map(),
+  address: null,
+  get identity() {
+    return this.identities.get(this.address) || null;
+  },
+};
 
-mountStarredFilter(el.questionList, (checked) => {
-  state.starredOnly = checked;
-  renderQuestionList();
-});
+const notify = createNotificationCenter({ mount: document.querySelector('header'), storageKey: 'arbiter-dashboard-notifications' });
 
 function log(message) {
   const li = document.createElement('li');
   li.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
   el.log.prepend(li);
+  notify(message);
 }
 
 function setConnectButtonsBusy(busy) {
@@ -66,27 +74,29 @@ function setConnectButtonsBusy(busy) {
  * console's ensureSession() — these questions/balance are only readable
  * with a valid session now, not by anyone who just knows the address. */
 async function ensureSession() {
-  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) return state.sessionToken;
+  const identity = state.identity; // pinned against a mid-flight account switch
+  if (identity.sessionToken && Date.now() < identity.sessionExpiresAt - 60_000) return identity.sessionToken;
+  const { address, wallet } = identity;
 
   log('Proving control of your address (one signature)…');
-  const challengeRes = await fetch(`${BACKEND_URL}/payers/${state.address}/session/challenge`, { method: 'POST' });
+  const challengeRes = await fetch(`${BACKEND_URL}/payers/${address}/session/challenge`, { method: 'POST' });
   if (!challengeRes.ok) throw new Error((await challengeRes.json()).error || 'failed to get session challenge');
   const { xdr } = await challengeRes.json();
 
-  const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
-    address: state.address,
+  const { signedTxXdr } = await wallet.signTransaction(xdr, {
+    address,
     networkPassphrase: WalletNetwork.TESTNET,
   });
 
-  const sessionRes = await fetch(`${BACKEND_URL}/payers/${state.address}/session`, {
+  const sessionRes = await fetch(`${BACKEND_URL}/payers/${address}/session`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ signedXdr: signedTxXdr }),
   });
   if (!sessionRes.ok) throw new Error((await sessionRes.json()).error || 'failed to establish session');
   const { token, expiresAt } = await sessionRes.json();
-  state.sessionToken = token;
-  state.sessionExpiresAt = expiresAt;
+  identity.sessionToken = token;
+  identity.sessionExpiresAt = expiresAt;
   log('Session established.');
   return token;
 }
@@ -98,7 +108,7 @@ el.btnConnect.addEventListener('click', async () => {
       onWalletSelected: async (option) => {
         kit.setWallet(option.id);
         const { address } = await kit.getAddress();
-        await activate(kit, address);
+        await activate(kit, address, option.id);
       },
       onClosed: (err) => {
         setConnectButtonsBusy(false);
@@ -123,16 +133,41 @@ el.btnQuickStart.addEventListener('click', async () => {
   }
 });
 
-async function activate(wallet, address) {
-  state.activeWallet = wallet;
+async function activate(wallet, address, walletId = null) {
+  const existing = state.identities.get(address);
+  if (existing) Object.assign(existing, { wallet, walletId });
+  else state.identities.set(address, { address, wallet, walletId, sessionToken: null, sessionExpiresAt: 0 });
+  log(`Connected ${address}`);
+  await switchIdentity(address);
+  setConnectButtonsBusy(false);
+}
+
+async function switchIdentity(address) {
   state.address = address;
+  if (state.identity.walletId) kit.setWallet(state.identity.walletId);
   el.payerAddress.textContent = address;
   el.connect.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
-  log(`Connected ${address}`);
+  el.accountSelect.innerHTML = '';
+  for (const addr of state.identities.keys()) {
+    const option = document.createElement('option');
+    option.value = addr;
+    option.textContent = `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+    option.selected = addr === address;
+    el.accountSelect.append(option);
+  }
+  el.accountSwitcher.classList.remove('hidden');
   await loadQuestions();
-  setConnectButtonsBusy(false);
 }
+
+el.accountSelect.addEventListener('change', () => {
+  switchIdentity(el.accountSelect.value).catch((err) => log(`Switch failed: ${err.message}`));
+});
+
+el.btnAddWallet.addEventListener('click', () => {
+  el.dashboard.classList.add('hidden');
+  el.connect.classList.remove('hidden');
+});
 
 el.btnRefresh.addEventListener('click', loadQuestions);
 

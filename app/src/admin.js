@@ -3,15 +3,21 @@ import { downloadCsv } from './csv.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';
-const LAYOUT_KEY = 'arbiter-admin-layout';
-const SVG_NS = 'http://www.w3.org/2000/svg';
+const DENSITY_KEY = 'arbiter-admin-density';
 
-// Views each role may open. A role missing from this map (or no role system
-// on the backend at all) keeps today's single-token full access.
-const ROLE_VIEWS = {
-  readonly: ['overview', 'transactions', 'workers', 'payers', 'blockchain', 'fraud'],
-};
-let allowedViews = null; // null = unrestricted
+function applyDensity(compact) {
+  document.getElementById('admin-shell').classList.toggle('density-compact', compact);
+  const toggle = document.getElementById('density-toggle');
+  toggle.classList.toggle('active', compact);
+  toggle.setAttribute('aria-pressed', String(compact));
+}
+
+applyDensity(localStorage.getItem(DENSITY_KEY) === 'compact');
+document.getElementById('density-toggle').addEventListener('click', () => {
+  const compact = !document.getElementById('admin-shell').classList.contains('density-compact');
+  localStorage.setItem(DENSITY_KEY, compact ? 'compact' : 'comfortable');
+  applyDensity(compact);
+});
 
 function truncateAddress(id) {
   if (!id || id.length <= 16 || !id.startsWith('G')) return id || '—';
