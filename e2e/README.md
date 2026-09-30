@@ -2,8 +2,9 @@
 
 This directory contains the end-to-end (e2e) test suite for the wallet
 integration layer, including the real Playwright suite that drives the
-quick-start wallet flow against a real testnet, and the manual
-hardware-in-the-loop runbook for Ledger devices.
+quick-start wallet flow against a real testnet, the manual
+hardware-in-the-loop runbook for Ledger devices, and the cross-repo
+integration harness that exercises contract + backend + app together.
 
 ## Automated suite
 
@@ -76,6 +77,66 @@ suite handles them explicitly **without masking real regressions**:
 A failure therefore means the flow actually broke (or the testnet stayed
 unavailable past the deadline), not that a single request was slow.
 
+## Cross-repo integration harness (contract + backend + app)
+
+Each of the three split repos (contract / backend / app) has its own CI, but
+nothing exercises them *together*. An interface change — a new contract
+method, a changed backend response shape — can pass all three repos' CI
+independently while silently breaking the real integrated system. This
+harness catches that drift **before merge** rather than at deploy time.
+
+It deploys the **real** contract, runs the **real** backend against it, and
+drives the **real** app build, then executes the full paid-question
+lifecycle as a single test:
+
+**payment → dispatch → reconcile → settle**
+
+### Pinned-compatible versions
+
+The harness pulls the other two repos at their pinned-compatible versions
+(the version-pinning work in `arbiter-contract`#133 / `arbiter-backend`#163 /
+`arbiter-app`#150), so the integrated stack under test is exactly the
+combination that is expected to ship together. Bump the pins in
+`e2e/integration/versions.env` when a coordinated release is cut; a mismatch
+between the pins and the deployed interfaces fails the harness loudly.
+
+### Running it
+
+```sh
+yarn test:e2e:integration
+```
+
+This brings up the integrated stack (contract + backend + app) via the
+compose file in `e2e/integration/`, waits for each service to report ready,
+then runs the lifecycle test against the live stack. Tear it down with:
+
+```sh
+yarn test:e2e:integration:down
+```
+
+### What the lifecycle test asserts
+
+1. **Payment** — a paid question is submitted and the payment is accepted by
+   the real contract.
+2. **Dispatch** — the backend observes the on-chain event and dispatches the
+   question to the answering path.
+3. **Reconcile** — the backend reconciles the on-chain state with its own
+   record of the question (no drift between contract and backend views).
+4. **Settle** — the result is settled on-chain and the app reflects the
+   settled result and updated balance.
+
+A failure at any step means the three repos no longer agree on their shared
+interface — exactly the class of breakage per-repo CI structurally cannot
+see.
+
+### CI wiring
+
+The harness is wired into this repo's CI as a required check. It runs on
+pull requests that touch the integration surface (contract/backend pins,
+shared types, or the harness itself) and fails the build loudly when the
+integrated stack breaks, so an interface-breaking change cannot merge just
+because each repo's own CI is green.
+
 ## Ledger hardware-in-the-loop runbook
 
 Hardware-in-the-loop CI is not feasible for Ledger devices, so the Ledger
@@ -146,3 +207,32 @@ The adapter in `localWallet.js` therefore:
 - A faithful emulator (e.g. Speculos with the Stellar app) may be used in
   place of physical hardware for steps 1–2; document the emulator version
   and app build used.
+
+## Visual regression
+
+A self-hosted pixel-diffing suite (Playwright `toHaveScreenshot()`, no SaaS)
+covers the landing page, worker console, dashboard and leaderboard on desktop
+and mobile viewports, plus each dashboard job-progression state (`pending`,
+`answering`, `reconciling`, `settled`, `refunded`). All backend calls are
+stubbed with fixed fixtures, SSE streams are aborted, the clock is frozen and
+animations are disabled, so the async states render deterministically.
+
+- Config: `app/playwright.visual.config.js`
+- Spec: `app/visual/visual.spec.js`
+- Baselines: `app/visual/__screenshots__/` (committed)
+
+```sh
+cd app
+npm run visual          # compare against baselines
+npm run visual:update   # regenerate baselines after an intended change
+```
+
+### Reviewing and accepting intentional changes
+
+1. CI's **Visual regression** job fails on any diff above 1% of pixels and
+   uploads `visual-diff-report` (expected / actual / diff images).
+2. Open the report and confirm every diff is intentional.
+3. Regenerate baselines on Linux so fonts match CI — e.g.
+   `docker run --rm -v $PWD:/w -w /w/app mcr.microsoft.com/playwright:v1.48.0-jammy npm run visual:update`.
+4. Commit the updated PNGs in the same PR; reviewers approve them in the
+   GitHub image diff view like any other change.
