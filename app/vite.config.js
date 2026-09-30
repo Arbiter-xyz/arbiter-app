@@ -23,7 +23,7 @@ export default defineConfig({
         leaderboard: resolve(__dirname, 'leaderboard.html'),
         worker: resolve(__dirname, 'worker.html'),
         admin: resolve(__dirname, 'admin.html'),
-        status: resolve(__dirname, 'status.html'),
+        demo: resolve(__dirname, 'demo.html'),
       },
       output: {
         // Real per-adapter code splitting: each wallet-adapter SDK is loaded
