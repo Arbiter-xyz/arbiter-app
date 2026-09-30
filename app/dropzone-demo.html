@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Drop zone demo</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!-- Placeholder page for #135: exercises the .drop-zone states. Not linked
+         from any real flow; toggle OS theme to verify dark/light branches. -->
+    <main style="max-width: 480px; margin: 2rem auto; display: grid; gap: 1rem">
+      <label class="drop-zone" data-state="idle">
+        <input type="file" hidden />
+        <span class="drop-zone-title">Drop a file or click to browse</span>
+        <span class="drop-zone-hint">Idle state</span>
+      </label>
+      <label class="drop-zone" data-state="dragover">
+        <span class="drop-zone-title">Release to upload</span>
+        <span class="drop-zone-hint">Dragover state</span>
+      </label>
+      <label class="drop-zone" data-state="error">
+        <span class="drop-zone-title">File too large</span>
+        <span class="drop-zone-hint">Error state</span>
+      </label>
+    </main>
+    <script>
+      const zone = document.querySelector('.drop-zone[data-state="idle"]');
+      ["dragenter", "dragover"].forEach((e) =>
+        zone.addEventListener(e, (ev) => { ev.preventDefault(); zone.dataset.state = "dragover"; }));
+      ["dragleave", "drop"].forEach((e) =>
+        zone.addEventListener(e, (ev) => { ev.preventDefault(); zone.dataset.state = "idle"; }));
+    </script>
+  </body>
+</html>
