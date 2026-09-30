@@ -10,7 +10,8 @@
     "bot": "node bot.js",
     "worker": "node worker-sim.js",
     "sponsored-demo": "node sponsored-demo.js",
-    "check": "node --check ask.js sandbox-ask.js bot.js worker-sim.js sponsored-demo.js lib/stellar.js"
+    "scenario": "node run-scenario.js",
+    "check": "node --check ask.js sandbox-ask.js bot.js worker-sim.js sponsored-demo.js run-scenario.js lib/stellar.js lib/demo.js scenarios/*.js"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^16.2.0",

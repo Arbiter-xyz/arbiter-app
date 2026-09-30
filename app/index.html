@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -18,6 +18,10 @@
           <a href="/leaderboard.html">Leaderboard →</a>
           <a href="/admin.html">Admin →</a>
         </p>
+        <div id="account-switcher" class="account-switcher hidden">
+          <select id="account-select" aria-label="Active wallet"></select>
+          <button id="btn-add-wallet" class="secondary small" type="button">+ Add wallet</button>
+        </div>
       </header>
 
       <section id="panel-connect" class="panel">
@@ -140,6 +144,17 @@
           </div>
           <button id="btn-enable-push" class="secondary" type="button">Enable</button>
         </div>
+        <div class="push-row">
+          <div>
+            <div class="muted small">Notification digest <strong>(coming soon)</strong></div>
+            <p id="digest-status" class="muted small">Not active yet — needs backend digest support. Your choice is not saved.</p>
+          </div>
+          <select id="digest-select" aria-label="Notification digest frequency">
+            <option value="instant">Instant</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </div>
         <p class="muted small">
           Push only helps for longer-timeout questions (~20s+) — a notification round-trip is too
           slow for the fastest tier. It supplements the tab, it doesn't replace it.
@@ -183,16 +198,27 @@
           <div class="muted small">Your track record</div>
           <p id="track-record-summary">No answers yet — this fills in once you start answering.</p>
         </div>
+
+        <div class="referral" id="referral">
+          <div class="muted small">Invite other workers</div>
+          <button id="btn-referral" class="secondary" type="button" disabled>Get referral link</button>
+          <input id="referral-link" class="hidden" type="text" readonly />
+          <p class="muted small" id="referral-stats"></p>
+        </div>
       </section>
 
       <section id="panel-question" class="panel hidden">
         <h2 id="question-heading">Incoming question</h2>
         <div class="timer-track"><div class="timer-bar" id="timer-bar"></div></div>
-        <p id="question-text"></p>
+        <div id="question-text" class="question-text"></div>
         <form id="answer-form">
-          <input id="answer-input" type="text" placeholder="Type your answer…" autocomplete="off" />
+          <input id="answer-input" type="text" maxlength="400" placeholder="Type your answer…" autocomplete="off" aria-describedby="answer-count" />
           <button id="btn-answer" type="submit">Submit answer</button>
         </form>
+        <div class="answer-tools">
+          <span id="answer-count" class="muted small" aria-live="polite">0 / 400</span>
+          <button id="btn-restore-draft" class="secondary hidden" type="button">Restore last draft</button>
+        </div>
       </section>
 
       <section class="panel">
@@ -201,6 +227,7 @@
       </section>
     </main>
 
+    <script type="module" src="/src/a11y.js"></script>
     <script type="module" src="/src/main.js"></script>
     <script type="module" src="/src/apikey.js"></script>
   </body>

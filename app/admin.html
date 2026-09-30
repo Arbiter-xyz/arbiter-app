@@ -21,6 +21,9 @@
     <div id="admin-shell" class="admin-shell hidden">
       <nav class="admin-nav">
         <h1>Arbiter <span class="tag">admin</span></h1>
+        <p id="admin-role" class="muted small admin-role hidden"></p>
+        <button id="btn-admin-customize" class="admin-nav-customize" type="button" aria-expanded="false">Customize</button>
+        <div id="admin-customize-panel" class="admin-customize-panel hidden"></div>
 
         <div class="admin-nav-group">
           <h3>Platform</h3>
@@ -42,11 +45,17 @@
           <h3>Infrastructure</h3>
           <button class="admin-nav-link" data-view="blockchain">Blockchain</button>
           <button class="admin-nav-link" data-view="fraud">Fraud &amp; Trust</button>
+          <button class="admin-nav-link" data-view="audit">Audit Log</button>
         </div>
 
         <div class="admin-nav-group">
           <h3>Growth</h3>
           <a class="admin-nav-link" href="/leaderboard.html">Leaderboard →</a>
+        </div>
+
+        <div class="admin-nav-group">
+          <h3>Display</h3>
+          <button id="density-toggle" class="admin-nav-link" aria-pressed="false">Compact tables</button>
         </div>
       </nav>
 
@@ -80,6 +89,16 @@
         <section id="view-transactions" class="admin-view">
           <h2>Transactions</h2>
           <div class="panel">
+            <div id="tx-filters" class="tx-filters">
+              <label class="muted small">From <input id="tx-filter-from" type="date" /></label>
+              <label class="muted small">To <input id="tx-filter-to" type="date" /></label>
+              <label class="muted small">Min USDC <input id="tx-filter-min" type="number" min="0" step="any" placeholder="0" /></label>
+              <label class="muted small">Max USDC <input id="tx-filter-max" type="number" min="0" step="any" placeholder="any" /></label>
+              <label class="muted small">Status <select id="tx-filter-status"><option value="">All</option></select></label>
+              <label class="muted small">Outcome <select id="tx-filter-outcome"><option value="">All</option></select></label>
+              <button id="tx-filter-reset" type="button">Reset</button>
+            </div>
+            <p id="tx-filter-summary" class="muted small">Filters apply only to the most recent 100 transactions loaded, not the full history.</p>
             <table class="leaderboard-table">
               <thead>
                 <tr><th>Question</th><th>Payer</th><th>Amount</th><th>Status</th><th>Outcome</th><th>Created</th></tr>
@@ -163,6 +182,10 @@
         <section id="view-fraud" class="admin-view">
           <h2>Fraud &amp; Trust</h2>
           <div class="panel">
+            <p class="muted small">Match-ratio distribution across established workers.</p>
+            <div id="fraud-chart" class="admin-chart"></div>
+          </div>
+          <div class="panel">
             <p class="muted small">Workers below the minimum match ratio once established — candidates for review.</p>
             <table class="leaderboard-table">
               <thead>
@@ -172,9 +195,23 @@
             </table>
           </div>
         </section>
+
+        <section id="view-audit" class="admin-view">
+          <h2>Audit Log</h2>
+          <div class="panel">
+            <p class="muted small">Admin actions recorded by the backend (GET /admin/audit), newest first.</p>
+            <table class="leaderboard-table">
+              <thead>
+                <tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th></tr>
+              </thead>
+              <tbody id="audit-body"><tr><td colspan="5" class="muted small">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
       </main>
     </div>
 
+    <script type="module" src="/src/a11y.js"></script>
     <script type="module" src="/src/admin.js"></script>
   </body>
 </html>
