@@ -6,6 +6,11 @@
   --border: #dcdce6;
   --accent: #5b4cf0;
   --muted: #75758a;
+  /* Data-viz palette — tuned separately per theme so charts stay legible. */
+  --chart-bar: #5b4cf0;
+  --chart-flag: #d1343f;
+  --chart-grid: #dcdce6;
+  --chart-label: #5d5d72;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -15,6 +20,10 @@
     --panel: #1e1e2e;
     --border: #33334a;
     --muted: #9494ac;
+    --chart-bar: #8f84ff;
+    --chart-flag: #ff6b75;
+    --chart-grid: #3a3a55;
+    --chart-label: #b4b4cc;
   }
 }
 
@@ -164,6 +173,24 @@ button.secondary {
   font-size: 1.1rem;
 }
 
+.question-filters {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+.question-filters input,
+.question-filters select {
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+}
+.question-filters input {
+  flex: 1;
+  min-width: 0;
+}
+
 .question-list {
   display: flex;
   flex-direction: column;
@@ -196,6 +223,10 @@ button.secondary {
 .badge-resolved { background: #16a34a33; color: #16a34a; }
 .badge-refunded { background: #d9770633; color: #d97706; }
 .badge-pending { background: #5b4cf033; color: #5b4cf0; }
+.answer-feedback { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem; }
+.answer-feedback-btn { padding: 0.15rem 0.5rem; font-size: 0.85rem; }
+.answer-feedback-btn[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+.answer-feedback-status { font-size: 0.75rem; color: var(--muted); }
 
 /* ------------------------------------------------------------------ */
 /* Admin console — a nav-shell layout, distinct from the single-column   */
@@ -395,4 +426,41 @@ fieldset label {
 #log li {
   padding: 0.2rem 0;
   border-bottom: 1px dashed var(--border);
+}
+
+.starred-filter {
+  margin: 0.75rem 0 0.5rem;
+}
+.question-item .star-toggle {
+  background: transparent;
+  color: #d97706;
+  border: none;
+  padding: 0 0.4rem 0 0;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.question-item .star-toggle + div {
+  flex: 1;
+}
+.tx-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+.tx-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.tx-filters input,
+.tx-filters select {
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+}
+.tx-filters input[type='number'] {
+  width: 7rem;
 }

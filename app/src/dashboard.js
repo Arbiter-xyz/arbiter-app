@@ -8,18 +8,22 @@ import {
   AlbedoModule,
   HotWalletModule,
   LedgerModule,
+  WalletConnectModule,
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet } from './localWallet.js';
 import { renderMarkdown } from './markdown.js';
+import { createStarButton, filterStarred, mountStarredFilter } from './starredQuestions.js';
+import { filterQuestions } from './questionFilter.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
 
 // Same hand-picked module list as the worker console — see main.js.
 // Ledger is added explicitly (not via allowAllModules()) so the Trezor/
 // protobufjs surface stays excluded — see the round-5 note in main.js.
 const kit = new StellarWalletsKit({
   network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule()],
+  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule(), ...(WALLETCONNECT_PROJECT_ID ? [new WalletConnectModule({ projectId: WALLETCONNECT_PROJECT_ID, metadata: { name: 'Arbiter', description: 'Arbiter buyer dashboard', url: window.location.origin, icons: [] } })] : [])],
 });
 
 const el = {
@@ -33,10 +37,17 @@ const el = {
   statCount: document.getElementById('stat-count'),
   statSuccess: document.getElementById('stat-success'),
   questionList: document.getElementById('question-list'),
+  questionSearch: document.getElementById('question-search'),
+  questionStatus: document.getElementById('question-status'),
   log: document.getElementById('log'),
 };
 
-const state = { address: null, activeWallet: null, sessionToken: null, sessionExpiresAt: 0 };
+const state = { address: null, activeWallet: null, sessionToken: null, sessionExpiresAt: 0, data: null, starredOnly: false };
+
+mountStarredFilter(el.questionList, (checked) => {
+  state.starredOnly = checked;
+  renderQuestionList();
+});
 
 function log(message) {
   const li = document.createElement('li');
@@ -141,23 +152,45 @@ async function loadQuestions() {
 }
 
 function render(data) {
+  state.data = data;
+  // Stats always reflect the full history, never the filtered subset.
   el.statSpend.textContent = `${data.totalSpend} USDC`;
   el.statCount.textContent = String(data.totalTracked);
   el.statSuccess.textContent = data.successRate === null ? '—' : `${Math.round(data.successRate * 100)}%`;
+  renderQuestionList();
+}
+
+/**
+ * Re-renders the list from the retained data — no refetch, no session.
+ * Search/status narrow the list first; "Starred only" applies on top.
+ */
+function renderQuestionList() {
+  if (!state.data) return;
+  const all = state.data.questions;
+  const matching = filterQuestions(all, { query: el.questionSearch.value, status: el.questionStatus.value });
+  const visible = state.starredOnly ? filterStarred(matching, state.address) : matching;
 
   el.questionList.innerHTML = '';
-  if (data.questions.length === 0) {
+  if (visible.length === 0) {
     const li = document.createElement('li');
     li.className = 'muted small';
-    li.textContent = 'No questions yet.';
+    li.textContent =
+      all.length === 0
+        ? 'No questions yet.'
+        : state.starredOnly && matching.length > 0
+          ? 'No starred questions.'
+          : 'No questions match your search.';
     el.questionList.appendChild(li);
     return;
   }
 
-  for (const q of data.questions) {
+  for (const q of visible) {
     el.questionList.appendChild(renderQuestionItem(q));
   }
 }
+
+el.questionSearch.addEventListener('input', renderQuestionList);
+el.questionStatus.addEventListener('change', renderQuestionList);
 
 function renderQuestionItem(q) {
   const li = document.createElement('li');
@@ -174,7 +207,7 @@ function renderQuestionItem(q) {
   renderMarkdown(qText, q.question || q.questionId);
   const qMeta = document.createElement('div');
   qMeta.className = 'q-meta';
-  const parts = [q.tier, q.amount ? `${q.amount} USDC` : null];
+  const parts = [q.tier, q.amount ? formatUsdc(q.amount) : null];
   if (q.status === 'settled' && q.outcome === 'resolved') parts.push(`confidence ${q.confidence}`);
   qMeta.textContent = parts.filter(Boolean).join(' · ');
   left.append(qText, qMeta);
@@ -184,7 +217,12 @@ function renderQuestionItem(q) {
   badge.className = `badge ${cls}`;
   badge.textContent = label;
 
-  row.append(left, badge);
+  // Unstarring while "Starred only" is on should drop the row immediately.
+  const star = createStarButton(state.address, q.questionId, () => {
+    if (state.starredOnly) renderQuestionList();
+  });
+
+  row.append(star, left, badge);
   li.appendChild(row);
 
   // Surface the real, load-bearing guarantee for still-pending questions:
