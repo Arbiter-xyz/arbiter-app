@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arbiter — Live demo activity</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Live demo activity</h1>
+      <p class="muted small">
+        Polls the backend's <code>/admin/workers</code> and <code>/admin/transactions</code> every 2s.
+        Uses the same admin token as <a href="/admin.html">the admin console</a>.
+      </p>
+      <section id="demo-login" class="hidden">
+        <input id="demo-token" type="password" placeholder="Admin token" />
+        <button id="demo-login-btn">Connect</button>
+        <span id="demo-status" class="muted small"></span>
+      </section>
+      <section id="demo-shell" class="hidden">
+        <h2>Workers <span id="demo-worker-count" class="muted small"></span></h2>
+        <ul id="demo-workers"></ul>
+        <h2>Event feed</h2>
+        <ol id="demo-feed" reversed></ol>
+      </section>
+    </main>
+    <script type="module" src="/src/demo.js"></script>
+  </body>
+</html>

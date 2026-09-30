@@ -6,6 +6,7 @@ import {
   callRefundTimeoutPermissionless,
   explorerTxLink,
   getLatestLedgerSequence,
+  pollJob,
   sleep,
 } from './lib/stellar.js';
 
@@ -20,17 +21,6 @@ async function postOracle(body, headers = {}) {
     body: JSON.stringify(body),
   });
   return { status: res.status, body: await res.json() };
-}
-
-async function pollJob(jobId, { intervalMs = 2000, timeoutMs = 120_000 } = {}) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const res = await fetch(`${env.backendUrl}/oracle/${jobId}`);
-    const job = await res.json();
-    if (job.status === 'settled') return job;
-    await sleep(intervalMs);
-  }
-  throw new Error(`job ${jobId} did not settle within ${timeoutMs}ms`);
 }
 
 async function nativeXlmBalance(address) {
@@ -122,7 +112,7 @@ async function main() {
   console.log(`\n[4/6] Notifying backend + polling job for question ${questionId}…`);
   const fulfil = await postOracle({ question: 'unused' }, { 'X-Payment-Tx': 'sponsored', 'X-Question-Id': questionId });
   if (fulfil.status !== 202) throw new Error(`expected 202, got ${fulfil.status}: ${JSON.stringify(fulfil.body)}`);
-  const job = await pollJob(fulfil.body.jobId);
+  const job = await pollJob(env.backendUrl, fulfil.body.jobId);
 
   console.log(`      Outcome: ${job.outcome}`);
   if (job.outcome === 'resolved') console.log(`      Payout tx: ${explorerTxLink(job.payoutTx)}`);

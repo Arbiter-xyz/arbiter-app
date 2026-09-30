@@ -16,7 +16,11 @@ function renderRow(row, rank) {
 
   const idCell = document.createElement('td');
   idCell.title = row.workerId;
-  idCell.textContent = truncateAddress(row.workerId);
+  // Link to the worker's public profile page (issue #86).
+  const link = document.createElement('a');
+  link.href = workerProfileUrl(row.workerId);
+  link.textContent = truncateAddress(row.workerId);
+  idCell.appendChild(link);
 
   const ratioCell = document.createElement('td');
   const ratioSpan = document.createElement('span');
@@ -28,7 +32,7 @@ function renderRow(row, rank) {
   totalCell.textContent = row.totalAnswers;
 
   const stakeCell = document.createElement('td');
-  stakeCell.textContent = `${row.stake} USDC`;
+  stakeCell.textContent = formatUsdc(row.stake);
 
   tr.append(rankCell, idCell, ratioCell, totalCell, stakeCell);
   return tr;
@@ -36,6 +40,7 @@ function renderRow(row, rank) {
 
 async function loadLeaderboard() {
   const tbody = document.getElementById('leaderboard-body');
+  if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="5" class="muted small">Loading…</td></tr>';
 
   try {
@@ -72,7 +77,7 @@ function renderActivityItem(event) {
 
   const detail = document.createElement('span');
   detail.className = 'muted small';
-  detail.textContent = `${event.category} · tier ${event.tier} · ${event.amount} USDC`;
+  detail.textContent = `${event.category} · tier ${event.tier} · ${formatUsdc(event.amount)}`;
 
   li.append(outcome, ' ', detail);
   return li;
@@ -111,6 +116,40 @@ function initActivityFeed() {
   };
 }
 
-document.getElementById('btn-refresh').addEventListener('click', loadLeaderboard);
-loadLeaderboard();
-initActivityFeed();
+// Public route view for the unified app shell (#143). Renders the
+// leaderboard and activity feed for any visitor — no session or wallet
+// required, matching the previous standalone leaderboard.html. The
+// shell mounts this view into its own container, so the DOM ids below
+// are looked up lazily at mount time rather than at module load.
+export function mountLeaderboard(root) {
+  root.innerHTML = `
+    <section class="leaderboard-view">
+      <header class="leaderboard-header">
+        <h1>Leaderboard</h1>
+        <button id="btn-refresh" type="button">Refresh</button>
+      </header>
+      <table class="leaderboard-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Worker</th>
+            <th>Match ratio</th>
+            <th>Answers</th>
+            <th>Stake</th>
+          </tr>
+        </thead>
+        <tbody id="leaderboard-body"></tbody>
+      </table>
+      <section class="activity-section">
+        <h2>Recent settlements</h2>
+        <ul id="activity-feed" class="activity-feed"></ul>
+      </section>
+    </section>
+  `;
+
+  const refreshBtn = root.querySelector('#btn-refresh');
+  if (refreshBtn) refreshBtn.addEventListener('click', loadLeaderboard);
+
+  loadLeaderboard();
+  initActivityFeed();
+}
