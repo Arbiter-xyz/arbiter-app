@@ -36,6 +36,8 @@ const el = {
   statSpend: document.getElementById('stat-spend'),
   statCount: document.getElementById('stat-count'),
   statSuccess: document.getElementById('stat-success'),
+  spendCalendarGrid: document.getElementById('spend-calendar-grid'),
+  spendCalendarTotal: document.getElementById('spend-calendar-total'),
   questionList: document.getElementById('question-list'),
   questionSearch: document.getElementById('question-search'),
   questionStatus: document.getElementById('question-status'),
@@ -157,18 +159,7 @@ function render(data) {
   el.statSpend.textContent = `${data.totalSpend} USDC`;
   el.statCount.textContent = String(data.totalTracked);
   el.statSuccess.textContent = data.successRate === null ? '—' : `${Math.round(data.successRate * 100)}%`;
-  renderQuestionList();
-}
-
-/**
- * Re-renders the list from the retained data — no refetch, no session.
- * Search/status narrow the list first; "Starred only" applies on top.
- */
-function renderQuestionList() {
-  if (!state.data) return;
-  const all = state.data.questions;
-  const matching = filterQuestions(all, { query: el.questionSearch.value, status: el.questionStatus.value });
-  const visible = state.starredOnly ? filterStarred(matching, state.address) : matching;
+  renderSpendCalendar(data.questions, data.totalSpend);
 
   el.questionList.innerHTML = '';
   if (visible.length === 0) {
@@ -189,8 +180,32 @@ function renderQuestionList() {
   }
 }
 
-el.questionSearch.addEventListener('input', renderQuestionList);
-el.questionStatus.addEventListener('change', renderQuestionList);
+function renderSpendCalendar(questions, totalSpend) {
+  const daily = new Map();
+  for (const question of questions) {
+    const dateValue = question.createdAt || question.created_at || question.timestamp;
+    const date = dateValue ? new Date(dateValue) : null;
+    const amount = Number(question.amount || 0);
+    if (!date || Number.isNaN(date.valueOf()) || !Number.isFinite(amount)) continue;
+    const day = date.toISOString().slice(0, 10);
+    daily.set(day, (daily.get(day) || 0) + amount);
+  }
+  const entries = [...daily.entries()].sort(([left], [right]) => left.localeCompare(right)).slice(-84);
+  const max = Math.max(...entries.map(([, amount]) => amount), 1);
+  el.spendCalendarGrid.replaceChildren();
+  for (const [day, amount] of entries) {
+    const cell = document.createElement('div');
+    cell.className = 'spend-calendar-cell';
+    cell.style.setProperty('--spend-intensity', String(Math.max(0.12, amount / max)));
+    cell.setAttribute('role', 'listitem');
+    cell.title = `${day}: ${amount.toFixed(2)} USDC`;
+    cell.setAttribute('aria-label', cell.title);
+    cell.textContent = day.slice(8);
+    el.spendCalendarGrid.append(cell);
+  }
+  if (!entries.length) el.spendCalendarGrid.textContent = 'No dated question records are available yet.';
+  el.spendCalendarTotal.textContent = `${Number(totalSpend || 0).toFixed(2)} USDC total`;
+}
 
 function renderQuestionItem(q) {
   const li = document.createElement('li');

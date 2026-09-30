@@ -158,6 +158,14 @@ button.secondary {
   margin: 0.15rem 0 0;
   font-weight: 600;
 }
+.earnings-history { margin-top: 1rem; padding-top: 0.85rem; border-top: 1px dashed var(--border); }
+.earnings-history-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+.earnings-history-form input, .earnings-history-form select { min-width: 0; padding: 0.45rem; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--fg); }
+.spend-calendar { margin: 1rem 0; padding: 0.85rem 0; border-bottom: 1px dashed var(--border); }
+.spend-calendar h2 { font-size: 1rem; margin: 0; }
+.spend-calendar-grid { display: grid; grid-template-columns: repeat(14, minmax(1.4rem, 1fr)); gap: 0.3rem; margin-top: 0.65rem; }
+.spend-calendar-cell { background: color-mix(in srgb, var(--accent) calc(var(--spend-intensity) * 100%), var(--panel)); border: 1px solid var(--border); border-radius: 4px; min-height: 1.7rem; display: grid; place-items: center; font-size: 0.7rem; }
+@media (max-width: 620px) { .earnings-history-form { grid-template-columns: 1fr 1fr; } .spend-calendar-grid { grid-template-columns: repeat(7, minmax(1.4rem, 1fr)); } }
 
 .dashboard-stats {
   display: grid;
