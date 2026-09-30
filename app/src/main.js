@@ -8,6 +8,7 @@ import {
   AlbedoModule,
   HotWalletModule,
   LedgerModule,
+  WalletConnectModule,
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet, getLocalWalletSecret } from './localWallet.js';
 import { StrKey } from '@stellar/stellar-sdk';
@@ -40,7 +41,7 @@ const ANSWER_DRAFT_PREFIX = 'arbiter:answer-draft:';
 // confirming the critical/high count stays at zero.
 const kit = new StellarWalletsKit({
   network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule()],
+  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule(), ...(WALLETCONNECT_PROJECT_ID ? [new WalletConnectModule({ projectId: WALLETCONNECT_PROJECT_ID, metadata: { name: 'Arbiter', description: 'Arbiter worker console', url: window.location.origin, icons: [] } })] : [])],
 });
 
 const el = {
@@ -81,14 +82,31 @@ const el = {
   stakeInput: document.getElementById('stake-input'),
   btnStake: document.getElementById('btn-stake'),
   log: document.getElementById('log'),
+  accountSwitcher: document.getElementById('account-switcher'),
+  accountSelect: document.getElementById('account-select'),
+  btnAddWallet: document.getElementById('btn-add-wallet'),
 };
 
 const state = {
-  // Either the StellarWalletsKit instance or a local quick-start wallet —
-  // both expose the same {getAddress, signTransaction} shape, so nothing
-  // downstream needs to know which one is active.
-  activeWallet: null,
+  // Every connected identity, keyed by address (issue #132): each keeps its
+  // own wallet and cached session, so switching accounts never throws away a
+  // still-valid session. `wallet` is either the StellarWalletsKit instance
+  // (plus the kit `walletId` to re-select on switch) or a local quick-start
+  // wallet — both expose the same {getAddress, signTransaction} shape.
+  identities: new Map(),
   address: null,
+  get identity() {
+    return this.identities.get(this.address) || null;
+  },
+  get activeWallet() {
+    return this.identity?.wallet || null;
+  },
+  get sessionToken() {
+    return this.identity?.sessionToken || null;
+  },
+  get sessionExpiresAt() {
+    return this.identity?.sessionExpiresAt || 0;
+  },
   online: false,
   eventSource: null,
   currentQuestion: null,
@@ -98,11 +116,66 @@ const state = {
   lastDraft: null,
 };
 
+const notify = createNotificationCenter({ mount: document.querySelector('header'), storageKey: 'arbiter-worker-notifications' });
+
+/** Activity-log entry; also mirrored into the header bell (issue #133). */
 function log(message) {
   const li = document.createElement('li');
   const time = new Date().toLocaleTimeString();
   li.textContent = `[${time}] ${message}`;
   el.log.prepend(li);
+  notify(message);
+}
+
+// --- Backend API version check (issue #150) -------------------------------
+//
+// arbiter-backend and this app are independently deployed repos, so a
+// backend API change would otherwise only surface as a broken request
+// mid-flow. On load we read the version the backend reports at GET /health
+// and, on mismatch, show a visible-but-non-blocking banner. HTTP APIs are
+// forgiving, so this informs rather than gates: a mismatch never blocks
+// app usage.
+
+function showVersionMismatchNotice(reportedVersion) {
+  const banner = document.createElement('div');
+  banner.id = 'backend-version-notice';
+  banner.setAttribute('role', 'status');
+  banner.style.cssText = [
+    'position:fixed',
+    'top:0',
+    'left:0',
+    'right:0',
+    'z-index:9999',
+    'padding:8px 12px',
+    'background:#7a1f1f',
+    'color:#fff',
+    'font:13px/1.4 system-ui,sans-serif',
+    'text-align:center',
+  ].join(';');
+  banner.textContent =
+    `Backend API version mismatch: this app expects v${COMPATIBLE_BACKEND_VERSION}, ` +
+    `but the backend reports v${reportedVersion}. Some features may not work as expected.`;
+  document.body.prepend(banner);
+}
+
+async function checkBackendVersion() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/health`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const reportedVersion = data.apiVersion ?? data.version;
+    if (reportedVersion == null) {
+      // Backend predates the /health version field; nothing to compare.
+      return;
+    }
+    if (String(reportedVersion) !== String(COMPATIBLE_BACKEND_VERSION)) {
+      showVersionMismatchNotice(reportedVersion);
+      log(`Backend API version mismatch: expected v${COMPATIBLE_BACKEND_VERSION}, got v${reportedVersion}`);
+    }
+  } catch (err) {
+    // Backend unreachable or malformed: don't block or alarm the user here;
+    // the existing request paths already surface connectivity problems.
+  }
 }
 
 function showPanel(name) {
@@ -175,6 +248,8 @@ function startCategoryDemandPolling() {
   demandRefreshHandle = setInterval(refreshCategoryDemand, DEMAND_REFRESH_MS);
 }
 
+startCategoryDemandPolling();
+
 // --- Wallet connect (extension) or quick start (local, non-custodial) -----
 
 // A user clicking both connect options in quick succession could otherwise
@@ -194,7 +269,7 @@ el.btnConnect.addEventListener('click', async () => {
         kit.setWallet(option.id);
         const { address } = await kit.getAddress();
         el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
-        await activateWallet(kit, address);
+        await activateWallet(kit, address, option.id);
       },
       onClosed: (err) => {
         setConnectButtonsBusy(false);

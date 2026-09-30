@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -18,6 +18,10 @@
           <a href="/leaderboard.html">Leaderboard →</a>
           <a href="/admin.html">Admin →</a>
         </p>
+        <div id="account-switcher" class="account-switcher hidden">
+          <select id="account-select" aria-label="Active wallet"></select>
+          <button id="btn-add-wallet" class="secondary small" type="button">+ Add wallet</button>
+        </div>
       </header>
 
       <section id="panel-connect" class="panel">
@@ -142,6 +146,13 @@
           <div class="muted small">Your track record</div>
           <p id="track-record-summary">No answers yet — this fills in once you start answering.</p>
         </div>
+
+        <div class="referral" id="referral">
+          <div class="muted small">Invite other workers</div>
+          <button id="btn-referral" class="secondary" type="button" disabled>Get referral link</button>
+          <input id="referral-link" class="hidden" type="text" readonly />
+          <p class="muted small" id="referral-stats"></p>
+        </div>
       </section>
 
       <section id="panel-question" class="panel hidden">
@@ -164,6 +175,9 @@
       </section>
     </main>
 
+    <script type="module" src="/src/a11y.js"></script>
     <script type="module" src="/src/main.js"></script>
+    <script type="module" src="/src/referral.js"></script>
+    <script type="module" src="/src/attachments.js"></script>
   </body>
 </html>

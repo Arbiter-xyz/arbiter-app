@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arbiter — Worker Profile</title>
+    <meta property="og:title" content="Arbiter — Worker Profile" />
+    <meta property="og:description" content="A worker's public Arbiter track record: rank, match ratio, and on-chain stake." />
+    <!-- Default card; worker.js swaps in the per-worker card URL
+         (?address=…). Crawlers that don't run JS fall back to this one. -->
+    <meta id="og-image" property="og:image" content="%VITE_BACKEND_URL%/og/leaderboard.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta id="twitter-image" name="twitter:image" content="%VITE_BACKEND_URL%/og/leaderboard.png" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>Arbiter <span class="tag">worker profile</span></h1>
+        <p class="sub">
+          Public track record — the same data the leaderboard shows, for one worker.
+          <a href="/leaderboard.html">← Leaderboard</a>
+        </p>
+      </header>
+
+      <section class="panel">
+        <h2 id="profile-address">Loading…</h2>
+        <p class="muted small" id="profile-status"></p>
+        <table class="leaderboard-table">
+          <tbody>
+            <tr><th>Rank</th><td id="profile-rank">—</td></tr>
+            <tr><th>Match ratio</th><td id="profile-ratio">—</td></tr>
+            <tr><th>Answers</th><td id="profile-answers">—</td></tr>
+            <tr><th>Stake (verifiable on-chain)</th><td id="profile-stake">—</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+
+    <script type="module" src="/src/worker.js"></script>
+  </body>
+</html>
