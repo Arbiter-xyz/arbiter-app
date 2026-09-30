@@ -11,7 +11,8 @@
       <header>
         <h1>Arbiter <span class="tag">customer account</span></h1>
         <p class="sub">
-          For API-key / fiat (Stripe) customers — check your prepaid balance and top up.
+          For API-key / fiat (Stripe) customers — check your prepaid balance, top up, and manage
+          webhook delivery.
           <a href="/index.html">Worker console →</a>
           <a href="/dashboard.html">Buyer dashboard →</a>
           <a href="/leaderboard.html">Leaderboard →</a>
@@ -51,7 +52,25 @@
           </div>
           <button id="btn-top-up">Top up</button>
         </div>
-        <p id="account-status" class="muted small"></p>
+
+        <section id="panel-webhook" class="panel" style="margin-top: 1.25rem">
+          <h2>Webhook</h2>
+          <p class="muted small">
+            Register a URL and Arbiter calls it when a dispatched question settles, instead of you
+            polling for status.
+          </p>
+          <div class="row">
+            <input
+              id="webhook-url-input"
+              type="url"
+              placeholder="https://example.com/webhooks/arbiter"
+              style="flex: 1; padding: 0.5rem 0.7rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)"
+            />
+            <button id="btn-webhook-save">Save</button>
+            <button id="btn-webhook-delete" class="secondary" type="button">Remove</button>
+          </div>
+          <p id="webhook-status" class="muted small"></p>
+        </section>
       </section>
 
       <section class="panel">

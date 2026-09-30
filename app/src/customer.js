@@ -1,19 +1,23 @@
-// API-key/fiat customer account page (issue #30).
+// API-key/fiat customer account page (issues #30, #37).
 //
-// Every other identity in this app has a real page (workers: index.html,
-// wallet-based payers: dashboard.html, operators: admin.html); API-key/fiat
-// customers only had GET /billing/account, a bare JSON endpoint. This page
-// gives them a login gate — structurally identical to admin.js's
-// showLogin()/showShell()/token-in-localStorage pattern, but storing the API
-// key instead of an admin token — a live account-balance view, and a "top
+// #30 hadn't landed on `main` when this was picked up, so this file stands
+// up the minimal page/login shell itself, per that issue's own text
+// ("the two are expected to merge cleanly either order"): a "paste your API
+// key" gate structurally identical to admin.js's showLogin()/showShell()/
+// token-in-localStorage pattern, plus the account-balance view and a "top
 // up" affordance against the existing POST /billing/checkout endpoint.
 //
-// Auth header: this repo has no backend/ directory (backend/src/billing.js
-// and apiKeyAuth.js live in a separate repo), so the exact header
-// resolveApiKey() expects can't be confirmed here. This assumes
-// `X-Api-Key: <key>` (distinct from the admin console's `Authorization:
-// Bearer <adminToken>`), documented so it's easy to swap for whatever the
-// backend actually expects.
+// #37 (this account's assigned issue) is the webhook registration/management
+// section below. Assumed backend endpoints, documented here since they
+// don't exist in this frontend-only repo:
+//   GET    /billing/account/webhook  -> { url: string | null }
+//   POST   /billing/account/webhook  { url }  -> { url }
+//   DELETE /billing/account/webhook          -> { ok: true }
+// Assumed auth header: unlike the admin console's `Authorization: Bearer
+// <adminToken>`, an API-key customer is assumed to authenticate with
+// `X-Api-Key: <key>` (backend/src/apiKeyAuth.js's resolveApiKey() isn't in
+// this repo to confirm against — flagging this as the one guess this page
+// makes, easy to swap for whatever header the backend actually expects).
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const KEY_STORAGE = 'arbiter-customer-api-key';
@@ -29,7 +33,10 @@ const el = {
   creditBalance: document.getElementById('credit-balance'),
   creditBalanceStroops: document.getElementById('credit-balance-stroops'),
   btnTopUp: document.getElementById('btn-top-up'),
-  accountStatus: document.getElementById('account-status'),
+  webhookInput: document.getElementById('webhook-url-input'),
+  btnWebhookSave: document.getElementById('btn-webhook-save'),
+  btnWebhookDelete: document.getElementById('btn-webhook-delete'),
+  webhookStatus: document.getElementById('webhook-status'),
   log: document.getElementById('log'),
 };
 
@@ -62,7 +69,7 @@ async function fetchCustomer(path, options = {}) {
     throw new Error('unauthorized');
   }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `backend returned ${res.status}`);
-  return res.json();
+  return res.status === 204 ? null : res.json();
 }
 
 async function loadAccount() {
@@ -72,8 +79,32 @@ async function loadAccount() {
     el.creditBalance.textContent = `${account.creditBalance} USDC`;
     el.creditBalanceStroops.textContent = `${account.creditBalanceStroops} stroops`;
     showAccount();
+    await loadWebhook();
   } catch (err) {
     if (err.message !== 'unauthorized') log(`Could not load account: ${err.message}`);
+  }
+}
+
+async function loadWebhook() {
+  try {
+    const { url } = await fetchCustomer('/billing/account/webhook');
+    el.webhookInput.value = url || '';
+    el.webhookStatus.textContent = url ? `Currently registered: ${url}` : 'No webhook registered yet.';
+  } catch (err) {
+    if (err.message !== 'unauthorized') el.webhookStatus.textContent = `Could not load webhook: ${err.message}`;
+  }
+}
+
+// Same allowed-origin-style caution billing.js's isAllowedRedirectUrl()
+// already applies to successUrl/cancelUrl — don't silently accept a URL the
+// backend will just reject. Client-side, we can only check shape: https-only,
+// well-formed.
+function isPlausibleWebhookUrl(value) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:';
+  } catch {
+    return false;
   }
 }
 
@@ -93,18 +124,50 @@ el.btnLogout.addEventListener('click', () => {
 
 el.btnTopUp.addEventListener('click', async () => {
   el.btnTopUp.disabled = true;
-  el.accountStatus.textContent = '';
   try {
     const { url } = await fetchCustomer('/billing/checkout', { method: 'POST' });
     if (!url) throw new Error('checkout session had no redirect url');
     window.location.href = url;
   } catch (err) {
-    if (err.message !== 'unauthorized') {
-      el.accountStatus.textContent = `Could not start checkout: ${err.message}`;
-      log(`Could not start checkout: ${err.message}`);
-    }
+    if (err.message !== 'unauthorized') log(`Could not start checkout: ${err.message}`);
   } finally {
     el.btnTopUp.disabled = false;
+  }
+});
+
+el.btnWebhookSave.addEventListener('click', async () => {
+  const url = el.webhookInput.value.trim();
+  if (!isPlausibleWebhookUrl(url)) {
+    el.webhookStatus.textContent = 'Enter a valid https:// webhook URL before saving.';
+    return;
+  }
+  el.btnWebhookSave.disabled = true;
+  try {
+    await fetchCustomer('/billing/account/webhook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    el.webhookStatus.textContent = `Saved — Arbiter will call ${url} on settlement.`;
+    log('Webhook saved.');
+  } catch (err) {
+    if (err.message !== 'unauthorized') el.webhookStatus.textContent = `Could not save webhook: ${err.message}`;
+  } finally {
+    el.btnWebhookSave.disabled = false;
+  }
+});
+
+el.btnWebhookDelete.addEventListener('click', async () => {
+  el.btnWebhookDelete.disabled = true;
+  try {
+    await fetchCustomer('/billing/account/webhook', { method: 'DELETE' });
+    el.webhookInput.value = '';
+    el.webhookStatus.textContent = 'Webhook removed.';
+    log('Webhook removed.');
+  } catch (err) {
+    if (err.message !== 'unauthorized') el.webhookStatus.textContent = `Could not remove webhook: ${err.message}`;
+  } finally {
+    el.btnWebhookDelete.disabled = false;
   }
 });
 

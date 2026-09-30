@@ -1,14 +1,37 @@
-// Live demo dashboard. Rather than instrumenting worker-sim.js / ask.js,
-// this diffs successive snapshots of GET /admin/workers and
-// GET /admin/transactions (same auth + fetch pattern as admin.js) and turns
-// the changes into dispatch / answer / settlement events.
+// Live demo feed. Rather than instrumenting worker-sim.js/ask.js, this
+// polls the backend's existing GET /admin/transactions and GET
+// /admin/workers (admin.js's fetchAdmin pattern and token) and turns the
+// diff between polls into dispatch / answer / settlement events. Tradeoff:
+// events are only as fresh as POLL_MS and per-worker answers are inferred
+// from totalAnswers increments, not tied to a specific question.
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';
-const POLL_MS = 2000;
+const POLL_MS = 2_000;
+const MAX_EVENTS = 200;
 
-const seenTx = new Map();
-const seenWorkers = new Map();
-let first = true;
+const txSeen = new Map(); // questionId -> status
+const workerAnswers = new Map(); // workerId -> totalAnswers
+let primed = false;
+let timer = null;
+
+function short(id) {
+  const s = String(id ?? '—');
+  return s.length > 16 ? `${s.slice(0, 6)}…${s.slice(-6)}` : s;
+}
+
+function pushEvent(kind, label, text) {
+  const feed = document.getElementById('demo-feed');
+  const li = document.createElement('li');
+  li.className = `ev-${kind}`;
+  const time = document.createElement('time');
+  time.textContent = new Date().toLocaleTimeString();
+  const k = document.createElement('span');
+  k.className = 'ev-kind';
+  k.textContent = label;
+  li.append(time, k, text);
+  feed.prepend(li);
+  while (feed.children.length > MAX_EVENTS) feed.lastChild.remove();
+}
 
 async function fetchAdmin(path) {
   const res = await fetch(`${BACKEND_URL}${path}`, {
@@ -16,80 +39,82 @@ async function fetchAdmin(path) {
   });
   if (res.status === 401) {
     localStorage.removeItem(TOKEN_KEY);
+    showLogin('That token was rejected — try again.');
     throw new Error('unauthorized');
   }
   if (!res.ok) throw new Error(`backend returned ${res.status}`);
   return res.json();
 }
 
-function logEvent(kind, text) {
-  const li = document.createElement('li');
-  li.innerHTML = `<span class="badge badge-${kind === 'settled' ? 'resolved' : 'pending'}"></span> <span class="muted small"></span> `;
-  li.children[0].textContent = kind;
-  li.children[1].textContent = new Date().toLocaleTimeString();
-  li.append(text);
-  document.getElementById('demo-feed').prepend(li);
-}
-
-function short(s) {
-  s = String(s ?? '—');
-  return s.length > 14 ? `${s.slice(0, 6)}…${s.slice(-4)}` : s;
-}
-
-async function tick() {
-  const [{ workers }, { transactions }] = await Promise.all([
-    fetchAdmin('/admin/workers'),
-    fetchAdmin('/admin/transactions?limit=100'),
-  ]);
-
-  const list = document.getElementById('demo-workers');
-  list.replaceChildren(
-    ...workers.map((w) => {
-      const li = document.createElement('li');
-      const id = w.workerId || w.id || w.publicKey;
-      const answered = w.answeredCount ?? w.answers ?? w.totalAnswers ?? 0;
-      li.textContent = `${short(id)} — answers: ${answered}`;
-      if (!first && !seenWorkers.has(id)) logEvent('worker', `worker ${short(id)} connected`);
-      else if (!first && seenWorkers.get(id) !== answered) logEvent('answer', `worker ${short(id)} answered (total ${answered})`);
-      seenWorkers.set(id, answered);
-      return li;
-    }),
-  );
-  document.getElementById('demo-worker-count').textContent = `(${workers.length})`;
-
+function diffTransactions(transactions) {
+  // Oldest first so the feed reads in order.
   for (const t of [...transactions].reverse()) {
-    const prev = seenTx.get(t.questionId);
-    if (!first && prev !== t.status) {
-      if (!prev) logEvent('dispatch', `question ${short(t.questionId)} dispatched`);
-      if (t.status === 'settled') logEvent('settled', `question ${short(t.questionId)} settled → ${t.outcome || '—'}`);
+    const prev = txSeen.get(t.questionId);
+    txSeen.set(t.questionId, t.status);
+    if (!primed) continue;
+    if (prev === undefined) {
+      pushEvent('dispatch', 'Dispatched', `question ${short(t.questionId)} from ${short(t.payer)}`);
     }
-    seenTx.set(t.questionId, t.status);
+    if (t.status === 'settled' && prev !== 'settled') {
+      pushEvent('settle', 'Settled', `question ${short(t.questionId)} → ${t.outcome || 'settled'}`);
+    }
   }
-  first = false;
 }
 
-async function loop() {
+function diffWorkers(workers) {
+  for (const w of workers) {
+    const prev = workerAnswers.get(w.workerId);
+    workerAnswers.set(w.workerId, w.totalAnswers);
+    if (!primed) continue;
+    if (prev === undefined) pushEvent('answer', 'Worker online', short(w.workerId));
+    else if (w.totalAnswers > prev) {
+      pushEvent('answer', 'Answered', `${short(w.workerId)} (+${w.totalAnswers - prev}, ${w.totalAnswers} total)`);
+    }
+  }
+}
+
+async function poll() {
+  const status = document.getElementById('demo-status');
   try {
-    await tick();
-    document.getElementById('demo-login').classList.add('hidden');
-    document.getElementById('demo-shell').classList.remove('hidden');
+    const [{ transactions }, { workers }] = await Promise.all([
+      fetchAdmin('/admin/transactions?limit=100'),
+      fetchAdmin('/admin/workers'),
+    ]);
+    diffTransactions(transactions);
+    diffWorkers(workers);
+    if (!primed) {
+      primed = true;
+      pushEvent('dispatch', 'Connected', `${transactions.length} existing transactions, ${workers.length} workers — watching for new activity`);
+    }
+    status.textContent = `Live · ${workers.length} workers · polled ${new Date().toLocaleTimeString()}`;
   } catch (err) {
-    if (err.message === 'unauthorized') return showLogin('Token rejected.');
-    document.getElementById('demo-status').textContent = err.message;
+    if (err.message === 'unauthorized') return;
+    status.textContent = `Can't reach backend: ${err.message}`;
   }
-  setTimeout(loop, POLL_MS);
+  timer = setTimeout(poll, POLL_MS);
 }
 
-function showLogin(msg = '') {
-  document.getElementById('demo-login').classList.remove('hidden');
+function showLogin(message = '') {
+  clearTimeout(timer);
+  document.getElementById('panel-login').classList.remove('hidden');
   document.getElementById('demo-shell').classList.add('hidden');
-  document.getElementById('demo-status').textContent = msg;
+  document.getElementById('demo-login-status').textContent = message;
 }
 
-document.getElementById('demo-login-btn').addEventListener('click', () => {
+function start() {
+  document.getElementById('panel-login').classList.add('hidden');
+  document.getElementById('demo-shell').classList.remove('hidden');
+  poll();
+}
+
+document.getElementById('demo-login').addEventListener('submit', (e) => {
+  e.preventDefault();
   localStorage.setItem(TOKEN_KEY, document.getElementById('demo-token').value.trim());
-  loop();
+  start();
+});
+document.getElementById('btn-clear').addEventListener('click', () => {
+  document.getElementById('demo-feed').replaceChildren();
 });
 
-if (localStorage.getItem(TOKEN_KEY)) loop();
+if (localStorage.getItem(TOKEN_KEY)) start();
 else showLogin();
