@@ -1,24 +1,30 @@
 {
-  "manifest_version": 3,
-  "name": "Arbiter Verify This Claim",
-  "short_name": "Arbiter Verify",
-  "description": "Right-click any selected text to verify it against Arbiter's free sandbox oracle. No wallet, no signing, no funds spent.",
-  "version": "0.1.0",
-  "action": {
-    "default_title": "Arbiter: Verify this claim",
-    "default_popup": "popup.html"
-  },
-  "background": {
-    "service_worker": "background.js"
-  },
-  "permissions": [
-    "contextMenus",
-    "storage",
-    "activeTab",
-    "scripting"
-  ],
-  "host_permissions": [
-    "https://arbiter.example/*"
-  ],
-  "icons": []
+  "name": "Arbiter Worker Console",
+  "short_name": "Arbiter",
+  "description": "Answer paid questions, get settled on-chain automatically.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#14141f",
+  "theme_color": "#5b4cf0",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
 }
