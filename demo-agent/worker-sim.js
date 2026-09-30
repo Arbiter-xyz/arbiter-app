@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { Agent } from 'undici';
 import { Keypair, Transaction } from '@stellar/stellar-sdk';
 import { env, buildSignedStakeXdr, buildSignedWithdrawXdr, sleep } from './lib/stellar.js';
+import { sseFrames } from './lib/demo.js';
 
 /**
  * The SSE connection (`GET /app/events`) is deliberately never fully
@@ -38,40 +39,7 @@ const stakeAmountStroops = BigInt(process.env.STAKE_AMOUNT_STROOPS || '1000000')
 const autoWithdraw = process.env.AUTO_WITHDRAW === 'true';
 const withdrawIntervalMs = Number(process.env.WITHDRAW_INTERVAL_MS || 30_000);
 
-/** Reproduces exactly what the browser app does at the protocol level
- * without a browser: fetch() the SSE endpoint and manually parse the
- * `event:`/`data:` frame format out of the streamed body. There is no
- * EventSource client here on purpose — this proves the wire protocol works
- * for any HTTP client, not just browsers with EventSource support. */
-async function* sseFrames(response) {
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) return;
-    buffer += decoder.decode(value, { stream: true });
-
-    let boundary;
-    while ((boundary = buffer.indexOf('\n\n')) !== -1) {
-      const rawFrame = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      yield parseFrame(rawFrame);
-    }
-  }
-}
-
-function parseFrame(rawFrame) {
-  let event = 'message';
-  const dataLines = [];
-  for (const line of rawFrame.split('\n')) {
-    if (line.startsWith(':')) continue; // keep-alive comment
-    if (line.startsWith('event:')) event = line.slice(6).trim();
-    else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
-  }
-  return { event, data: dataLines.join('\n') };
-}
+// SSE frame parsing lives in lib/demo.js, shared with the in-process scenario workers.
 
 /** Cached bearer session — see workerAuth.js on the backend. A real
  * address workerId now REQUIRES this for both /app/events and
@@ -176,11 +144,12 @@ async function autoWithdrawLoop() {
   }
 }
 
-async function main() {
-  const token = await ensureSession();
-  await stakeIfRequested();
-  autoWithdrawLoop().catch((err) => console.error(`[${workerId}] auto-withdraw loop crashed:`, err.message));
-
+/**
+ * Opens exactly one SSE connection and consumes it until the stream ends
+ * or errors. Returns normally on a clean end (server closed the stream);
+ * throws on a connect failure so the caller's reconnect loop can back off.
+ */
+async function connectAndConsumeOnce(token) {
   const qs = new URLSearchParams({ worker: workerId });
   if (categories.length) qs.set('categories', categories.join(','));
   if (token) qs.set('token', token);
@@ -198,6 +167,52 @@ async function main() {
   }
 
   console.log(`[${workerId}] dispatch channel closed`);
+}
+
+/**
+ * Issue #15: worker-sim.js is meant to run unattended for extended periods
+ * (staking, then periodically auto-withdrawing) — a transient disconnect
+ * (server restart, an ordinary network blip, the same kind of proxy
+ * behavior Round 8 found and fixed for the answer request) used to end the
+ * process outright, with no reconnect and no human watching the terminal to
+ * restart it. This wraps the connect-and-consume loop above in a reconnect
+ * loop with an increasing backoff (capped), re-running ensureSession()
+ * first since the cached token may have expired or the backend may have
+ * restarted and lost it. stakeIfRequested()/autoWithdrawLoop() are started
+ * once, outside this loop, and are never re-invoked on reconnect.
+ */
+const RECONNECT_BASE_DELAY_MS = 2000;
+const RECONNECT_MAX_DELAY_MS = 30_000;
+
+async function runWithReconnect() {
+  let attempt = 0;
+  for (;;) {
+    try {
+      const token = await ensureSession();
+      await connectAndConsumeOnce(token);
+      // Clean end (server closed the stream normally): treat like any other
+      // disconnect and reconnect, rather than letting the process exit.
+      attempt = 0;
+    } catch (err) {
+      console.error(`[${workerId}] dispatch channel error/disconnected:`, err.message);
+      // The cached session token may no longer be valid (expired, or the
+      // backend restarted and lost it) — force ensureSession() to
+      // re-authenticate on the next attempt rather than retrying with a
+      // token that's likely stale.
+      sessionToken = null;
+    }
+
+    const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** attempt, RECONNECT_MAX_DELAY_MS);
+    attempt += 1;
+    console.log(`[${workerId}] reconnecting in ${Math.round(delay / 1000)}s…`);
+    await sleep(delay);
+  }
+}
+
+async function main() {
+  await stakeIfRequested();
+  autoWithdrawLoop().catch((err) => console.error(`[${workerId}] auto-withdraw loop crashed:`, err.message));
+  await runWithReconnect();
 }
 
 main().catch((err) => {

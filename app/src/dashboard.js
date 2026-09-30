@@ -8,23 +8,19 @@ import {
   AlbedoModule,
   HotWalletModule,
   LedgerModule,
-  WalletConnectModule,
 } from '@creit.tech/stellar-wallets-kit';
-import { createOrLoadLocalWallet } from './localWallet.js';
+import { openSecureLocalWallet } from './localWallet.js';
+import { subscribeQuestionStatus } from './statusChannel.js';
+import { initI18n, onLocaleChange, t, formatUsdc, formatNumber } from './i18n.js';
 import { renderMarkdown } from './markdown.js';
-import { createStarButton, filterStarred, mountStarredFilter } from './starredQuestions.js';
-import { filterQuestions } from './questionFilter.js';
+import { ensureSession as ensureSharedSession } from './session.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
 
-// Same hand-picked module list as the worker console — see main.js.
-// Ledger is added explicitly (not via allowAllModules()) so the Trezor/
-// protobufjs surface stays excluded — see the round-5 note in main.js.
-const kit = new StellarWalletsKit({
-  network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule(), ...(WALLETCONNECT_PROJECT_ID ? [new WalletConnectModule({ projectId: WALLETCONNECT_PROJECT_ID, metadata: { name: 'Arbiter', description: 'Arbiter buyer dashboard', url: window.location.origin, icons: [] } })] : [])],
-});
+// See wallet.js for the module list and the connect/quick-start button
+// wiring shared with main.js (issue #19).
+const kit = createWalletKit();
 
 const el = {
   connect: document.getElementById('panel-connect'),
@@ -32,6 +28,8 @@ const el = {
   btnConnect: document.getElementById('btn-connect'),
   btnQuickStart: document.getElementById('btn-quick-start'),
   btnRefresh: document.getElementById('btn-refresh'),
+  btnExportCsv: document.getElementById('btn-export-csv'),
+  btnExportJson: document.getElementById('btn-export-json'),
   payerAddress: document.getElementById('payer-address'),
   statSpend: document.getElementById('stat-spend'),
   statCount: document.getElementById('stat-count'),
@@ -42,79 +40,60 @@ const el = {
   questionSearch: document.getElementById('question-search'),
   questionStatus: document.getElementById('question-status'),
   log: document.getElementById('log'),
+  liveStatus: document.getElementById('live-status'),
 };
 
-const state = { address: null, activeWallet: null, sessionToken: null, sessionExpiresAt: 0, data: null, starredOnly: false };
+initI18n();
 
-mountStarredFilter(el.questionList, (checked) => {
-  state.starredOnly = checked;
-  renderQuestionList();
-});
+const state = {
+  address: null,
+  activeWallet: null,
+  sessionToken: null,
+  sessionExpiresAt: 0,
+  channel: null,
+  lastData: null,
+  // questionId -> <li>, so a pushed status change patches one row in place.
+  items: new Map(),
+};
 
 function log(message) {
   const li = document.createElement('li');
   li.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
   el.log.prepend(li);
-}
-
-function setConnectButtonsBusy(busy) {
-  el.btnConnect.disabled = busy;
-  el.btnQuickStart.disabled = busy;
+  notify(message);
 }
 
 /** Proves control of this address once, same primitive as the worker
  * console's ensureSession() — these questions/balance are only readable
  * with a valid session now, not by anyone who just knows the address. */
 async function ensureSession() {
-  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) return state.sessionToken;
-
-  log('Proving control of your address (one signature)…');
-  const challengeRes = await fetch(`${BACKEND_URL}/payers/${state.address}/session/challenge`, { method: 'POST' });
-  if (!challengeRes.ok) throw new Error((await challengeRes.json()).error || 'failed to get session challenge');
-  const { xdr } = await challengeRes.json();
-
-  const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
+  return ensureSharedSession({
     address: state.address,
-    networkPassphrase: WalletNetwork.TESTNET,
+    activeWallet: state.activeWallet,
+    sessionToken: state.sessionToken,
+    sessionExpiresAt: state.sessionExpiresAt,
+    onSession: ({ token, expiresAt }) => {
+      state.sessionToken = token;
+      state.sessionExpiresAt = expiresAt;
+    },
+    log,
   });
-
-  const sessionRes = await fetch(`${BACKEND_URL}/payers/${state.address}/session`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ signedXdr: signedTxXdr }),
-  });
-  if (!sessionRes.ok) throw new Error((await sessionRes.json()).error || 'failed to establish session');
-  const { token, expiresAt } = await sessionRes.json();
-  state.sessionToken = token;
-  state.sessionExpiresAt = expiresAt;
-  log('Session established.');
-  return token;
 }
 
-el.btnConnect.addEventListener('click', async () => {
-  setConnectButtonsBusy(true);
-  try {
-    await kit.openModal({
-      onWalletSelected: async (option) => {
-        kit.setWallet(option.id);
-        const { address } = await kit.getAddress();
-        await activate(kit, address);
-      },
-      onClosed: (err) => {
-        setConnectButtonsBusy(false);
-        if (err) log(`Wallet selection closed: ${err.message}`);
-      },
-    });
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(`Wallet connect failed: ${err.message}`);
-  }
+// Module list + button wiring live in wallet.js, shared with main.js
+// (issue #19). This page has no backup panel, so `quickStart` is unused.
+wireConnectButtons({
+  kit,
+  connectButton: el.btnConnect,
+  quickStartButton: el.btnQuickStart,
+  onActivated: activate,
+  onError: log,
 });
 
 el.btnQuickStart.addEventListener('click', async () => {
   setConnectButtonsBusy(true);
   try {
-    const localWallet = createOrLoadLocalWallet();
+    const localWallet = await openSecureLocalWallet();
     const { address } = await localWallet.getAddress();
     await activate(localWallet, address);
   } catch (err) {
@@ -123,60 +102,87 @@ el.btnQuickStart.addEventListener('click', async () => {
   }
 });
 
-async function activate(wallet, address) {
-  state.activeWallet = wallet;
+async function switchIdentity(address) {
   state.address = address;
+  if (state.identity.walletId) kit.setWallet(state.identity.walletId);
   el.payerAddress.textContent = address;
   el.connect.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
   log(`Connected ${address}`);
-  await loadQuestions();
+  startLiveUpdates();
   setConnectButtonsBusy(false);
 }
 
-el.btnRefresh.addEventListener('click', loadQuestions);
+// Live updates (issue #6): one shared push stream across all dashboard tabs
+// for this address instead of each tab polling. The snapshot is only
+// re-fetched to backfill (reconnect, gap, tab refocus) or on Refresh.
+function startLiveUpdates() {
+  state.channel?.close();
+  state.channel = subscribeQuestionStatus({
+    backendUrl: BACKEND_URL,
+    address: state.address,
+    getToken: ensureSession,
+    onSnapshot: (data) => {
+      render(data);
+      log(`Loaded ${t('dash.questions', { n: data.questions.length })} — ${formatNumber(data.totalTracked)} tracked in total.`);
+    },
+    onEvent: applyStatusEvent,
+    onConnection: (connected) => {
+      el.liveStatus.textContent = t(connected ? 'dash.live' : 'dash.reconnecting');
+    },
+  });
+  state.channel.ready.catch((err) => log(`Could not load questions: ${err.message}`));
+}
 
-async function loadQuestions() {
-  if (!state.address) return;
+function applyStatusEvent(q) {
+  const existing = state.items.get(q.questionId);
+  const prev = state.lastData?.questions.find((x) => x.questionId === q.questionId);
+  const merged = { ...prev, ...q };
+  if (prev) Object.assign(prev, q);
+  const li = renderQuestionItem(merged);
+  if (existing) existing.replaceWith(li);
+  else el.questionList.prepend(li);
+  state.items.set(q.questionId, li);
+  log(`${q.questionId}: ${describeStatus(merged).label}`);
+  // Aggregates (spend / success rate) are server-computed; refresh them
+  // once a job reaches its terminal state.
+  if (q.status === 'settled') state.channel?.resync();
+}
+
+el.btnRefresh.addEventListener('click', async () => {
+  if (!state.channel) return;
   el.btnRefresh.disabled = true;
   try {
-    const token = await ensureSession();
-    const res = await fetch(`${BACKEND_URL}/payers/${state.address}/questions?token=${encodeURIComponent(token)}`);
-    if (!res.ok) throw new Error(`unexpected status ${res.status}`);
-    const data = await res.json();
-    render(data);
-    log(`Loaded ${data.questions.length} question(s) — this address has asked ${data.totalTracked} total.`);
+    await state.channel.resync();
   } catch (err) {
     log(`Could not load questions: ${err.message}`);
   } finally {
     el.btnRefresh.disabled = false;
   }
-}
+});
+
+onLocaleChange(() => state.lastData && render(state.lastData));
 
 function render(data) {
-  state.data = data;
-  // Stats always reflect the full history, never the filtered subset.
-  el.statSpend.textContent = `${data.totalSpend} USDC`;
-  el.statCount.textContent = String(data.totalTracked);
-  el.statSuccess.textContent = data.successRate === null ? '—' : `${Math.round(data.successRate * 100)}%`;
-  renderSpendCalendar(data.questions, data.totalSpend);
+  state.lastData = data;
+  el.statSpend.textContent = formatUsdc(data.totalSpend);
+  el.statCount.textContent = formatNumber(data.totalTracked);
+  el.statSuccess.textContent = data.successRate === null ? '—' : formatNumber(data.successRate, { style: 'percent' });
 
   el.questionList.innerHTML = '';
-  if (visible.length === 0) {
+  state.items.clear();
+  if (data.questions.length === 0) {
     const li = document.createElement('li');
     li.className = 'muted small';
-    li.textContent =
-      all.length === 0
-        ? 'No questions yet.'
-        : state.starredOnly && matching.length > 0
-          ? 'No starred questions.'
-          : 'No questions match your search.';
+    li.textContent = t('dash.none');
     el.questionList.appendChild(li);
     return;
   }
 
-  for (const q of visible) {
-    el.questionList.appendChild(renderQuestionItem(q));
+  for (const q of data.questions) {
+    const li = renderQuestionItem(q);
+    state.items.set(q.questionId, li);
+    el.questionList.appendChild(li);
   }
 }
 
@@ -217,15 +223,23 @@ function renderQuestionItem(q) {
   const left = document.createElement('div');
   const qText = document.createElement('p');
   qText.className = 'q-text';
-  // Markdown is rendered through a sanitizing renderer (markdown.js) that
-  // builds safe DOM nodes — never innerHTML of raw user content.
-  renderMarkdown(qText, q.question || q.questionId);
+  // This renderer only creates DOM nodes and assigns textContent to untrusted
+  // text. Fenced code is tokenised into isolated safe spans; raw HTML is never
+  // interpreted.
+  renderFencedCode(qText, q.question || q.questionId);
   const qMeta = document.createElement('div');
   qMeta.className = 'q-meta';
   const parts = [q.tier, q.amount ? formatUsdc(q.amount) : null];
-  if (q.status === 'settled' && q.outcome === 'resolved') parts.push(`confidence ${q.confidence}`);
+  if (q.status === 'settled' && q.outcome === 'resolved') parts.push(`confidence ${formatNumber(q.confidence)}`);
   qMeta.textContent = parts.filter(Boolean).join(' · ');
   left.append(qText, qMeta);
+
+  if (q.answer) {
+    const answerText = document.createElement('div');
+    answerText.className = 'answer-text';
+    renderFencedCode(answerText, q.answer);
+    left.append(answerText);
+  }
 
   const badge = document.createElement('span');
   const { label, cls } = describeStatus(q);
@@ -270,7 +284,10 @@ function refundSafetyLine(q) {
 }
 
 function describeStatus(q) {
-  if (q.status !== 'settled') return { label: 'in progress', cls: 'badge-pending' };
-  if (q.outcome === 'resolved') return { label: 'resolved', cls: 'badge-resolved' };
-  return { label: 'refunded', cls: 'badge-refunded' };
+  if (q.status !== 'settled') {
+    const key = q.status === 'awaiting_workers' || q.status === 'reconciling' ? q.status : 'pending';
+    return { label: t(`status.${key}`), cls: 'badge-pending' };
+  }
+  if (q.outcome === 'resolved') return { label: t('status.resolved'), cls: 'badge-resolved' };
+  return { label: t('status.refunded'), cls: 'badge-refunded' };
 }

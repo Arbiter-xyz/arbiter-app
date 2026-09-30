@@ -3,15 +3,28 @@ import { downloadCsv } from './csv.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';
-const LAYOUT_KEY = 'arbiter-admin-layout';
-const SVG_NS = 'http://www.w3.org/2000/svg';
+const DENSITY_KEY = 'arbiter-admin-density';
 
-// Views each role may open. A role missing from this map (or no role system
-// on the backend at all) keeps today's single-token full access.
-const ROLE_VIEWS = {
-  readonly: ['overview', 'transactions', 'workers', 'payers', 'blockchain', 'fraud'],
-};
-let allowedViews = null; // null = unrestricted
+function applyDensity(compact) {
+  document.getElementById('admin-shell').classList.toggle('density-compact', compact);
+  const toggle = document.getElementById('density-toggle');
+  toggle.classList.toggle('active', compact);
+  toggle.setAttribute('aria-pressed', String(compact));
+}
+
+applyDensity(localStorage.getItem(DENSITY_KEY) === 'compact');
+document.getElementById('density-toggle').addEventListener('click', () => {
+  const compact = !document.getElementById('admin-shell').classList.contains('density-compact');
+  localStorage.setItem(DENSITY_KEY, compact ? 'compact' : 'comfortable');
+  applyDensity(compact);
+});
+
+// Low-balance thresholds for the treasury / fiat-pool figures. These are the
+// numbers that page someone when they dip — the whole point of the admin
+// console's overview. Kept here (not inline in the HTML) so the renderers
+// below can flag them consistently.
+const LOW_BALANCE_USDC = 100;
+const LOW_BALANCE_XLM = 50;
 
 function truncateAddress(id) {
   if (!id || id.length <= 16 || !id.startsWith('G')) return id || '—';
@@ -20,6 +33,16 @@ function truncateAddress(id) {
 
 function formatRatio(ratio) {
   return ratio === null || ratio === undefined ? '—' : `${(ratio * 100).toFixed(1)}%`;
+}
+
+// A balance figure that reads as "this is the number that pages someone"
+// when it's low, and as a routine figure otherwise. Uses the shared token
+// classes from #146 (balance / balance-low) rather than standalone values.
+function balanceFigure(value, { low = false, unit = 'USDC' } = {}) {
+  const el = document.createElement('span');
+  el.className = low ? 'balance balance-low' : 'balance';
+  el.textContent = `${value} ${unit}`;
+  return el;
 }
 
 // Every table below renders data that traces back to caller-controlled
@@ -56,17 +79,29 @@ function replaceRows(tbody, rows) {
   tbody.replaceChildren(...rows);
 }
 
-async function fetchAdmin(path) {
+// `options` follows fetch()'s own shape (method/headers/body) — passing none
+// preserves every existing GET-only call site's behavior exactly.
+async function fetchAdmin(path, options = {}) {
   const token = localStorage.getItem(TOKEN_KEY);
   const res = await fetch(`${BACKEND_URL}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    ...options,
+    headers: { Authorization: `Bearer ${token}`, ...(options.headers || {}) },
   });
   if (res.status === 401) {
     localStorage.removeItem(TOKEN_KEY);
     showLogin('That token was rejected — try again.');
     throw new Error('unauthorized');
   }
-  if (!res.ok) throw new Error(`backend returned ${res.status}`);
+  if (!res.ok) {
+    let message = `backend returned ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body && body.error) message = body.error;
+    } catch {
+      // body wasn't JSON (or was empty) — fall back to the generic message.
+    }
+    throw new Error(message);
+  }
   return res.json();
 }
 
@@ -104,95 +139,71 @@ async function renderOverview() {
   document.getElementById('ov-payers').textContent = payers.payers.length;
 }
 
-const TX_LIMIT = 100;
-let loadedTransactions = [];
+// Pagination (issue #18): the backend's listTransactions({ limit, offset })
+// already supports paging past the first page — this view just never
+// passed offset. Only Transactions gets this treatment for now; /admin/
+// workers and /admin/payers haven't been confirmed to support offset the
+// same way, so don't guess at that here.
+const TX_PAGE_SIZE = 100;
+let txOffset = 0;
 
-function readTxFilters() {
-  const val = (id) => document.getElementById(id).value;
-  return {
-    from: val('tx-filter-from'),
-    to: val('tx-filter-to'),
-    minUsdc: val('tx-filter-min'),
-    maxUsdc: val('tx-filter-max'),
-    status: val('tx-filter-status'),
-    outcome: val('tx-filter-outcome'),
-  };
+function renderTransactionRow(t) {
+  const badge = document.createElement('span');
+  badge.className = `badge badge-${t.status === 'settled' ? 'resolved' : 'pending'}`;
+  badge.textContent = t.status || '—';
+  const statusCell = document.createElement('td');
+  statusCell.appendChild(badge);
+
+  return row([
+    td(truncateAddress(String(t.questionId)), { title: t.questionId }),
+    td(truncateAddress(t.payer), { title: t.payer || '' }),
+    td(`${t.amountStroops ? (Number(t.amountStroops) / 1e7).toFixed(2) : '—'} USDC`),
+    statusCell,
+    td(t.outcome || '—'),
+    td(t.createdAt ? new Date(t.createdAt).toLocaleString() : '—', { className: 'muted small' }),
+  ]);
 }
 
-function fillSelect(id, values) {
-  const select = document.getElementById(id);
-  const current = select.value;
-  const all = document.createElement('option');
-  all.value = '';
-  all.textContent = 'All';
-  select.replaceChildren(
-    all,
-    ...values.map((v) => {
-      const opt = document.createElement('option');
-      opt.value = v;
-      opt.textContent = v;
-      return opt;
-    }),
-  );
-  if (values.includes(current)) select.value = current;
-}
-
-function renderTxRows() {
-  const tbody = document.getElementById('tx-body');
-  const summary = document.getElementById('tx-filter-summary');
-  const filters = readTxFilters();
-  const active = Object.values(filters).some((v) => v !== '');
-  const transactions = filterTransactions(loadedTransactions, filters);
-
-  const scope = `the most recent ${loadedTransactions.length} loaded transactions (up to ${TX_LIMIT}), not the full history`;
-  summary.textContent = active
-    ? `Showing ${transactions.length} of ${scope}. Older matches may exist.`
-    : `Filters apply only to ${scope}.`;
-
-  if (loadedTransactions.length === 0) {
-    replaceRows(tbody, [emptyRow(6, 'No transactions yet.')]);
-    return;
-  }
-  if (transactions.length === 0) {
-    replaceRows(tbody, [emptyRow(6, `No transactions match these filters within the most recent ${loadedTransactions.length}.`)]);
-    return;
-  }
-  replaceRows(
-    tbody,
-    transactions.map((t) => {
-      const badge = document.createElement('span');
-      badge.className = `badge badge-${t.status === 'settled' ? 'resolved' : 'pending'}`;
-      badge.textContent = t.status || '—';
-      const statusCell = document.createElement('td');
-      statusCell.appendChild(badge);
-
-      return row([
-        td(truncateAddress(String(t.questionId)), { title: t.questionId }),
-        td(truncateAddress(t.payer), { title: t.payer || '' }),
-        td(`${t.amountStroops ? (Number(t.amountStroops) / 1e7).toFixed(2) : '—'} USDC`),
-        statusCell,
-        td(t.outcome || '—'),
-        td(t.createdAt ? new Date(t.createdAt).toLocaleString() : '—', { className: 'muted small' }),
-      ]);
-    }),
-  );
+function updateTxLoadMoreVisibility(lastPageCount) {
+  const btn = document.getElementById('btn-tx-load-more');
+  if (!btn) return;
+  // A page shorter than the page size means there's nothing left to page
+  // through.
+  btn.classList.toggle('hidden', lastPageCount < TX_PAGE_SIZE);
 }
 
 async function renderTransactions() {
-  const { transactions } = await fetchAdmin(`/admin/transactions?limit=${TX_LIMIT}`);
-  loadedTransactions = transactions;
-  fillSelect('tx-filter-status', distinctValues(transactions, 'status'));
-  fillSelect('tx-filter-outcome', distinctValues(transactions, 'outcome'));
-  renderTxRows();
+  txOffset = 0;
+  const tbody = document.getElementById('tx-body');
+  const { transactions } = await fetchAdmin(`/admin/transactions?limit=${TX_PAGE_SIZE}&offset=0`);
+  if (transactions.length === 0) {
+    replaceRows(tbody, [emptyRow(6, 'No transactions yet.')]);
+  } else {
+    replaceRows(tbody, transactions.map(renderTransactionRow));
+  }
+  txOffset = transactions.length;
+  updateTxLoadMoreVisibility(transactions.length);
 }
 
-document.getElementById('tx-filters').addEventListener('input', renderTxRows);
-document.getElementById('tx-filter-reset').addEventListener('click', () => {
-  document.querySelectorAll('#tx-filters input, #tx-filters select').forEach((el) => {
-    el.value = '';
-  });
-  renderTxRows();
-});
+async function loadMoreTransactions() {
+  const btn = document.getElementById('btn-tx-load-more');
+  const tbody = document.getElementById('tx-body');
+  btn.disabled = true;
+  try {
+    const { transactions } = await fetchAdmin(`/admin/transactions?limit=${TX_PAGE_SIZE}&offset=${txOffset}`);
+    // Append rather than re-rendering the whole table, so already-rendered
+    // rows and scroll position aren't disturbed.
+    for (const t of transactions) tbody.appendChild(renderTransactionRow(t));
+    txOffset += transactions.length;
+    updateTxLoadMoreVisibility(transactions.length);
+  } catch (err) {
+    if (err.message !== 'unauthorized') console.error('failed to load more transactions:', err);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('btn-tx-load-more')?.addEventListener('click', loadMoreTransactions);
 
 async function renderWorkers() {
   const tbody = document.getElementById('workers-body');
@@ -247,31 +258,93 @@ async function renderTreasury() {
   const panel = document.getElementById('treasury-panel');
   const treasury = await fetchAdmin('/admin/treasury');
   if (!treasury.configured) {
-    panel.innerHTML = '<p class="muted small">PLATFORM_ADDRESS is not configured on the backend.</p>';
+    panel.replaceChildren();
+    const note = document.createElement('p');
+    note.className = 'muted small';
+    note.textContent = 'PLATFORM_ADDRESS is not configured on the backend.';
+    panel.appendChild(note);
     return;
   }
-  panel.innerHTML = `
-    <p>Platform address: <span title="${treasury.platformAddress}">${truncateAddress(treasury.platformAddress)}</span></p>
-    <p>USDC balance: <strong>${treasury.usdcBalance}</strong></p>
-    <p>XLM balance: <strong>${treasury.xlmBalance}</strong> (network fee reserve)</p>
-    <p class="muted small">Read live from Horizon — this is where resolve() sends its platform fee cut directly, so it's independently verifiable on-chain.</p>
-    ${
-      treasury.fiatPool
-        ? `<hr />
-    <p>Fiat pool address: <span title="${treasury.fiatPool.address}">${truncateAddress(treasury.fiatPool.address)}</span></p>
-    <p>USDC balance: <strong>${treasury.fiatPool.usdcBalance}</strong></p>
-    <p class="muted small">Backs every API-key/Stripe question (billing.js) — watch this for low-float 503s before customers hit them.</p>`
-        : '<hr /><p class="muted small">Fiat pool not configured (FIAT_POOL_ADDRESS unset) — the API-key onramp is disabled.</p>'
-    }
-  `;
+
+  const nodes = [];
+
+  const platformLine = document.createElement('p');
+  platformLine.append('Platform address: ');
+  const platformAddr = document.createElement('span');
+  platformAddr.title = treasury.platformAddress;
+  platformAddr.textContent = truncateAddress(treasury.platformAddress);
+  platformLine.appendChild(platformAddr);
+  nodes.push(platformLine);
+
+  const usdcLine = document.createElement('p');
+  usdcLine.append('USDC balance: ');
+  usdcLine.appendChild(
+    balanceFigure(treasury.usdcBalance, { low: Number(treasury.usdcBalance) < LOW_BALANCE_USDC }),
+  );
+  nodes.push(usdcLine);
+
+  const xlmLine = document.createElement('p');
+  xlmLine.append('XLM balance: ');
+  xlmLine.appendChild(
+    balanceFigure(treasury.xlmBalance, { low: Number(treasury.xlmBalance) < LOW_BALANCE_XLM, unit: 'XLM' }),
+  );
+  xlmLine.append(' (network fee reserve)');
+  nodes.push(xlmLine);
+
+  const horizonNote = document.createElement('p');
+  horizonNote.className = 'muted small';
+  horizonNote.textContent =
+    "Read live from Horizon — this is where resolve() sends its platform fee cut directly, so it's independently verifiable on-chain.";
+  nodes.push(horizonNote);
+
+  nodes.push(document.createElement('hr'));
+
+  if (treasury.fiatPool) {
+    const poolLine = document.createElement('p');
+    poolLine.append('Fiat pool address: ');
+    const poolAddr = document.createElement('span');
+    poolAddr.title = treasury.fiatPool.address;
+    poolAddr.textContent = truncateAddress(treasury.fiatPool.address);
+    poolLine.appendChild(poolAddr);
+    nodes.push(poolLine);
+
+    const poolUsdcLine = document.createElement('p');
+    poolUsdcLine.append('USDC balance: ');
+    poolUsdcLine.appendChild(
+      balanceFigure(treasury.fiatPool.usdcBalance, {
+        low: Number(treasury.fiatPool.usdcBalance) < LOW_BALANCE_USDC,
+      }),
+    );
+    nodes.push(poolUsdcLine);
+
+    const poolNote = document.createElement('p');
+    poolNote.className = 'muted small';
+    poolNote.textContent =
+      'Backs every API-key/Stripe question (billing.js) — watch this for low-float 503s before customers hit them.';
+    nodes.push(poolNote);
+  } else {
+    const noPool = document.createElement('p');
+    noPool.className = 'muted small';
+    noPool.textContent =
+      'Fiat pool not configured (FIAT_POOL_ADDRESS unset) — the API-key onramp is disabled.';
+    nodes.push(noPool);
+  }
+
+  panel.replaceChildren(...nodes);
 }
 
 function renderBlockchain() {
   const panel = document.getElementById('blockchain-panel');
-  panel.innerHTML = `
-    <p class="muted small">Static config this backend was started with — not a live query.</p>
-    <p>Backend: <span class="muted small">${BACKEND_URL}</span></p>
-  `;
+  const note = document.createElement('p');
+  note.className = 'muted small';
+  note.textContent = 'Static config this backend was started with — not a live query.';
+  const backendLine = document.createElement('p');
+  backendLine.append('Backend: ');
+  const backendVal = document.createElement('span');
+  backendVal.className = 'muted small';
+  backendVal.textContent = BACKEND_URL;
+  backendLine.appendChild(backendVal);
+  panel.replaceChildren(note, backendLine);
 }
 
 // Inline-SVG histogram of established workers' match ratios (10 buckets of
@@ -395,33 +468,122 @@ async function renderPayouts() {
   );
 }
 
-async function renderAuditLog() {
-  const tbody = document.getElementById('audit-body');
-  let entries;
-  try {
-    ({ entries } = await fetchAdmin('/admin/audit'));
-  } catch (err) {
-    if (err.message === 'unauthorized') throw err;
-    replaceRows(tbody, [emptyRow(5, 'Audit log unavailable — this backend does not expose GET /admin/audit yet.')]);
+// ---------------------------------------------------------------------
+// Worker pool whitelists (issue #36). Whitelist-gated dispatch for private
+// worker pools is assumed to be backend-owned enforcement (dispatch.js) —
+// this view only manages the whitelist data itself, against an assumed
+// contract (the authoritative shape is the backend agent's to set):
+//   GET    /admin/worker-pools                          -> { pools: [{ id, name, whitelist: string[] }] }
+//   POST   /admin/worker-pools/:poolId/whitelist         { address } -> { whitelist: string[] }
+//   DELETE /admin/worker-pools/:poolId/whitelist/:address            -> { whitelist: string[] }
+// ---------------------------------------------------------------------
+
+let poolsCache = [];
+let selectedPoolId = null;
+
+// Mirrors the StrKey.isValidEd25519PublicKey check main.js already uses for
+// the optional withdraw-beneficiary field — reject malformed input before
+// it ever reaches the backend.
+function isValidWorkerAddress(address) {
+  return /^G[A-Z2-7]{55}$/.test(address);
+}
+
+async function renderPools() {
+  const poolsSelect = document.getElementById('pools-select');
+  const { pools } = await fetchAdmin('/admin/worker-pools');
+  poolsCache = pools || [];
+  poolsSelect.replaceChildren(
+    ...poolsCache.map((p) => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name || p.id;
+      return opt;
+    }),
+  );
+  if (poolsCache.length === 0) {
+    selectedPoolId = null;
+    replaceRows(document.getElementById('pools-body'), [emptyRow(2, 'No worker pools configured yet.')]);
     return;
   }
-  if (!entries || entries.length === 0) {
-    replaceRows(tbody, [emptyRow(5, 'No admin actions recorded yet.')]);
+  selectedPoolId = poolsCache[0].id;
+  poolsSelect.value = selectedPoolId;
+  renderPoolWhitelist();
+}
+
+function renderPoolWhitelist() {
+  const tbody = document.getElementById('pools-body');
+  const pool = poolsCache.find((p) => p.id === selectedPoolId);
+  const whitelist = (pool && pool.whitelist) || [];
+  if (whitelist.length === 0) {
+    replaceRows(tbody, [emptyRow(2, 'No whitelisted workers in this pool yet.')]);
     return;
   }
-  // Same textContent-only rendering as every other view — never innerHTML.
   replaceRows(
     tbody,
-    entries.map((e) =>
-      row([
-        td(e.at ? new Date(e.at).toLocaleString() : '—', { className: 'muted small' }),
-        td(e.actor || '—'),
-        td(e.action || '—'),
-        td(truncateAddress(e.target), { title: e.target || '' }),
-        td(e.detail === undefined ? '—' : typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail)),
-      ]),
-    ),
+    whitelist.map((address) => {
+      const btnRemove = document.createElement('button');
+      btnRemove.textContent = 'Remove';
+      btnRemove.className = 'small';
+      btnRemove.addEventListener('click', () => removeFromWhitelist(address));
+      const actionCell = document.createElement('td');
+      actionCell.appendChild(btnRemove);
+      return row([td(address, { title: address }), actionCell]);
+    }),
   );
+}
+
+document.getElementById('pools-select').addEventListener('change', (evt) => {
+  selectedPoolId = evt.target.value;
+  renderPoolWhitelist();
+});
+
+document.getElementById('pool-add-form').addEventListener('submit', async (evt) => {
+  evt.preventDefault();
+  const status = document.getElementById('pools-status');
+  const input = document.getElementById('pool-add-address');
+  const address = input.value.trim();
+  if (!selectedPoolId) {
+    status.textContent = 'No pool selected.';
+    return;
+  }
+  if (!isValidWorkerAddress(address)) {
+    status.textContent = 'Not a valid Stellar worker address.';
+    return;
+  }
+  const pool = poolsCache.find((p) => p.id === selectedPoolId);
+  if (pool && (pool.whitelist || []).includes(address)) {
+    status.textContent = 'That address is already whitelisted for this pool.';
+    return;
+  }
+  try {
+    const { whitelist } = await fetchAdmin(`/admin/worker-pools/${encodeURIComponent(selectedPoolId)}/whitelist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address }),
+    });
+    if (pool) pool.whitelist = whitelist;
+    input.value = '';
+    status.textContent = 'Added.';
+    renderPoolWhitelist();
+  } catch (err) {
+    if (err.message !== 'unauthorized') status.textContent = `Could not add address: ${err.message}`;
+  }
+});
+
+async function removeFromWhitelist(address) {
+  const status = document.getElementById('pools-status');
+  try {
+    const { whitelist } = await fetchAdmin(
+      `/admin/worker-pools/${encodeURIComponent(selectedPoolId)}/whitelist/${encodeURIComponent(address)}`,
+      { method: 'DELETE' },
+    );
+    const pool = poolsCache.find((p) => p.id === selectedPoolId);
+    if (pool) pool.whitelist = whitelist;
+    status.textContent = 'Removed.';
+    renderPoolWhitelist();
+  } catch (err) {
+    if (err.message !== 'unauthorized') status.textContent = `Could not remove address: ${err.message}`;
+  }
 }
 
 const VIEWS = {
@@ -429,66 +591,16 @@ const VIEWS = {
   transactions: renderTransactions,
   workers: renderWorkers,
   payers: renderPayers,
+  pools: renderPools,
   fees: renderFees,
   treasury: renderTreasury,
   kyc: renderKyc,
   payouts: renderPayouts,
   blockchain: renderBlockchain,
   fraud: renderFraud,
-  audit: renderAuditLog,
 };
 
-// ---------------------------------------------------------------------
-// CSV export (#118). One shared exporter for every genuinely tabular view.
-// It reads the rendered table rather than re-fetching, so the file matches
-// exactly what the operator is looking at (including any active filter —
-// hidden rows are skipped). Cells prefer their `title` (the full, untruncated
-// address) over the displayed truncated text.
-//
-// Deliberately excluded: overview (summary tiles aggregating other views),
-// treasury and blockchain — those panels are innerHTML prose/key-value
-// blocks, not row data, so forcing them through a CSV would be misleading.
-// ---------------------------------------------------------------------
-
-const EXPORTABLE_VIEWS = ['transactions', 'workers', 'payers', 'fees', 'kyc', 'payouts', 'fraud'];
-
-function viewTableData(name) {
-  if (name === 'fees') {
-    return {
-      columns: ['Metric', 'Value'],
-      rows: [
-        ['Total resolved questions', document.getElementById('fees-count').textContent],
-        ['Total platform fee revenue (USDC)', document.getElementById('fees-total').textContent],
-      ],
-    };
-  }
-  const table = document.querySelector(`#view-${name} table`);
-  const columns = [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
-  const rows = [...table.querySelectorAll('tbody tr')]
-    // Skip hidden (filtered-out) rows and the colspan'd empty/loading placeholder.
-    .filter((tr) => !tr.hidden && tr.style.display !== 'none' && !tr.querySelector('td[colspan]'))
-    .map((tr) => [...tr.cells].map((cell) => cell.title || cell.textContent.trim()));
-  return { columns, rows };
-}
-
-function exportView(name) {
-  const { columns, rows } = viewTableData(name);
-  const date = new Date().toISOString().slice(0, 10);
-  downloadCsv(`arbiter-${name}-${date}.csv`, columns, rows);
-}
-
-EXPORTABLE_VIEWS.forEach((name) => {
-  const heading = document.querySelector(`#view-${name} h2`);
-  const button = document.createElement('button');
-  button.className = 'secondary small';
-  button.textContent = 'Export CSV';
-  button.addEventListener('click', () => exportView(name));
-  heading.append(button);
-});
-
 async function selectView(name) {
-  // Fail closed: a role without access never triggers the view's fetches.
-  if (!canView(name)) return;
   document.querySelectorAll('.admin-nav-link[data-view]').forEach((el) => el.classList.toggle('active', el.dataset.view === name));
   document.querySelectorAll('.admin-view').forEach((el) => el.classList.toggle('active', el.id === `view-${name}`));
 
@@ -511,11 +623,22 @@ document.getElementById('btn-admin-login').addEventListener('click', () => {
   const token = document.getElementById('admin-token-input').value.trim();
   if (!token) return;
   localStorage.setItem(TOKEN_KEY, token);
-  enterConsole();
+  showShell();
+  selectView('overview');
+});
+
+// Issue #17: this console holds a real, privileged bearer token — give it
+// an in-app way to end that session, instead of the token persisting in
+// localStorage forever with no way to clear it short of devtools.
+document.getElementById('btn-admin-logout').addEventListener('click', () => {
+  localStorage.removeItem(TOKEN_KEY);
+  loaded.clear(); // so a previously-loaded view is refetched, not shown stale, next login
+  showLogin();
 });
 
 if (localStorage.getItem(TOKEN_KEY)) {
-  enterConsole();
+  showShell();
+  selectView('overview');
 } else {
   showLogin();
 }

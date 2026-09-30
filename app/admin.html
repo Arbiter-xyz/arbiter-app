@@ -4,14 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Arbiter — Admin Console</title>
+    <link rel="stylesheet" href="/shared/tokens.css" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to main content</a>
     <section id="panel-login" class="panel" style="max-width: 420px; margin: 3rem auto">
       <h2>Admin console</h2>
       <p class="muted small">Paste the operator token (ADMIN_TOKEN on the backend) to continue.</p>
       <div class="row">
-        <input id="admin-token-input" type="password" placeholder="Admin token" style="flex: 1; padding: 0.5rem 0.7rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)" />
+        <input id="admin-token-input" class="admin-token-input" type="password" placeholder="Admin token" />
         <button id="btn-admin-login">Enter</button>
       </div>
       <p id="admin-login-status" class="muted small"></p>
@@ -29,6 +31,7 @@
           <button class="admin-nav-link" data-view="overview">Overview</button>
           <button class="admin-nav-link" data-view="workers">Workers</button>
           <button class="admin-nav-link" data-view="payers">Payers</button>
+          <button class="admin-nav-link" data-view="pools">Worker Pools</button>
         </div>
 
         <div class="admin-nav-group">
@@ -51,9 +54,14 @@
           <h3>Growth</h3>
           <a class="admin-nav-link" href="/leaderboard.html">Leaderboard →</a>
         </div>
+
+        <div class="admin-nav-group">
+          <h3>Session</h3>
+          <button id="btn-admin-logout" class="admin-nav-link" type="button">Log out</button>
+        </div>
       </nav>
 
-      <main class="admin-content">
+      <main class="admin-content" id="main" tabindex="-1">
         <section id="view-overview" class="admin-view">
           <h2>Overview</h2>
           <div class="admin-stat-grid">
@@ -63,11 +71,11 @@
             </div>
             <div class="panel">
               <div class="muted small">Treasury (USDC)</div>
-              <strong id="ov-treasury-usdc">—</strong>
+              <strong id="ov-treasury-usdc" class="admin-balance">—</strong>
             </div>
             <div class="panel">
               <div class="muted small">Treasury (XLM)</div>
-              <strong id="ov-treasury-xlm">—</strong>
+              <strong id="ov-treasury-xlm" class="admin-balance">—</strong>
             </div>
             <div class="panel">
               <div class="muted small">Known workers</div>
@@ -95,10 +103,11 @@
             <p id="tx-filter-summary" class="muted small">Filters apply only to the most recent 100 transactions loaded, not the full history.</p>
             <table class="leaderboard-table">
               <thead>
-                <tr><th>Question</th><th>Payer</th><th>Amount</th><th>Status</th><th>Outcome</th><th>Created</th></tr>
+                <tr><th scope="col">Question</th><th scope="col">Payer</th><th scope="col">Amount</th><th scope="col">Status</th><th scope="col">Outcome</th><th scope="col">Created</th></tr>
               </thead>
               <tbody id="tx-body"><tr><td colspan="6" class="muted small">Loading…</td></tr></tbody>
             </table>
+            <button id="btn-tx-load-more" class="secondary hidden" type="button" style="margin-top: 0.75rem">Load more</button>
           </div>
         </section>
 
@@ -107,7 +116,7 @@
           <div class="panel">
             <table class="leaderboard-table">
               <thead>
-                <tr><th>Worker</th><th>Match ratio</th><th>Answers</th><th>Established</th><th>Stake</th><th>Owed</th></tr>
+                <tr><th scope="col">Worker</th><th scope="col">Match ratio</th><th scope="col">Answers</th><th scope="col">Established</th><th scope="col">Stake</th><th scope="col">Owed</th></tr>
               </thead>
               <tbody id="workers-body"><tr><td colspan="6" class="muted small">Loading…</td></tr></tbody>
             </table>
@@ -119,10 +128,33 @@
           <div class="panel">
             <table class="leaderboard-table">
               <thead>
-                <tr><th>Payer</th><th>Total spend</th><th>Tracked</th><th>Settled</th><th>Success rate</th></tr>
+                <tr><th scope="col">Payer</th><th scope="col">Total spend</th><th scope="col">Tracked</th><th scope="col">Settled</th><th scope="col">Success rate</th></tr>
               </thead>
               <tbody id="payers-body"><tr><td colspan="5" class="muted small">Loading…</td></tr></tbody>
             </table>
+          </div>
+        </section>
+
+        <section id="view-pools" class="admin-view">
+          <h2>Worker Pools</h2>
+          <div class="panel">
+            <p class="muted small">
+              Whitelist-gated dispatch for private worker pools (backend-owned enforcement in dispatch.js). This view
+              manages the whitelist data only — see admin.js's renderPools() for the assumed endpoint shape.
+            </p>
+            <div class="row">
+              <label for="pools-select" class="muted small">Pool</label>
+              <select id="pools-select" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)"></select>
+            </div>
+            <table class="leaderboard-table">
+              <thead><tr><th>Whitelisted worker</th><th></th></tr></thead>
+              <tbody id="pools-body"><tr><td colspan="2" class="muted small">Loading…</td></tr></tbody>
+            </table>
+            <form id="pool-add-form" class="row" style="margin-top: 0.75rem">
+              <input id="pool-add-address" type="text" placeholder="Worker Stellar address (G...)" style="flex: 1; padding: 0.5rem 0.7rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)" />
+              <button id="btn-pool-add" type="submit">Add to whitelist</button>
+            </form>
+            <p id="pools-status" class="muted small"></p>
           </div>
         </section>
 
@@ -151,7 +183,7 @@
               status (SEP-10 means only that address's own signature can). Not a live query.
             </p>
             <table class="leaderboard-table">
-              <thead><tr><th>Address</th><th>Status</th><th>Tier</th><th>Reported</th></tr></thead>
+              <thead><tr><th scope="col">Address</th><th scope="col">Status</th><th scope="col">Tier</th><th scope="col">Reported</th></tr></thead>
               <tbody id="kyc-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
             </table>
           </div>
@@ -162,7 +194,7 @@
           <div class="panel">
             <p class="muted small">Self-reported SEP-24 withdrawal history — same caveat as KYC &amp; Tiers above.</p>
             <table class="leaderboard-table">
-              <thead><tr><th>Address</th><th>Amount</th><th>Status</th><th>Reported</th></tr></thead>
+              <thead><tr><th scope="col">Address</th><th scope="col">Amount</th><th scope="col">Status</th><th scope="col">Reported</th></tr></thead>
               <tbody id="payouts-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
             </table>
           </div>
@@ -183,7 +215,7 @@
             <p class="muted small">Workers below the minimum match ratio once established — candidates for review.</p>
             <table class="leaderboard-table">
               <thead>
-                <tr><th>Worker</th><th>Match ratio</th><th>Answers</th><th>Stake</th></tr>
+                <tr><th scope="col">Worker</th><th scope="col">Match ratio</th><th scope="col">Answers</th><th scope="col">Stake</th></tr>
               </thead>
               <tbody id="fraud-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
             </table>
@@ -205,6 +237,7 @@
       </main>
     </div>
 
+    <script type="module" src="/src/a11y.js"></script>
     <script type="module" src="/src/admin.js"></script>
   </body>
 </html>

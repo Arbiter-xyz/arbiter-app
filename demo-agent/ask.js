@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { readFile } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
 import { Keypair } from '@stellar/stellar-sdk';
-import { env, submitPaymentDirect, explorerTxLink, sleep } from './lib/stellar.js';
+import { env, submitPaymentDirect, explorerTxLink, pollJob } from './lib/stellar.js';
 
 const question = process.argv.slice(2).join(' ') || 'What is the capital of France?';
 const tier = process.env.TIER || 'standard';
@@ -29,18 +29,6 @@ async function postOracle(body, headers = {}) {
     body: JSON.stringify(body),
   });
   return { status: res.status, body: await res.json() };
-}
-
-async function pollJob(jobId, { intervalMs = 2000, timeoutMs = 120_000 } = {}) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const res = await fetch(`${env.backendUrl}/oracle/${jobId}`);
-    const job = await res.json();
-    if (job.status === 'settled') return job;
-    process.stdout.write(`  … job ${jobId} status=${job.status} (${job.totalAnswers ?? 0} answers so far)\r`);
-    await sleep(intervalMs);
-  }
-  throw new Error(`job ${jobId} did not settle within ${timeoutMs}ms`);
 }
 
 async function main() {
@@ -81,7 +69,9 @@ async function main() {
   console.log(`✓ Payment verified, job dispatched: ${fulfil.body.jobId} (poll ${fulfil.body.statusUrl})`);
 
   // Step 4 — poll for the async result.
-  const job = await pollJob(fulfil.body.jobId);
+  const job = await pollJob(env.backendUrl, fulfil.body.jobId, {
+    onTick: (j) => process.stdout.write(`  … job ${fulfil.body.jobId} status=${j.status} (${j.totalAnswers ?? 0} answers so far)\r`),
+  });
   console.log(); // clear the \r progress line
 
   if (job.outcome === 'resolved') {

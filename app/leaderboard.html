@@ -12,7 +12,8 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <main class="app">
+    <a class="skip-link" href="#main">Skip to main content</a>
+    <main id="main" tabindex="-1" class="app">
       <header>
         <h1>Arbiter <span class="tag">worker leaderboard</span></h1>
         <p class="sub">
@@ -20,6 +21,9 @@
           — stake is read live from the contract, so anyone can verify that part independently.
           <a href="/index.html">Worker console →</a>
         </p>
+        <div class="accessibility-controls" aria-label="Accessibility controls">
+          <button type="button" class="secondary" data-font-decrease aria-label="Decrease text size">A−</button><output class="muted small" data-font-status>100% text size</output><button type="button" class="secondary" data-font-increase aria-label="Increase text size">A+</button><button type="button" class="secondary" data-contrast-toggle aria-pressed="false">High contrast</button>
+        </div>
       </header>
 
       <section class="panel">
@@ -29,13 +33,14 @@
         </div>
 
         <table id="leaderboard-table" class="leaderboard-table">
+          <caption class="sr-only">Workers ranked by match ratio</caption>
           <thead>
             <tr>
-              <th>#</th>
-              <th>Worker</th>
-              <th>Match ratio</th>
-              <th>Answers</th>
-              <th>Stake (verifiable on-chain)</th>
+              <th scope="col"><span aria-hidden="true">#</span><span class="sr-only">Rank</span></th>
+              <th scope="col">Worker</th>
+              <th scope="col">Match ratio</th>
+              <th scope="col">Answers</th>
+              <th scope="col">Stake (verifiable on-chain)</th>
             </tr>
           </thead>
           <tbody id="leaderboard-body">
@@ -47,6 +52,7 @@
       </section>
     </main>
 
+    <script type="module" src="/src/a11y.js"></script>
     <script type="module" src="/src/leaderboard.js"></script>
   </body>
 </html>

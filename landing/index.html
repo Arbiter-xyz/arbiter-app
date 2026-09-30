@@ -4,11 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Arbiter — Put a stake on the answer, verified by staked humans</title>
-  <meta name="description" content="Arbiter is a pay-per-question verification API. Ask anything you need a real answer on — an audit finding, a contract's behavior, a claim an AI got wrong — and a staked quorum of humans checks it. Pay with a wallet or a card, settled on-chain or fully refunded." />
+  <meta name="description" content="Arbiter is a pay-per-question verification API. Ask anything you need a real answer on — an audit finding, a contract's behavior, a claim an AI got wrong — and a staked quorum of humans checks it. Pay with a card in seconds, or connect a Stellar wallet if you already have one. Settled on-chain or fully refunded." />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to main content</a>
+  <a class="skip-link" href="#main" data-i18n="skip">Skip to main content</a>
 
   <header class="site-header">
     <div class="container header-inner">
@@ -24,13 +24,13 @@
 
       <nav class="primary-nav" id="primary-nav" aria-label="Primary">
         <ul>
-          <li><a href="#how-it-works">How it works</a></li>
-          <li><a href="#features">Features</a></li>
-          <li><a href="#developers">Developers</a></li>
-          <li><a href="#pricing">Pricing</a></li>
-          <li><a href="#faq">FAQ</a></li>
-          <li><a href="docs/index.html">Guide</a></li>
-          <li><a href="https://github.com/Arbiter-xyz/arbiter-backend#readme" class="nav-cta">Read the docs</a></li>
+          <li><a href="#how-it-works" data-i18n="nav.how">How it works</a></li>
+          <li><a href="#features" data-i18n="nav.features">Features</a></li>
+          <li><a href="#developers" data-i18n="nav.developers">Developers</a></li>
+          <li><a href="#pricing" data-i18n="nav.pricing">Pricing</a></li>
+          <li><a href="#faq" data-i18n="nav.faq">FAQ</a></li>
+          <li><a href="https://github.com/Arbiter-xyz/arbiter-backend#readme" class="nav-cta" data-i18n="nav.docs">Read the docs</a></li>
+          <li><label><span class="sr-only" data-i18n="lang.label">Language</span><select class="lang-switch" id="lang-switch"><option value="en">English</option><option value="ar">العربية</option></select></label></li>
         </ul>
       </nav>
     </div>
@@ -41,22 +41,22 @@
     <section class="hero" id="top" aria-labelledby="hero-heading">
       <div class="container hero-grid">
         <div class="hero-copy reveal">
-          <p class="eyebrow">Ground truth for any claim you need checked · Built on Stellar / Soroban</p>
-          <h1 id="hero-heading">Is that true?<br />Put a stake on the answer.</h1>
-          <p class="hero-sub">
+          <p class="eyebrow" data-i18n="hero.eyebrow">Ground truth for any claim you need checked · Built on Stellar / Soroban</p>
+          <h1 id="hero-heading" data-i18n="hero.title">Is that true? Put a stake on the answer.</h1>
+          <p class="hero-sub" data-i18n="hero.sub">
             Arbiter checks any claim you need a real answer on — an audit finding, a contract's
             behavior, something an AI got wrong — with a real, staked human quorum, not a raw
-            LLM guess. Pay with a wallet or a card, get a settled answer, or a full refund if
-            consensus isn&rsquo;t reached. No stuck funds, no partial states.
+            LLM guess. Pay with a card in seconds — no wallet needed — and get a settled answer,
+            or a full refund if consensus isn&rsquo;t reached. No stuck funds, no partial states.
           </p>
           <div class="hero-actions">
-            <a href="#try-it-input" class="btn btn-primary">Verify a claim live</a>
-            <a href="docs/index.html" class="btn btn-secondary">Read the guide</a>
+            <a href="#try-it-input" class="btn btn-primary" data-i18n="hero.cta">Verify a claim live</a>
+            <a href="https://github.com/Arbiter-xyz/arbiter-backend#readme" class="btn btn-secondary" data-i18n="nav.docs">Read the docs</a>
           </div>
           <ul class="hero-trust" aria-label="At a glance">
-            <li><strong>$0.05</strong><span>starting price</span></li>
-            <li><strong>Staked</strong><span>quorum, not a guess</span></li>
-            <li><strong>Fail-closed</strong><span>by design</span></li>
+            <li><strong data-i18n-price="0.05">$0.05</strong><span data-i18n="trust.price">starting price</span></li>
+            <li><strong data-i18n="trust.staked">Staked</strong><span data-i18n="trust.stakedSub">quorum, not a guess</span></li>
+            <li><strong data-i18n="trust.fail">Fail-closed</strong><span data-i18n="trust.failSub">by design</span></li>
           </ul>
         </div>
 
@@ -76,6 +76,15 @@
               autocomplete="off"
             />
             <button type="submit" class="btn btn-primary" id="try-it-submit">Ask</button>
+            <input type="hidden" name="tier" id="try-it-tier" value="standard" />
+            <div class="tier-picker" id="tier-picker" hidden>
+              <p class="tier-summary" id="tier-summary" aria-live="polite"></p>
+              <details class="tier-advanced">
+                <summary>Advanced: choose a tier</summary>
+                <label for="tier-select" class="sr-only">Pricing tier</label>
+                <select id="tier-select"></select>
+              </details>
+            </div>
 
             <div class="try-it-result" id="try-it-result" role="status" aria-live="polite">
               <p class="try-it-placeholder">
@@ -83,6 +92,13 @@
               </p>
             </div>
           </form>
+
+          <p class="live-ticker" id="live-ticker" hidden aria-live="off">
+            <span class="live-dot" aria-hidden="true"></span>
+            <strong id="ticker-resolved">0</strong> paid questions settled on-chain
+            · <strong id="ticker-workers">0</strong> workers online
+            <span class="ticker-note">Live from /stats — sandbox calls excluded.</span>
+          </p>
         </div>
       </div>
     </section>
@@ -90,7 +106,7 @@
     <!-- HOW IT WORKS -->
     <section class="section" id="how-it-works" aria-labelledby="how-heading">
       <div class="container">
-        <h2 id="how-heading" class="section-heading reveal">How it works</h2>
+        <h2 id="how-heading" class="section-heading reveal" data-i18n="nav.how">How it works</h2>
         <ol class="steps">
           <li class="step reveal">
             <span class="step-index">01</span>
@@ -101,8 +117,9 @@
           <li class="step reveal">
             <span class="step-index">02</span>
             <h3>Pay</h3>
-            <p>Submit USDC on Stellar to escrow (the platform covers your network fee, zero XLM
-              needed), or use an API key billed by the question — no wallet required.</p>
+            <p>The easy way: pay by card — no wallet, no XLM, no setup. If you already have a
+              Stellar wallet, you can instead submit USDC to escrow (the platform covers your
+              network fee, zero XLM needed) or use an API key billed by the question.</p>
           </li>
           <li class="step reveal">
             <span class="step-index">03</span>
@@ -123,7 +140,7 @@
     <!-- FEATURES -->
     <section class="section section-alt" id="features" aria-labelledby="features-heading">
       <div class="container">
-        <h2 id="features-heading" class="section-heading reveal">Why Arbiter</h2>
+        <h2 id="features-heading" class="section-heading reveal" data-i18n="h.why">Why Arbiter</h2>
         <p class="section-sub reveal">Every guarantee below is enforced by the smart contract
           itself, not a policy we promise to follow.</p>
 
@@ -144,7 +161,7 @@
 
           <article class="feature-card reveal">
             <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 17l5-5 4 4 8-9"/><path d="M15 7h5v5"/></svg>
-            <h3>Surge-aware pricing</h3>
+            <h3 data-i18n="h.surge">Surge-aware pricing</h3>
             <p>Price reflects live worker supply, not a fixed sticker — and it&rsquo;s locked in
               at quote time, so it can never move on you mid-flow.</p>
           </article>
@@ -156,18 +173,127 @@
               Answers that lose a quorum vote forfeit a slice of that bond.</p>
           </article>
         </div>
+
+        <!-- COMPARISON TABLE -->
+        <div class="comparison reveal" id="comparison">
+          <h3 class="comparison-heading">How Arbiter compares</h3>
+          <p class="comparison-sub">The same argument the FAQ makes in prose, side by side: what
+            actually backs an answer when being wrong is expensive and checkable.</p>
+          <div class="comparison-scroll">
+            <table class="comparison-table">
+              <caption class="sr-only">Comparison of Arbiter against a raw LLM call and unstaked crowdsourcing</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Dimension</th>
+                  <th scope="col" class="is-arbiter">Arbiter</th>
+                  <th scope="col">Raw LLM call</th>
+                  <th scope="col">Unstaked crowdsourcing</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">Who answers</th>
+                  <td class="is-arbiter">A live quorum of humans, reconciled into one consensus</td>
+                  <td>A single model, one pass, no second opinion</td>
+                  <td>Whoever shows up, with no bond at risk</td>
+                </tr>
+                <tr>
+                  <th scope="row">Staking / slashing</th>
+                  <td class="is-arbiter">Workers post a USDC bond; a losing answer forfeits a slice of it</td>
+                  <td>None — a wrong answer costs the model nothing</td>
+                  <td>None — no stake to lose, so no cost to being wrong</td>
+                </tr>
+                <tr>
+                  <th scope="row">Settlement</th>
+                  <td class="is-arbiter">On-chain via a Soroban escrow contract, verifiable by anyone</td>
+                  <td>Off-chain, no settlement layer at all</td>
+                  <td>Off-chain, no on-chain settlement guarantee</td>
+                </tr>
+                <tr>
+                  <th scope="row">When consensus fails</th>
+                  <td class="is-arbiter">Fail-closed: a full on-chain refund, never a partial state</td>
+                  <td>No notion of consensus — you get an answer either way</td>
+                  <td>Ambiguous — no defined refund path</td>
+                </tr>
+                <tr>
+                  <th scope="row">Best for</th>
+                  <td class="is-arbiter">Technical claims where being wrong is expensive and checkable</td>
+                  <td>Drafting, brainstorming, low-stakes lookups</td>
+                  <td>Subjective or opinion-based tasks</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DEVELOPERS -->
+    <section class="section" id="developers" aria-labelledby="developers-heading">
+      <div class="container">
+        <h2 id="developers-heading" class="section-heading reveal" data-i18n="nav.developers">Developers</h2>
+        <p class="section-sub reveal">One endpoint, no API key to start. See the
+          <a href="https://github.com/Arbiter-xyz/arbiter-backend#readme">docs</a> for the full
+          surface.</p>
+      </div>
+    </section>
+
+    <!-- PRICING -->
+    <section class="section section-alt" id="pricing" aria-labelledby="pricing-heading">
+      <div class="container">
+        <h2 id="pricing-heading" class="section-heading reveal" data-i18n="nav.pricing">Pricing</h2>
+        <p class="section-sub reveal">Pay per question, with a wallet or a card. Price is locked
+          in at quote time.</p>
+        <div class="surge-live reveal" id="surge-live" hidden>
+          <div class="surge-head">
+            <span>Surge multiplier now: <strong id="surge-now">1.00x</strong></span>
+            <span class="surge-status" id="surge-status">Connecting…</span>
+          </div>
+          <canvas id="surge-canvas" aria-label="Live surge multiplier over the last 10 minutes" role="img"></canvas>
+          <p class="surge-note">Streamed live from the backend's smoothed worker-supply signal.
+            Gaps mean the connection dropped — history is never filled in.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- FOR WORKERS -->
+    <section class="worker-band" aria-labelledby="worker-heading">
+      <div class="container worker-band-inner reveal">
+        <div>
+          <h2 id="worker-heading">Verify claims. Get paid in USDC.</h2>
+          <p>Auditors, on-chain analysts, and technical reviewers: stake a bond, check what you
+            actually know, get settled on-chain automatically. Wrong quorum answers cost you a
+            slice of your stake — right ones build a public, verifiable track record.</p>
+        </div>
+        <a href="https://arbiter-app-ten.vercel.app/index.html" class="btn btn-secondary btn-on-dark">Start earning</a>
       </div>
     </section>
 
     <!-- FAQ -->
     <section class="section" id="faq" aria-labelledby="faq-heading">
       <div class="container">
-        <h2 id="faq-heading" class="section-heading reveal">Frequently asked questions</h2>
-        <p class="section-sub reveal">New to Arbiter? The <a href="docs/index.html">plain-language
-          guide</a> walks through connecting a wallet, asking a question, and getting a settled
-          answer or a refund — no code required.</p>
+        <h2 id="faq-heading" class="section-heading reveal" data-i18n="nav.faq">FAQ</h2>
+        <div class="faq-list">
+          <details class="faq-item reveal">
+            <summary>Why a human quorum instead of just asking an LLM?</summary>
+            <p>A raw LLM call has no stake behind it — if it&rsquo;s wrong, nothing happens to
+              anyone. Arbiter&rsquo;s workers post a real USDC bond before answering, and a losing
+              answer forfeits a slice of it. That staked accountability, settled on-chain, is the
+              difference between a guess and a checked answer.</p>
+          </details>
+        </div>
       </div>
     </section>
   </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; Arbiter. Built on Stellar / Soroban.</p>
+    </div>
+  </footer>
+
+  <script src="i18n.js"></script>
+  <script src="script.js"></script>
+  <script src="live.js" defer></script>
 </body>
 </html>

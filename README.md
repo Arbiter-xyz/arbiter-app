@@ -112,15 +112,40 @@ e2e/          # browser click-through harness + cross-repo integration harness
   (transactions, workers, payers, live treasury balance, fee revenue,
   fraud/trust monitoring) served against arbiter-backend's `/admin/*`.
 
-## Error reporting (optional)
+## Notification digest (pending backend)
 
-Set `VITE_SENTRY_DSN` in `app/.env` to send uncaught client errors to Sentry
-(`app/src/errorReporting.js`). Unset, it is a no-op and `@sentry/browser` is
-never loaded. Events and breadcrumbs are scrubbed of Stellar keys, tokens and
-addresses, and breadcrumbs touching `#backup-secret` / `#admin-token-input`
-are dropped. The on-page logs and `console.error` calls are unchanged.
+The push panel has an instant / daily / weekly digest toggle, marked "coming
+soon" and non-functional until the backend supports it. It POSTs
+`{ token, digest: 'instant' | 'daily' | 'weekly' }` (session token from
+`ensureSession()`) to `/workers/:address/digest`, and shows a "not supported
+yet" message on 404/405/501. Required from arbiter-backend, none of which exists
+today:
+
+- that endpoint, persisting the per-worker preference;
+- email (or other digest) delivery — `push.js` only does instant Web Push;
+- per-worker "eligible but missed" question history to aggregate — only
+  outcome/reputation (`rep:`) records are kept now.
 
 ## Running it
+
+### One command (Docker Compose, sandbox flow)
+
+```sh
+docker compose up --build                                   # backend + 2 worker-sim.js instances
+docker compose run --rm ask "What is the capital of France?" # sandbox question → settlement
+```
+
+Testnet secrets (optional) go in a root `.env`; they are never baked into `docker-compose.yml`.
+Watch activity live at `app/demo.html` (`npm run dev` in `app/`, uses the admin token).
+
+### Embeddable widget
+
+```html
+<div data-arbiter-widget></div>
+<script src="https://<host>/widget.js" data-api-base="https://your-backend"></script>
+```
+
+Sandbox-only (`/oracle/sandbox` + poll `/oracle/:jobId`) — no payment, no chain, no signup.
 
 ```sh
 cd app && npm install && npm run dev      # or: npm run build
@@ -134,15 +159,6 @@ node ask.js "What is the capital of France?"           # real on-chain flow
 # cross-repo integration harness (real contract + backend + app together)
 docker compose -f e2e/docker-compose.integration.yml up --build --abort-on-container-exit
 ```
-
-### Design-system docs (Storybook)
-
-`cd app && npm run storybook` serves stories for the shared classes in
-`app/src/style.css` (`.panel`, `.badge-*`, buttons, `.row`, `.muted`/`.small`,
-`.leaderboard-table`). Storybook (`@storybook/html-vite`) is used because it
-runs against the existing vanilla-JS/Vite setup with no framework rewrite;
-stories live in `app/src/stories/`. Extracting the duplicated table-row
-helpers from `admin.js`/`leaderboard.js` into a shared module is not done yet.
 
 Verified live against a real deployed contract on Stellar testnet. (That
 run predates this repo's split; see "Round 6" in the archived
