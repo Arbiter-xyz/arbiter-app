@@ -112,13 +112,19 @@ e2e/          # browser click-through harness + cross-repo integration harness
   (transactions, workers, payers, live treasury balance, fee revenue,
   fraud/trust monitoring) served against arbiter-backend's `/admin/*`.
 
-## Error reporting (optional)
+## Notification digest (pending backend)
 
-Set `VITE_SENTRY_DSN` in `app/.env` to send uncaught client errors to Sentry
-(`app/src/errorReporting.js`). Unset, it is a no-op and `@sentry/browser` is
-never loaded. Events and breadcrumbs are scrubbed of Stellar keys, tokens and
-addresses, and breadcrumbs touching `#backup-secret` / `#admin-token-input`
-are dropped. The on-page logs and `console.error` calls are unchanged.
+The push panel has an instant / daily / weekly digest toggle, marked "coming
+soon" and non-functional until the backend supports it. It POSTs
+`{ token, digest: 'instant' | 'daily' | 'weekly' }` (session token from
+`ensureSession()`) to `/workers/:address/digest`, and shows a "not supported
+yet" message on 404/405/501. Required from arbiter-backend, none of which exists
+today:
+
+- that endpoint, persisting the per-worker preference;
+- email (or other digest) delivery — `push.js` only does instant Web Push;
+- per-worker "eligible but missed" question history to aggregate — only
+  outcome/reputation (`rep:`) records are kept now.
 
 ## Running it
 
@@ -135,25 +141,8 @@ node ask.js "What is the capital of France?"           # real on-chain flow
 docker compose -f e2e/docker-compose.integration.yml up --build --abort-on-container-exit
 ```
 
-### Design-system docs (Storybook)
-
-`cd app && npm run storybook` serves stories for the shared classes in
-`app/src/style.css` (`.panel`, `.badge-*`, buttons, `.row`, `.muted`/`.small`,
-`.leaderboard-table`). Storybook (`@storybook/html-vite`) is used because it
-runs against the existing vanilla-JS/Vite setup with no framework rewrite;
-stories live in `app/src/stories/`. Extracting the duplicated table-row
-helpers from `admin.js`/`leaderboard.js` into a shared module is not done yet.
-
 Verified live against a real deployed contract on Stellar testnet. (That
 run predates this repo's split; see "Round 6" in the archived
 [`arbiter`](https://github.com/rudeus112266/arbiter) monorepo README for
 the full run — real `ask.js`/`worker-sim.js`/`sponsored-demo.js`
 executions, transaction links included.)
-
-## Performance budget (Lighthouse CI)
-
-`.github/workflows/lighthouse.yml` builds `app/` and runs Lighthouse CI against `dist/index.html` and `dist/dashboard.html`. Budgets (performance score, LCP, TBT, CLS, total byte weight) live in `app/lighthouserc.json`; CI fails on any regression past them. Run locally with `cd app && npm run build && npx @lhci/cli@0.14.0 autorun`. The initial thresholds are deliberately loose and should be tightened to the measured baseline from the first CI run's report.
-
-## Bundle-size budget
-
-CI runs `node app/scripts/check-bundle-budget.mjs` after `vite build` and fails if any emitted JS chunk exceeds 1500 KB (CSS: 100 KB). Override locally with `BUDGET_JS_KB` / `BUDGET_CSS_KB`; lower the defaults in the script as the stellar-sdk code-splitting lands.

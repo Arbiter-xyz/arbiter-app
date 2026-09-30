@@ -74,6 +74,8 @@ const el = {
   trackRecordSummary: document.getElementById('track-record-summary'),
   btnEnablePush: document.getElementById('btn-enable-push'),
   pushStatus: document.getElementById('push-status'),
+  digestSelect: document.getElementById('digest-select'),
+  digestStatus: document.getElementById('digest-status'),
   btnWithdraw: document.getElementById('btn-withdraw'),
   btnWithdrawBank: document.getElementById('btn-withdraw-bank'),
   bankWithdrawStatus: document.getElementById('bank-withdraw-status'),
@@ -318,6 +320,36 @@ el.btnCopySecret.addEventListener('click', async () => {
     el.backupCopyStatus.textContent = 'Copied to clipboard — store it somewhere safe, then clear your clipboard.';
   } catch (err) {
     el.backupCopyStatus.textContent = `Could not copy automatically (${err.message}) — reveal and copy it manually.`;
+  }
+});
+
+// --- Notification digest preference (pending backend) ---
+//
+// POST /workers/:address/digest does not exist in arbiter-backend yet (see the
+// README's "Notification digest" section), so this is a coming-soon toggle: it
+// tries the call and says plainly when the backend can't take it.
+el.digestSelect.addEventListener('change', async () => {
+  const digest = el.digestSelect.value;
+  if (!state.address) {
+    el.digestStatus.textContent = 'Connect first — digest preference is not saved (coming soon).';
+    return;
+  }
+  try {
+    const token = await ensureSession();
+    const res = await fetch(`${BACKEND_URL}/workers/${state.address}/digest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, digest }),
+    });
+    if ([404, 405, 501].includes(res.status)) {
+      el.digestStatus.textContent = 'Digest is coming soon — the backend does not support it yet, so nothing was saved.';
+    } else if (!res.ok) {
+      el.digestStatus.textContent = `Could not save digest preference (HTTP ${res.status}).`;
+    } else {
+      el.digestStatus.textContent = `Digest preference saved: ${digest}.`;
+    }
+  } catch (err) {
+    el.digestStatus.textContent = `Could not save digest preference: ${err.message}`;
   }
 });
 
