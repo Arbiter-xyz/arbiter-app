@@ -15,20 +15,14 @@ import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
-import { createNotificationCenter } from './notifications.js';
+import { renderFencedCode } from './codeBlocks.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
 const USDC_ASSET_CODE = import.meta.env.VITE_USDC_ASSET_CODE || 'USDC';
-const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
-
-// The backend API version this app is built against. arbiter-backend and
-// this app are independently deployed repos, so a backend API change (a
-// renamed field, a new required parameter) would otherwise only surface as
-// a broken request mid-flow. On load we compare this against the version
-// the backend reports at GET /health and surface a non-blocking notice on
-// mismatch. See the README's "Backend API compatibility" section.
-const COMPATIBLE_BACKEND_VERSION = '1';
+// Keep in sync with backend MAX_ANSWER_LENGTH. The API remains authoritative.
+const MAX_ANSWER_LENGTH = 400;
+const ANSWER_DRAFT_PREFIX = 'arbiter:answer-draft:';
 
 // Hand-picked, not allowAllModules(): explicit about which wallets we
 // support (matching the original spec's list) rather than automatically
@@ -72,6 +66,8 @@ const el = {
   timerBar: document.getElementById('timer-bar'),
   answerForm: document.getElementById('answer-form'),
   answerInput: document.getElementById('answer-input'),
+  answerCount: document.getElementById('answer-count'),
+  btnRestoreDraft: document.getElementById('btn-restore-draft'),
   btnAnswer: document.getElementById('btn-answer'),
   owedAmount: document.getElementById('owed-amount'),
   stakeAmount: document.getElementById('stake-amount'),
@@ -115,6 +111,9 @@ const state = {
   eventSource: null,
   currentQuestion: null,
   countdownHandle: null,
+  sessionToken: null,
+  sessionExpiresAt: 0,
+  lastDraft: null,
 };
 
 const notify = createNotificationCenter({ mount: document.querySelector('header'), storageKey: 'arbiter-worker-notifications' });
@@ -322,446 +321,200 @@ el.btnCopySecret.addEventListener('click', async () => {
   }
 });
 
-/** Adds (or refreshes) an identity and makes it active. An address that is
- * already connected keeps its cached session rather than starting over. */
-async function activateWallet(wallet, address, walletId = null) {
-  const existing = state.identities.get(address);
-  if (existing) {
-    existing.wallet = wallet;
-    existing.walletId = walletId;
-  } else {
-    state.identities.set(address, { address, wallet, walletId, sessionToken: null, sessionExpiresAt: 0 });
-  }
+// --- Social recovery (client-side Shamir split, no backend involvement) ---
+//
+// The quick-start secret is split into N shares entirely in this browser.
+// Arbiter's backend never sees the secret or any share: distribution is the
+// user's own (contacts, a second device, a password manager). Reconstructing
+// from any k shares reproduces the original Keypair/address, so the README's
+// non-custodial framing is unchanged — there is no server-side capability to
+// rebuild a u
+
+async function activateWallet(wallet, address) {
+  state.activeWallet = wallet;
+  state.address = address;
   log(`Connected wallet ${address}`);
-  await switchIdentity(address);
+  el.workerAddress.textContent = address;
+  await routeAfterConnect();
   setConnectButtonsBusy(false);
 }
 
-async function switchIdentity(address) {
-  if (state.online && state.address !== address) goOffline(); // the dispatch channel is bound to one worker address
-  state.address = address;
-  const { walletId } = state.identity;
-  if (walletId) kit.setWallet(walletId); // the kit holds one selected module at a time
-  el.workerAddress.textContent = address;
-  renderAccountSwitcher();
-  await routeAfterConnect();
-}
-
-function renderAccountSwitcher() {
-  el.accountSelect.innerHTML = '';
-  for (const address of state.identities.keys()) {
-    const option = document.createElement('option');
-    option.value = address;
-    option.textContent = `${address.slice(0, 6)}…${address.slice(-4)}`;
-    option.selected = address === state.address;
-    el.accountSelect.append(option);
-  }
-  el.accountSwitcher.classList.toggle('hidden', state.identities.size === 0);
-}
-
-el.accountSelect.addEventListener('change', () => {
-  switchIdentity(el.accountSelect.value).catch((err) => log(`Switch failed: ${err.message}`));
-});
-
-el.btnAddWallet.addEventListener('click', () => showPanel('connect'));
-
-let earningsRefreshHandle = null;
-
 async function hasUsdcTrustline(address) {
   const res = await fetch(`${HORIZON_URL}/accounts/${address}`);
-  if (res.status === 404) return false; // account doesn't exist on-chain at all yet
+  if (res.status === 404) return false;
   if (!res.ok) throw new Error(`Horizon returned ${res.status}`);
   const account = await res.json();
-  return (account.balances || []).some((b) => b.asset_code === USDC_ASSET_CODE);
+  return (account.balances || []).some((balance) => balance.asset_code === USDC_ASSET_CODE);
 }
 
 async function routeAfterConnect() {
   try {
     const ready = await hasUsdcTrustline(state.address);
     showPanel(ready ? 'online' : 'onboard');
-    if (ready) {
-      refreshEarnings();
-      earningsRefreshHandle ??= setInterval(refreshEarnings, 20_000);
-    }
-  } catch (err) {
-    log(`Trustline check failed (${err.message}) — assuming onboarding is needed`);
+  } catch (error) {
+    log(`Trustline check failed (${error.message}) — assuming onboarding is needed`);
     showPanel('onboard');
   }
 }
 
-// --- Sponsored onboarding (zero XLM required) ------------------------------
-
 el.btnOnboard.addEventListener('click', async () => {
   el.btnOnboard.disabled = true;
   try {
-    log('Building sponsored onboarding transaction…');
-    const buildRes = await fetch(`${BACKEND_URL}/sponsor/onboard/build`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address: state.address }),
+    const build = await fetch(`${BACKEND_URL}/sponsor/onboard/build`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address: state.address }),
     });
-    if (!buildRes.ok) throw new Error((await buildRes.json()).error || `build failed: ${buildRes.status}`);
-    const { xdr } = await buildRes.json();
-
-    log('Signing onboarding transaction with your wallet…');
-    const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
-      address: state.address,
-      networkPassphrase: WalletNetwork.TESTNET,
+    if (!build.ok) throw new Error(`build failed: ${build.status}`);
+    const { xdr } = await build.json();
+    const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, { address: state.address, networkPassphrase: WalletNetwork.TESTNET });
+    const submit = await fetch(`${BACKEND_URL}/sponsor/onboard/submit`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ xdr: signedTxXdr }),
     });
-
-    log('Submitting sponsored onboarding transaction…');
-    const submitRes = await fetch(`${BACKEND_URL}/sponsor/onboard/submit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ xdr: signedTxXdr }),
-    });
-    if (!submitRes.ok) throw new Error((await submitRes.json()).error || `submit failed: ${submitRes.status}`);
-    const { hash } = await submitRes.json();
-
-    log(`Onboarded — account created and USDC trustline opened (tx ${hash}), zero XLM spent by you.`);
+    if (!submit.ok) throw new Error(`submit failed: ${submit.status}`);
     showPanel('online');
-    refreshEarnings();
-  } catch (err) {
-    log(`Onboarding failed: ${err.message}`);
+  } catch (error) {
+    log(`Onboarding failed: ${error.message}`);
   } finally {
     el.btnOnboard.disabled = false;
   }
 });
 
-// --- Go online / offline ----------------------------------------------------
-
 el.btnToggle.addEventListener('click', async () => {
-  if (state.online) {
-    goOffline();
-    return;
-  }
+  if (state.online) return goOffline();
   el.btnToggle.disabled = true;
-  try {
-    await goOnline();
-  } catch (err) {
-    log(`Could not go online: ${err.message}`);
-  } finally {
-    el.btnToggle.disabled = false;
-  }
+  try { await goOnline(); } catch (error) { log(`Could not go online: ${error.message}`); } finally { el.btnToggle.disabled = false; }
 });
 
-/** Proves control of this address once (a single signTransaction prompt,
- * same primitive already used for onboarding/staking — never signMessage,
- * whose conventions vary across wallets), then reuses the resulting bearer
- * session for both the SSE connection and every answer submission until it
- * expires. This exists because the backend now REQUIRES it for any
- * real-address workerId — see workerAuth.js. */
+// Dispatch remains session-authenticated. Never reconnect to this stream using
+// only an address: the backend requires this proof-of-control token.
 async function ensureSession() {
-  // Pin the identity up front so a mid-flight account switch can't write
-  // this token onto a different address.
-  const identity = state.identity;
-  if (identity.sessionToken && Date.now() < identity.sessionExpiresAt - 60_000) return identity.sessionToken;
-  const { address, wallet } = identity;
-
-  log('Proving control of your address (one signature)…');
-  const challengeRes = await fetch(`${BACKEND_URL}/workers/${address}/session/challenge`, { method: 'POST' });
-  if (!challengeRes.ok) throw new Error((await challengeRes.json()).error || 'failed to get session challenge');
-  const { xdr } = await challengeRes.json();
-
-  const { signedTxXdr } = await wallet.signTransaction(xdr, {
-    address,
-    networkPassphrase: WalletNetwork.TESTNET,
+  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) return state.sessionToken;
+  const challenge = await fetch(`${BACKEND_URL}/workers/${state.address}/session/challenge`, { method: 'POST' });
+  if (!challenge.ok) throw new Error('failed to get session challenge');
+  const { xdr } = await challenge.json();
+  const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, { address: state.address, networkPassphrase: WalletNetwork.TESTNET });
+  const session = await fetch(`${BACKEND_URL}/workers/${state.address}/session`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ signedXdr: signedTxXdr }),
   });
-
-  const sessionRes = await fetch(`${BACKEND_URL}/workers/${address}/session`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ signedXdr: signedTxXdr }),
-  });
-  if (!sessionRes.ok) throw new Error((await sessionRes.json()).error || 'failed to establish session');
-  const { token, expiresAt } = await sessionRes.json();
-  identity.sessionToken = token;
-  identity.sessionExpiresAt = expiresAt;
-  log('Session established — you can answer questions as yourself, and only yourself.');
+  if (!session.ok) throw new Error('failed to establish session');
+  const { token, expiresAt } = await session.json();
+  state.sessionToken = token;
+  state.sessionExpiresAt = expiresAt;
   return token;
 }
 
 async function goOnline() {
   const token = await ensureSession();
   const categories = selectedCategories();
-  const qs = new URLSearchParams({ worker: state.address, token });
-  if (categories.length) qs.set('categories', categories.join(','));
-
-  const es = new EventSource(`${BACKEND_URL}/app/events?${qs.toString()}`);
-  state.eventSource = es;
-
-  es.addEventListener('connected', () => {
+  const query = new URLSearchParams({ worker: state.address, token });
+  if (categories.length) query.set('categories', categories.join(','));
+  const source = new EventSource(`${BACKEND_URL}/app/events?${query.toString()}`);
+  state.eventSource = source;
+  source.addEventListener('connected', () => {
     state.online = true;
     el.workerStatus.textContent = categories.length ? `online — ${categories.join(', ')}` : 'online — all topics';
     el.btnToggle.textContent = 'Go offline';
-    log(`Connected to dispatch channel${categories.length ? ` for [${categories.join(', ')}]` : ''}`);
   });
-
-  es.addEventListener('question', (evt) => {
-    const data = JSON.parse(evt.data);
-    onQuestionReceived(data);
-  });
-
-  es.onerror = () => {
-    log('Dispatch channel error/disconnected');
-    goOffline();
-  };
+  source.addEventListener('question', (event) => onQuestionReceived(JSON.parse(event.data)));
+  source.onerror = () => goOffline();
 }
 
 function goOffline() {
-  if (state.eventSource) {
-    state.eventSource.close();
-    state.eventSource = null;
-  }
+  state.eventSource?.close();
+  state.eventSource = null;
   state.online = false;
   el.workerStatus.textContent = 'offline';
   el.btnToggle.textContent = 'Go online';
   el.question.classList.add('hidden');
   stopCountdown();
-  log('Disconnected from dispatch channel');
 }
 
-// --- Question / answer flow --------------------------------------------------
+function draftKey(questionId) { return `${ANSWER_DRAFT_PREFIX}${questionId}`; }
+function readDraft(questionId) { try { return localStorage.getItem(draftKey(questionId)) || ''; } catch { return ''; } }
+function saveDraft(questionId, value) { try { value ? localStorage.setItem(draftKey(questionId), value) : localStorage.removeItem(draftKey(questionId)); } catch { /* best-effort */ } }
+function clearDraft(questionId) {
+  try { localStorage.removeItem(draftKey(questionId)); } catch { /* best-effort */ }
+  if (state.lastDraft?.questionId === questionId) state.lastDraft = null;
+  updateRestoreControl();
+}
+function updateAnswerCount() {
+  const length = el.answerInput.value.length;
+  el.answerCount.textContent = `${length} / ${MAX_ANSWER_LENGTH}`;
+  el.answerCount.classList.toggle('answer-count-limit', length >= MAX_ANSWER_LENGTH * 0.9);
+}
+function updateRestoreControl() {
+  const available = state.currentQuestion && state.lastDraft?.questionId === state.currentQuestion.questionId && !el.answerInput.value;
+  el.btnRestoreDraft.classList.toggle('hidden', !available);
+}
+
+el.answerInput.addEventListener('input', () => {
+  const questionId = state.currentQuestion?.questionId;
+  if (questionId) {
+    saveDraft(questionId, el.answerInput.value);
+    state.lastDraft = el.answerInput.value ? { questionId, value: el.answerInput.value } : null;
+  }
+  updateAnswerCount();
+  updateRestoreControl();
+});
+el.btnRestoreDraft.addEventListener('click', () => {
+  if (state.lastDraft?.questionId !== state.currentQuestion?.questionId) return;
+  el.answerInput.value = state.lastDraft.value;
+  saveDraft(state.currentQuestion.questionId, el.answerInput.value);
+  updateAnswerCount(); updateRestoreControl(); el.answerInput.focus();
+});
 
 function onQuestionReceived({ questionId, question, expiresInMs }) {
+  const previous = state.currentQuestion;
+  if (previous && previous.questionId !== questionId && el.answerInput.value) {
+    state.lastDraft = { questionId: previous.questionId, value: el.answerInput.value };
+    saveDraft(previous.questionId, el.answerInput.value);
+  }
   state.currentQuestion = { questionId, deadlineAt: Date.now() + expiresInMs };
-  el.questionText.textContent = question;
-  el.answerInput.value = '';
+  renderFencedCode(el.questionText, question);
+  const saved = readDraft(questionId);
+  el.answerInput.value = saved;
+  state.lastDraft = saved ? { questionId, value: saved } : null;
   el.answerInput.disabled = false;
   el.btnAnswer.disabled = false;
   el.question.classList.remove('hidden');
-  log(`New question dispatched: "${question}"`);
-  startCountdown(expiresInMs);
+  updateAnswerCount(); updateRestoreControl(); startCountdown(expiresInMs);
 }
 
 function startCountdown(totalMs) {
   stopCountdown();
   const start = Date.now();
   state.countdownHandle = setInterval(() => {
-    const elapsed = Date.now() - start;
-    const remaining = Math.max(0, 1 - elapsed / totalMs);
+    const remaining = Math.max(0, 1 - (Date.now() - start) / totalMs);
     el.timerBar.style.width = `${remaining * 100}%`;
     if (remaining <= 0) {
-      stopCountdown();
+      stopCountdown({ expired: true });
       el.answerInput.disabled = true;
       el.btnAnswer.disabled = true;
       log('Question window expired');
     }
   }, 100);
 }
-
-function stopCountdown() {
-  if (state.countdownHandle) {
-    clearInterval(state.countdownHandle);
-    state.countdownHandle = null;
-  }
+function stopCountdown({ expired = false } = {}) {
+  if (state.countdownHandle) clearInterval(state.countdownHandle);
+  state.countdownHandle = null;
+  if (expired && state.currentQuestion) clearDraft(state.currentQuestion.questionId);
 }
 
-el.answerForm.addEventListener('submit', async (evt) => {
-  evt.preventDefault();
-  const q = state.currentQuestion;
+el.answerForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const question = state.currentQuestion;
   const answer = el.answerInput.value.trim();
-  if (!q || !answer) return;
-
-  el.btnAnswer.disabled = true;
-  el.answerInput.disabled = true;
+  if (!question || !answer) return;
+  el.btnAnswer.disabled = true; el.answerInput.disabled = true;
   try {
-    const res = await fetch(`${BACKEND_URL}/app/answer`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ questionId: q.questionId, workerId: state.address, answer, token: state.sessionToken }),
+    const response = await fetch(`${BACKEND_URL}/app/answer`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ questionId: question.questionId, workerId: state.address, answer, token: state.sessionToken }),
     });
-    if (res.status === 401) {
-      log('Session expired or invalid — go offline and back online to re-authenticate.');
-    } else if (res.status === 409) {
-      log('Answer rejected — question already closed, expired, or already answered');
-    } else if (!res.ok) {
-      throw new Error(`unexpected status ${res.status}`);
-    } else {
-      log(`Answer submitted: "${answer}"`);
-    }
-  } catch (err) {
-    log(`Answer submission failed: ${err.message}`);
-    el.btnAnswer.disabled = false;
-    el.answerInput.disabled = false;
+    if (!response.ok) throw new Error(`answer rejected (${response.status})`);
+    clearDraft(question.questionId);
+    el.answerInput.value = ''; updateAnswerCount(); log('Answer submitted.');
+  } catch (error) {
+    log(`Answer submission failed: ${error.message}`);
+    el.btnAnswer.disabled = false; el.answerInput.disabled = false;
   }
 });
-
-// --- Earnings & staking -------------------------------------------------
-// Matching answers are CREDITED on-chain (accrued-balance settlement), not
-// paid out per-question — withdraw() collects everything in one shot at
-// the worker's own discretion. Staking is an optional credibility bond
-// (losing answers forfeit a slice of it); never required to participate.
-
-async function refreshEarnings() {
-  if (!state.address) return;
-  try {
-    const [owedRes, stakeRes, repRes] = await Promise.all([
-      fetch(`${BACKEND_URL}/workers/${state.address}/owed`),
-      fetch(`${BACKEND_URL}/workers/${state.address}/stake`),
-      fetch(`${BACKEND_URL}/workers/${state.address}/reputation`),
-    ]);
-    if (owedRes.ok) el.owedAmount.textContent = `${(await owedRes.json()).owed} USDC`;
-    if (stakeRes.ok) el.stakeAmount.textContent = `${(await stakeRes.json()).stake} USDC`;
-    if (repRes.ok) renderTrackRecord(await repRes.json());
-  } catch (err) {
-    log(`Could not refresh earnings/stake: ${err.message}`);
-  }
-}
-
-function renderTrackRecord({ matched, total, matchRatio }) {
-  if (total === 0) {
-    el.trackRecordSummary.textContent = 'No answers yet — this fills in once you start answering.';
-    return;
-  }
-  const pct = Math.round(matchRatio * 100);
-  el.trackRecordSummary.textContent = `${matched}/${total} answers matched consensus (${pct}%)`;
-}
-
-el.btnWithdraw.addEventListener('click', async () => {
-  el.btnWithdraw.disabled = true;
-  try {
-    // Optional — leave blank to withdraw to your own address (the common
-    // case). Fill it in to route the payout elsewhere (an exchange deposit
-    // address, a cold wallet) without ever holding the funds at the signing
-    // key first.
-    const beneficiary = el.withdrawBeneficiaryInput.value.trim();
-    if (beneficiary && !StrKey.isValidEd25519PublicKey(beneficiary)) {
-      throw new Error('payout address is not a valid Stellar public key');
-    }
-
-    const owedRes = await fetch(`${BACKEND_URL}/workers/${state.address}/owed`);
-    if (!owedRes.ok) throw new Error(`could not look up accrued balance: ${owedRes.status}`);
-    const { owedStroops } = await owedRes.json();
-    if (BigInt(owedStroops) <= 0n) throw new Error('nothing accrued to withdraw yet');
-
-    log('Building withdraw transaction…');
-    const xdr = beneficiary
-      ? await buildWithdrawToXdr(state.address, beneficiary, owedStroops)
-      : await buildWithdrawXdr(state.address, owedStroops);
-    const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
-      address: state.address,
-      networkPassphrase: WalletNetwork.TESTNET,
-    });
-    const res = await fetch(`${BACKEND_URL}/sponsor/withdraw`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        xdr: signedTxXdr,
-        workerAddress: state.address,
-        amountStroops: owedStroops,
-        ...(beneficiary ? { beneficiaryAddress: beneficiary } : {}),
-      }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || `withdraw failed: ${res.status}`);
-    const { hash } = await res.json();
-    log(beneficiary ? `Withdrew accrued earnings to ${beneficiary} (tx ${hash})` : `Withdrew accrued earnings (tx ${hash})`);
-    await refreshEarnings();
-  } catch (err) {
-    log(`Withdraw failed: ${err.message}`);
-  } finally {
-    el.btnWithdraw.disabled = false;
-  }
-});
-
-initBankWithdraw({
-  button: el.btnWithdrawBank,
-  status: el.bankWithdrawStatus,
-  getAddress: () => state.address,
-  getWallet: () => state.activeWallet,
-  getArbiterSessionToken: ensureSession,
-  networkPassphrase: WalletNetwork.TESTNET,
-  assetCode: USDC_ASSET_CODE,
-});
-
-el.stakeForm.addEventListener('submit', async (evt) => {
-  evt.preventDefault();
-  el.btnStake.disabled = true;
-  try {
-    const amountStroops = stroopsFromUsdcInput(el.stakeInput.value);
-    log(`Building stake transaction for ${el.stakeInput.value} USDC…`);
-    const xdr = await buildStakeXdr(state.address, amountStroops);
-    const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
-      address: state.address,
-      networkPassphrase: WalletNetwork.TESTNET,
-    });
-    const res = await fetch(`${BACKEND_URL}/sponsor/stake`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ xdr: signedTxXdr, workerAddress: state.address, amountStroops: amountStroops.toString() }),
-    });
-    if (!res.ok) throw new Error((await res.json()).error || `stake failed: ${res.status}`);
-    const { hash } = await res.json();
-    log(`Staked (tx ${hash})`);
-    el.stakeInput.value = '';
-    await refreshEarnings();
-  } catch (err) {
-    log(`Stake failed: ${err.message}`);
-  } finally {
-    el.btnStake.disabled = false;
-  }
-});
-
-// --- Push notifications ---------------------------------------------------
-// Supplements the SSE tab connection for workers who want to be notified of
-// longer-timeout questions without babysitting the page. Never required —
-// the console works identically without it, just tab-open-only.
-
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch((err) => {
-    log(`Service worker registration failed (push notifications unavailable): ${err.message}`);
-  });
-}
-
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(base64);
-  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
-}
-
-if (el.btnEnablePush) {
-  el.btnEnablePush.addEventListener('click', async () => {
-    if (!state.address) return;
-    el.btnEnablePush.disabled = true;
-    try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        throw new Error('push notifications are not supported in this browser');
-      }
-
-      const keyRes = await fetch(`${BACKEND_URL}/push/vapid-public-key`);
-      if (!keyRes.ok) throw new Error('this server has not configured push notifications');
-      const { publicKey } = await keyRes.json();
-
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') throw new Error('notification permission was not granted');
-
-      // Backend now requires proof of address control here too, same as
-      // answering a question — a subscription silently redirects this
-      // worker's notifications, so it can't be left open to anyone who
-      // just knows the address.
-      const token = await ensureSession();
-
-      const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey),
-      });
-
-      const res = await fetch(`${BACKEND_URL}/workers/${state.address}/push-subscribe`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscription: subscription.toJSON(), categories: selectedCategories(), token }),
-      });
-      if (!res.ok) throw new Error((await res.json()).error || `subscribe failed: ${res.status}`);
-
-      el.pushStatus.textContent = 'On — you may get notified for longer-timeout questions.';
-      log('Push notifications enabled.');
-    } catch (err) {
-      log(`Could not enable push notifications: ${err.message}`);
-      el.pushStatus.textContent = `Off — ${err.message}`;
-    } finally {
-      el.btnEnablePush.disabled = false;
-    }
-  });
-}

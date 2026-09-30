@@ -158,12 +158,15 @@
       <section id="panel-question" class="panel hidden">
         <h2 id="question-heading">Incoming question</h2>
         <div class="timer-track"><div class="timer-bar" id="timer-bar"></div></div>
-        <p id="question-text"></p>
-        <img id="question-image" class="question-image hidden" alt="" />
+        <div id="question-text" class="question-text"></div>
         <form id="answer-form">
-          <input id="answer-input" type="text" placeholder="Type your answer…" autocomplete="off" />
+          <input id="answer-input" type="text" maxlength="400" placeholder="Type your answer…" autocomplete="off" aria-describedby="answer-count" />
           <button id="btn-answer" type="submit">Submit answer</button>
         </form>
+        <div class="answer-tools">
+          <span id="answer-count" class="muted small" aria-live="polite">0 / 400</span>
+          <button id="btn-restore-draft" class="secondary hidden" type="button">Restore last draft</button>
+        </div>
       </section>
 
       <section class="panel">
