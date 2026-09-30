@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arbiter — Status</title>
+    <link rel="stylesheet" href="/src/style.css" />
+    <style>
+      .status-indicator { display: flex; align-items: center; gap: 0.6rem; font-size: 1.2rem; font-weight: 600; }
+      .status-dot { width: 0.9rem; height: 0.9rem; border-radius: 50%; background: #888; }
+      .status-up .status-dot { background: #2e9e5b; }
+      .status-degraded .status-dot { background: #d9a520; }
+      .status-down .status-dot { background: #d64545; }
+      .status-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 1rem; margin-top: 1rem; }
+      .status-stats dt { font-size: 0.85rem; opacity: 0.7; }
+      .status-stats dd { margin: 0; font-size: 1.4rem; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>Arbiter <span class="tag">status</span></h1>
+        <p class="sub">
+          Live status only, derived from a check this page runs against the backend right now.
+          There is no incident history — the backend doesn't record one, so none is shown.
+          <a href="/index.html">Worker console →</a>
+        </p>
+      </header>
+
+      <section class="panel">
+        <div class="row">
+          <div id="status-indicator" class="status-indicator" role="status" aria-live="polite">
+            <span class="status-dot"></span><span id="status-label">Checking…</span>
+          </div>
+          <button id="btn-refresh" class="secondary">Refresh</button>
+        </div>
+        <p id="status-detail" class="muted small"></p>
+
+        <dl id="status-stats" class="status-stats" hidden>
+          <div><dt>Questions resolved</dt><dd id="stat-resolved">—</dd></div>
+          <div><dt>Refunded</dt><dd id="stat-refunded">—</dd></div>
+          <div><dt>Workers online</dt><dd id="stat-workers">—</dd></div>
+        </dl>
+      </section>
+    </main>
+
+    <script type="module" src="/src/status.js"></script>
+  </body>
+</html>

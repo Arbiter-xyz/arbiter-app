@@ -1,0 +1,23 @@
+{
+  "ci": {
+    "collect": {
+      "staticDistDir": "./dist",
+      "url": ["index.html", "dashboard.html"],
+      "numberOfRuns": 3,
+      "settings": {
+        "preset": "desktop",
+        "chromeFlags": "--no-sandbox --headless=new"
+      }
+    },
+    "assert": {
+      "assertions": {
+        "categories:performance": ["error", { "minScore": 0.6, "aggregationMethod": "median-run" }],
+        "largest-contentful-paint": ["error", { "maxNumericValue": 4000, "aggregationMethod": "median" }],
+        "total-blocking-time": ["error", { "maxNumericValue": 600, "aggregationMethod": "median" }],
+        "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1, "aggregationMethod": "median" }],
+        "total-byte-weight": ["error", { "maxNumericValue": 2500000, "aggregationMethod": "median" }]
+      }
+    },
+    "upload": { "target": "temporary-public-storage" }
+  }
+}
