@@ -1,46 +1,43 @@
-const FONT_SCALE_KEY = 'arbiter:a11y:font-scale';
-const CONTRAST_KEY = 'arbiter:a11y:high-contrast';
-const SCALES = [1, 1.15, 1.3, 1.5];
+/**
+ * Structural accessibility glue (issue #5), independent of which code path
+ * shows a question or drives the countdown:
+ *
+ * - When the question panel appears, focus moves to its heading so screen-
+ *   reader and keyboard users land on the new question instead of wherever
+ *   they were; when it hides, focus returns to the element that had it.
+ * - The countdown bar is exposed as a progressbar whose aria-valuenow
+ *   tracks the bar's width, announced in coarse steps (not every tick).
+ * - Status text for async job progress (awaiting_workers → reconciling →
+ *   settled) goes through polite live regions declared in the markup.
+ */
+export function initA11y() {
+  const panel = document.getElementById('panel-question');
+  const heading = document.getElementById('question-heading');
+  const track = document.getElementById('timer-track');
+  const bar = document.getElementById('timer-bar');
+  let returnFocus = null;
 
-function readScale() {
-  const saved = Number.parseFloat(localStorage.getItem(FONT_SCALE_KEY));
-  return SCALES.includes(saved) ? saved : 1;
+  if (panel && heading) {
+    new MutationObserver(() => {
+      const visible = !panel.classList.contains('hidden');
+      if (visible && !panel.contains(document.activeElement)) {
+        returnFocus = document.activeElement;
+        heading.focus();
+      } else if (!visible && returnFocus && document.body.contains(returnFocus)) {
+        returnFocus.focus();
+        returnFocus = null;
+      }
+    }).observe(panel, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  if (track && bar) {
+    new MutationObserver(() => {
+      const pct = Math.max(0, Math.min(100, Math.round(parseFloat(bar.style.width) || 0)));
+      // 10% steps keep screen readers from being flooded by 100ms ticks.
+      const stepped = Math.round(pct / 10) * 10;
+      if (track.getAttribute('aria-valuenow') !== String(stepped)) {
+        track.setAttribute('aria-valuenow', String(stepped));
+      }
+    }).observe(bar, { attributes: true, attributeFilter: ['style'] });
+  }
 }
-
-function applyScale(scale) {
-  document.documentElement.style.setProperty('--font-scale', String(scale));
-  localStorage.setItem(FONT_SCALE_KEY, String(scale));
-  document.querySelectorAll('[data-font-status]').forEach((status) => {
-    status.textContent = `${Math.round(scale * 100)}% text size`;
-  });
-}
-
-function applyContrast(enabled) {
-  document.documentElement.toggleAttribute('data-theme', enabled);
-  localStorage.setItem(CONTRAST_KEY, enabled ? 'true' : 'false');
-  document.querySelectorAll('[data-contrast-toggle]').forEach((button) => {
-    button.setAttribute('aria-pressed', String(enabled));
-    button.textContent = enabled ? 'Standard contrast' : 'High contrast';
-  });
-}
-
-function initialiseControls() {
-  let scale = readScale();
-  const contrast = localStorage.getItem(CONTRAST_KEY) === 'true';
-  applyScale(scale);
-  applyContrast(contrast);
-
-  document.querySelectorAll('[data-font-decrease]').forEach((button) => button.addEventListener('click', () => {
-    scale = SCALES[Math.max(0, SCALES.indexOf(scale) - 1)];
-    applyScale(scale);
-  }));
-  document.querySelectorAll('[data-font-increase]').forEach((button) => button.addEventListener('click', () => {
-    scale = SCALES[Math.min(SCALES.length - 1, SCALES.indexOf(scale) + 1)];
-    applyScale(scale);
-  }));
-  document.querySelectorAll('[data-contrast-toggle]').forEach((button) => button.addEventListener('click', () => {
-    applyContrast(!document.documentElement.hasAttribute('data-theme'));
-  }));
-}
-
-initialiseControls();

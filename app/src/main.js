@@ -1,6 +1,17 @@
-import { WalletNetwork } from '@creit.tech/stellar-wallets-kit';
-import { createWalletKit, wireConnectButtons } from './wallet.js';
-import { getLocalWalletSecret } from './localWallet.js';
+import {
+  StellarWalletsKit,
+  WalletNetwork,
+  FreighterModule,
+  LobstrModule,
+  xBullModule,
+  HanaModule,
+  AlbedoModule,
+  HotWalletModule,
+  LedgerModule,
+} from '@creit.tech/stellar-wallets-kit';
+import { openSecureLocalWallet } from './localWallet.js';
+import { initI18n, t } from './i18n.js';
+import { initA11y } from './a11y.js';
 import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
@@ -32,6 +43,7 @@ const el = {
   backupSecret: document.getElementById('backup-secret'),
   btnRevealSecret: document.getElementById('btn-reveal-secret'),
   btnCopySecret: document.getElementById('btn-copy-secret'),
+  btnBackupDone: document.getElementById('btn-backup-done'),
   backupCopyStatus: document.getElementById('backup-copy-status'),
   btnOnboard: document.getElementById('btn-onboard'),
   btnToggle: document.getElementById('btn-toggle'),
@@ -71,13 +83,15 @@ const el = {
   recoveryInput: document.getElementById('recovery-input'),
 };
 
+initI18n();
+initA11y();
+
 const state = {
-  // Every connected identity, keyed by address (issue #132): each keeps its
-  // own wallet and cached session, so switching accounts never throws away a
-  // still-valid session. `wallet` is either the StellarWalletsKit instance
-  // (plus the kit `walletId` to re-select on switch) or a local quick-start
-  // wallet — both expose the same {getAddress, signTransaction} shape.
-  identities: new Map(),
+  localWallet: null,
+  // Either the StellarWalletsKit instance or a local quick-start wallet —
+  // both expose the same {getAddress, signTransaction} shape, so nothing
+  // downstream needs to know which one is active.
+  activeWallet: null,
   address: null,
   get identity() {
     return this.identities.get(this.address) || null;
@@ -202,7 +216,17 @@ function renderCategoryDemand(demand) {
     // Scarcity = demand: fewer online workers means a taller bar.
     const scarcity = 1 - count / max;
     bar.style.width = `${Math.round(scarcity * 100)}%`;
-    bar.title = `${count} worker${count === 1 ? '' : 's'} online now`;
+    bar.title = t('demand.workers', { n: count });
+    // Non-colour cue (WCAG 1.4.1): a text label + border style per level,
+    // so urgency is readable without perceiving the bar's colour or width.
+    const level = scarcity >= 0.66 ? 'high' : scarcity >= 0.33 ? 'medium' : 'low';
+    const tag = bar.parentElement.querySelector('.demand-level');
+    if (tag) {
+      tag.hidden = false;
+      tag.dataset.level = level;
+      tag.textContent = t(`demand.${level}`);
+      tag.title = bar.title;
+    }
   }
 }
 
@@ -210,6 +234,8 @@ function clearCategoryDemand() {
   for (const bar of el.categoryPicker.querySelectorAll('.category-demand-bar')) {
     bar.style.width = '0%';
     bar.removeAttribute('title');
+    const tag = bar.parentElement.querySelector('.demand-level');
+    if (tag) tag.hidden = true;
   }
 }
 
@@ -241,20 +267,19 @@ startCategoryDemandPolling();
 // wallet — is handled via the `quickStart` flag onActivated receives,
 // rather than a special case inside the shared helper.
 
-wireConnectButtons({
-  kit,
-  connectButton: el.btnConnect,
-  quickStartButton: el.btnQuickStart,
-  onActivated: async (wallet, address, { quickStart }) => {
-    if (quickStart) {
-      log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
-      showBackupPanel();
-    } else {
-      el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
-    }
-    await activateWallet(wallet, address);
-  },
-  onError: log,
+el.btnQuickStart.addEventListener('click', async () => {
+  setConnectButtonsBusy(true);
+  try {
+    const localWallet = await openSecureLocalWallet();
+    state.localWallet = localWallet;
+    const { address } = await localWallet.getAddress();
+    log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
+    if (localWallet.state === 'pending-backup') showBackupPanel();
+    await activateWallet(localWallet, address);
+  } catch (err) {
+    setConnectButtonsBusy(false);
+    log(`Quick start failed: ${err.message}`);
+  }
 });
 
 function showBackupPanel() {
@@ -264,15 +289,27 @@ function showBackupPanel() {
   el.backupCopyStatus.textContent = '';
 }
 
-el.btnRevealSecret.addEventListener('click', () => {
+el.btnRevealSecret.addEventListener('click', async () => {
   const revealed = el.backupSecret.type === 'password';
-  if (revealed) el.backupSecret.value = getLocalWalletSecret() || '';
+  if (revealed) el.backupSecret.value = (await state.localWallet?.exportSecret()) || '';
   el.backupSecret.type = revealed ? 'text' : 'password';
-  el.btnRevealSecret.textContent = revealed ? 'Hide' : 'Reveal';
+  el.btnRevealSecret.textContent = t(revealed ? 'backup.hide' : 'backup.reveal');
+  el.btnRevealSecret.setAttribute('aria-pressed', String(revealed));
+});
+
+// Confirming the backup converts the key into a non-extractable WebCrypto
+// key (issue #7): after this, no script on the page — including an XSS
+// payload — can read the secret again, only request signatures.
+el.btnBackupDone.addEventListener('click', async () => {
+  if (!state.localWallet) return;
+  await state.localWallet.lockExport();
+  el.backupSecret.value = '';
+  el.backup.classList.add('hidden');
+  log('Backup confirmed — the quick-start key is now locked in this browser and can no longer be exported.');
 });
 
 el.btnCopySecret.addEventListener('click', async () => {
-  const secret = getLocalWalletSecret();
+  const secret = await state.localWallet?.exportSecret();
   if (!secret) return;
   try {
     await navigator.clipboard.writeText(secret);

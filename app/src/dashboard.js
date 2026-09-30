@@ -1,5 +1,17 @@
-import { WalletNetwork } from '@creit.tech/stellar-wallets-kit';
-import { createWalletKit, wireConnectButtons } from './wallet.js';
+import {
+  StellarWalletsKit,
+  WalletNetwork,
+  FreighterModule,
+  LobstrModule,
+  xBullModule,
+  HanaModule,
+  AlbedoModule,
+  HotWalletModule,
+  LedgerModule,
+} from '@creit.tech/stellar-wallets-kit';
+import { openSecureLocalWallet } from './localWallet.js';
+import { subscribeQuestionStatus } from './statusChannel.js';
+import { initI18n, onLocaleChange, t, formatUsdc, formatNumber } from './i18n.js';
 import { renderMarkdown } from './markdown.js';
 import { ensureSession as ensureSharedSession } from './session.js';
 
@@ -28,12 +40,21 @@ const el = {
   questionSearch: document.getElementById('question-search'),
   questionStatus: document.getElementById('question-status'),
   log: document.getElementById('log'),
-  accountSwitcher: document.getElementById('account-switcher'),
-  accountSelect: document.getElementById('account-select'),
-  btnAddWallet: document.getElementById('btn-add-wallet'),
+  liveStatus: document.getElementById('live-status'),
 };
 
-const state = { address: null, activeWallet: null, sessionToken: null, sessionExpiresAt: 0, data: null };
+initI18n();
+
+const state = {
+  address: null,
+  activeWallet: null,
+  sessionToken: null,
+  sessionExpiresAt: 0,
+  channel: null,
+  lastData: null,
+  // questionId -> <li>, so a pushed status change patches one row in place.
+  items: new Map(),
+};
 
 function log(message) {
   const li = document.createElement('li');
@@ -69,14 +90,17 @@ wireConnectButtons({
   onError: log,
 });
 
-async function activate(wallet, address, walletId = null) {
-  const existing = state.identities.get(address);
-  if (existing) Object.assign(existing, { wallet, walletId });
-  else state.identities.set(address, { address, wallet, walletId, sessionToken: null, sessionExpiresAt: 0 });
-  log(`Connected ${address}`);
-  await switchIdentity(address);
-  setConnectButtonsBusy(false);
-}
+el.btnQuickStart.addEventListener('click', async () => {
+  setConnectButtonsBusy(true);
+  try {
+    const localWallet = await openSecureLocalWallet();
+    const { address } = await localWallet.getAddress();
+    await activate(localWallet, address);
+  } catch (err) {
+    setConnectButtonsBusy(false);
+    log(`Quick start failed: ${err.message}`);
+  }
+});
 
 async function switchIdentity(address) {
   state.address = address;
@@ -84,78 +108,81 @@ async function switchIdentity(address) {
   el.payerAddress.textContent = address;
   el.connect.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
-  el.accountSelect.innerHTML = '';
-  for (const addr of state.identities.keys()) {
-    const option = document.createElement('option');
-    option.value = addr;
-    option.textContent = `${addr.slice(0, 6)}…${addr.slice(-4)}`;
-    option.selected = addr === address;
-    el.accountSelect.append(option);
-  }
-  el.accountSwitcher.classList.remove('hidden');
-  await loadQuestions();
-  // Buttons are re-enabled by wireConnectButtons (wallet.js) once this
-  // resolves — no need to do it here too.
+  log(`Connected ${address}`);
+  startLiveUpdates();
+  setConnectButtonsBusy(false);
 }
 
-el.accountSelect.addEventListener('change', () => {
-  switchIdentity(el.accountSelect.value).catch((err) => log(`Switch failed: ${err.message}`));
-});
+// Live updates (issue #6): one shared push stream across all dashboard tabs
+// for this address instead of each tab polling. The snapshot is only
+// re-fetched to backfill (reconnect, gap, tab refocus) or on Refresh.
+function startLiveUpdates() {
+  state.channel?.close();
+  state.channel = subscribeQuestionStatus({
+    backendUrl: BACKEND_URL,
+    address: state.address,
+    getToken: ensureSession,
+    onSnapshot: (data) => {
+      render(data);
+      log(`Loaded ${t('dash.questions', { n: data.questions.length })} — ${formatNumber(data.totalTracked)} tracked in total.`);
+    },
+    onEvent: applyStatusEvent,
+    onConnection: (connected) => {
+      el.liveStatus.textContent = t(connected ? 'dash.live' : 'dash.reconnecting');
+    },
+  });
+  state.channel.ready.catch((err) => log(`Could not load questions: ${err.message}`));
+}
 
-el.btnAddWallet.addEventListener('click', () => {
-  el.dashboard.classList.add('hidden');
-  el.connect.classList.remove('hidden');
-});
+function applyStatusEvent(q) {
+  const existing = state.items.get(q.questionId);
+  const prev = state.lastData?.questions.find((x) => x.questionId === q.questionId);
+  const merged = { ...prev, ...q };
+  if (prev) Object.assign(prev, q);
+  const li = renderQuestionItem(merged);
+  if (existing) existing.replaceWith(li);
+  else el.questionList.prepend(li);
+  state.items.set(q.questionId, li);
+  log(`${q.questionId}: ${describeStatus(merged).label}`);
+  // Aggregates (spend / success rate) are server-computed; refresh them
+  // once a job reaches its terminal state.
+  if (q.status === 'settled') state.channel?.resync();
+}
 
-el.btnRefresh.addEventListener('click', loadQuestions);
-// Exports exactly what is loaded (full history, not a filtered view).
-el.btnExportCsv.addEventListener('click', () => state.data && exportQuestions(state.data.questions, 'csv'));
-el.btnExportJson.addEventListener('click', () => state.data && exportQuestions(state.data.questions, 'json'));
-
-async function loadQuestions() {
-  if (!state.address) return;
+el.btnRefresh.addEventListener('click', async () => {
+  if (!state.channel) return;
   el.btnRefresh.disabled = true;
   try {
-    const token = await ensureSession();
-    const res = await fetch(`${BACKEND_URL}/payers/${state.address}/questions?token=${encodeURIComponent(token)}`);
-    if (!res.ok) throw new Error(`unexpected status ${res.status}`);
-    const data = await res.json();
-    state.data = data;
-    el.btnExportCsv.disabled = false;
-    el.btnExportJson.disabled = false;
-    render(data);
-    log(`Loaded ${data.questions.length} question(s) — this address has asked ${data.totalTracked} total.`);
+    await state.channel.resync();
   } catch (err) {
     log(`Could not load questions: ${err.message}`);
   } finally {
     el.btnRefresh.disabled = false;
   }
-}
+});
+
+onLocaleChange(() => state.lastData && render(state.lastData));
 
 function render(data) {
-  state.data = data;
-  // Stats always reflect the full history, never the filtered subset.
-  el.statSpend.textContent = `${data.totalSpend} USDC`;
-  el.statCount.textContent = String(data.totalTracked);
-  el.statSuccess.textContent = data.successRate === null ? '—' : `${Math.round(data.successRate * 100)}%`;
-  renderSpendCalendar(data.questions, data.totalSpend);
+  state.lastData = data;
+  el.statSpend.textContent = formatUsdc(data.totalSpend);
+  el.statCount.textContent = formatNumber(data.totalTracked);
+  el.statSuccess.textContent = data.successRate === null ? '—' : formatNumber(data.successRate, { style: 'percent' });
 
   el.questionList.innerHTML = '';
-  if (visible.length === 0) {
+  state.items.clear();
+  if (data.questions.length === 0) {
     const li = document.createElement('li');
     li.className = 'muted small';
-    li.textContent =
-      all.length === 0
-        ? 'No questions yet.'
-        : state.starredOnly && matching.length > 0
-          ? 'No starred questions.'
-          : 'No questions match your search.';
+    li.textContent = t('dash.none');
     el.questionList.appendChild(li);
     return;
   }
 
-  for (const q of visible) {
-    el.questionList.appendChild(renderQuestionItem(q));
+  for (const q of data.questions) {
+    const li = renderQuestionItem(q);
+    state.items.set(q.questionId, li);
+    el.questionList.appendChild(li);
   }
 }
 
@@ -203,7 +230,7 @@ function renderQuestionItem(q) {
   const qMeta = document.createElement('div');
   qMeta.className = 'q-meta';
   const parts = [q.tier, q.amount ? formatUsdc(q.amount) : null];
-  if (q.status === 'settled' && q.outcome === 'resolved') parts.push(`confidence ${q.confidence}`);
+  if (q.status === 'settled' && q.outcome === 'resolved') parts.push(`confidence ${formatNumber(q.confidence)}`);
   qMeta.textContent = parts.filter(Boolean).join(' · ');
   left.append(qText, qMeta);
 
@@ -257,7 +284,10 @@ function refundSafetyLine(q) {
 }
 
 function describeStatus(q) {
-  if (q.status !== 'settled') return { label: 'in progress', cls: 'badge-pending' };
-  if (q.outcome === 'resolved') return { label: 'resolved', cls: 'badge-resolved' };
-  return { label: 'refunded', cls: 'badge-refunded' };
+  if (q.status !== 'settled') {
+    const key = q.status === 'awaiting_workers' || q.status === 'reconciling' ? q.status : 'pending';
+    return { label: t(`status.${key}`), cls: 'badge-pending' };
+  }
+  if (q.outcome === 'resolved') return { label: t('status.resolved'), cls: 'badge-resolved' };
+  return { label: t('status.refunded'), cls: 'badge-refunded' };
 }

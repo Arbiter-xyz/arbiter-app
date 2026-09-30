@@ -13,8 +13,7 @@
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
     "e2e:report": "playwright show-report",
-    "visual": "playwright test -c visual/playwright.config.js",
-    "visual:update": "playwright test -c visual/playwright.config.js --update-snapshots"
+    "a11y": "node scripts/a11y-check.mjs"
   },
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "^1.7.5",
@@ -22,6 +21,7 @@
     "@sentry/browser": "^8.0.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.0",
     "@playwright/test": "^1.48.0",
     "@storybook/html-vite": "^8.4.0",
     "storybook": "^8.4.0",

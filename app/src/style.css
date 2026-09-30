@@ -6,23 +6,7 @@
   --panel: #ffffff;
   --border: #dcdce6;
   --accent: #5b4cf0;
-  --muted: #75758a;
-  /* Data-viz palette — tuned separately per theme so charts stay legible. */
-  --chart-bar: #5b4cf0;
-  --chart-flag: #d1343f;
-  --chart-grid: #dcdce6;
-  --chart-label: #5d5d72;
-}
-
-/* Explicit user selection wins over the system dark-mode preference. */
-:root[data-theme='high-contrast'] {
-  color-scheme: dark;
-  --fg: #ffffff;
-  --bg: #000000;
-  --panel: #000000;
-  --border: #ffffff;
-  --accent: #ffff00;
-  --muted: #ffffff;
+  --muted: #5c5c70;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -105,7 +89,7 @@ button.secondary {
   background: transparent;
   color: var(--fg);
   border: 1px solid var(--border);
-  margin-left: 0.5rem;
+  margin-inline-start: 0.5rem;
 }
 
 .small {
@@ -294,7 +278,7 @@ button.secondary {
 .admin-nav {
   width: 220px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
+  border-inline-end: 1px solid var(--border);
   padding: 1.25rem 0.75rem;
   position: sticky;
   top: 0;
@@ -322,7 +306,7 @@ button.secondary {
 .admin-nav-link {
   display: block;
   width: 100%;
-  text-align: left;
+  text-align: start;
   background: none;
   border: none;
   border-radius: 8px;
@@ -379,7 +363,7 @@ button.secondary {
   font-size: 0.9rem;
 }
 .leaderboard-table th {
-  text-align: left;
+  text-align: start;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -495,42 +479,65 @@ fieldset label {
   border-bottom: 1px dashed var(--border);
 }
 
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  z-index: 100;
+/* ------------------------------------------------------------------ */
+/* Accessibility (issue #5) + RTL (issue #8)                           */
+/* ------------------------------------------------------------------ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
-.modal {
-  background: var(--panel);
-  color: var(--fg);
-  border: 1px solid var(--border);
+.skip-link {
+  position: absolute;
+  inset-inline-start: 0.5rem;
+  top: -3rem;
+  background: var(--accent);
+  color: white;
+  padding: 0.5rem 0.75rem;
   border-radius: 8px;
-  padding: 1.25rem;
-  max-width: 420px;
-  width: 100%;
+  z-index: 10;
+}
+.skip-link:focus { top: 0.5rem; }
 
-/* Print: buyer dashboard question history (dashboard.html) */
-@media print {
-  body { background: #fff; color: #000; }
-  #panel-connect,
-  #btn-refresh,
-  .panel:has(#log),
-  header .sub a { display: none !important; }
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
 
-  #panel-dashboard { background: none; border: 0; box-shadow: none; padding: 0; }
-  /* Decision: keep #payer-address in print so the record is attributable for expense tracking. */
-  #panel-dashboard, #panel-dashboard * { color: #000 !important; }
+/* Surge / demand level: the bar colour is never the only cue — every
+   level also renders a text label and a distinct border pattern. */
+.demand-level {
+  display: inline-block;
+  margin-inline-start: 0.4rem;
+  padding: 0 0.35rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid currentColor;
+}
+.demand-level[data-level='high'] { color: #b42318; border-style: solid; border-width: 2px; }
+.demand-level[data-level='medium'] { color: #9a4d00; border-style: dashed; }
+.demand-level[data-level='low'] { color: #3f3f55; border-style: dotted; }
+@media (prefers-color-scheme: dark) {
+  .demand-level[data-level='high'] { color: #ff8a80; }
+  .demand-level[data-level='medium'] { color: #ffc266; }
+  .demand-level[data-level='low'] { color: #c8c8dc; }
+}
 
-  .question-list li { break-inside: avoid; page-break-inside: avoid; }
+/* Badges: darker text so they pass 4.5:1 on their tinted background. */
+.badge-resolved { color: #0f6b30; }
+.badge-refunded { color: #8a4b00; }
+.badge-pending { color: #3b2fc0; }
 
-  /* Badges: rely on border + brackets, not background color. */
-  .badge { background: none !important; border: 1px solid #000; }
-  .badge::before { content: "["; }
-  .badge::after { content: "]"; }
+/* The countdown shrinks toward the reading-start edge in either direction. */
+[dir='rtl'] .timer-track { transform: scaleX(-1); }
+
+.lang-switch { margin-inline-start: 0.5rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .timer-bar { transition: none; }
 }
