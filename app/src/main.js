@@ -5,10 +5,16 @@ import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
+import { renderFencedCode } from './codeBlocks.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
 const USDC_ASSET_CODE = import.meta.env.VITE_USDC_ASSET_CODE || 'USDC';
+// Mirrors the backend's MAX_ANSWER_LENGTH default (backend/src/server.js) —
+// caught here so a too-long answer gets a clear message instead of round-
+// tripping to the backend only to have the specific reason discarded
+// (issue #24).
+const MAX_ANSWER_LENGTH = 2000;
 
 // See wallet.js for the module list and the connect/quick-start button
 // wiring shared with dashboard.js (issue #19).
@@ -36,12 +42,16 @@ const el = {
   timerBar: document.getElementById('timer-bar'),
   answerForm: document.getElementById('answer-form'),
   answerInput: document.getElementById('answer-input'),
+  answerCount: document.getElementById('answer-count'),
+  btnRestoreDraft: document.getElementById('btn-restore-draft'),
   btnAnswer: document.getElementById('btn-answer'),
   owedAmount: document.getElementById('owed-amount'),
   stakeAmount: document.getElementById('stake-amount'),
   trackRecordSummary: document.getElementById('track-record-summary'),
   btnEnablePush: document.getElementById('btn-enable-push'),
   pushStatus: document.getElementById('push-status'),
+  digestSelect: document.getElementById('digest-select'),
+  digestStatus: document.getElementById('digest-status'),
   btnWithdraw: document.getElementById('btn-withdraw'),
   btnWithdrawBank: document.getElementById('btn-withdraw-bank'),
   bankWithdrawStatus: document.getElementById('bank-withdraw-status'),
@@ -62,24 +72,94 @@ const el = {
 };
 
 const state = {
-  // Either the StellarWalletsKit instance or a local quick-start wallet —
-  // both expose the same {getAddress, signTransaction} shape, so nothing
-  // downstream needs to know which one is active.
-  activeWallet: null,
+  // Every connected identity, keyed by address (issue #132): each keeps its
+  // own wallet and cached session, so switching accounts never throws away a
+  // still-valid session. `wallet` is either the StellarWalletsKit instance
+  // (plus the kit `walletId` to re-select on switch) or a local quick-start
+  // wallet — both expose the same {getAddress, signTransaction} shape.
+  identities: new Map(),
   address: null,
+  get identity() {
+    return this.identities.get(this.address) || null;
+  },
+  get activeWallet() {
+    return this.identity?.wallet || null;
+  },
+  get sessionToken() {
+    return this.identity?.sessionToken || null;
+  },
+  get sessionExpiresAt() {
+    return this.identity?.sessionExpiresAt || 0;
+  },
   online: false,
   eventSource: null,
   currentQuestion: null,
   countdownHandle: null,
   sessionToken: null,
   sessionExpiresAt: 0,
+  lastDraft: null,
 };
 
+const notify = createNotificationCenter({ mount: document.querySelector('header'), storageKey: 'arbiter-worker-notifications' });
+
+/** Activity-log entry; also mirrored into the header bell (issue #133). */
 function log(message) {
   const li = document.createElement('li');
   const time = new Date().toLocaleTimeString();
   li.textContent = `[${time}] ${message}`;
   el.log.prepend(li);
+  notify(message);
+}
+
+// --- Backend API version check (issue #150) -------------------------------
+//
+// arbiter-backend and this app are independently deployed repos, so a
+// backend API change would otherwise only surface as a broken request
+// mid-flow. On load we read the version the backend reports at GET /health
+// and, on mismatch, show a visible-but-non-blocking banner. HTTP APIs are
+// forgiving, so this informs rather than gates: a mismatch never blocks
+// app usage.
+
+function showVersionMismatchNotice(reportedVersion) {
+  const banner = document.createElement('div');
+  banner.id = 'backend-version-notice';
+  banner.setAttribute('role', 'status');
+  banner.style.cssText = [
+    'position:fixed',
+    'top:0',
+    'left:0',
+    'right:0',
+    'z-index:9999',
+    'padding:8px 12px',
+    'background:#7a1f1f',
+    'color:#fff',
+    'font:13px/1.4 system-ui,sans-serif',
+    'text-align:center',
+  ].join(';');
+  banner.textContent =
+    `Backend API version mismatch: this app expects v${COMPATIBLE_BACKEND_VERSION}, ` +
+    `but the backend reports v${reportedVersion}. Some features may not work as expected.`;
+  document.body.prepend(banner);
+}
+
+async function checkBackendVersion() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/health`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const reportedVersion = data.apiVersion ?? data.version;
+    if (reportedVersion == null) {
+      // Backend predates the /health version field; nothing to compare.
+      return;
+    }
+    if (String(reportedVersion) !== String(COMPATIBLE_BACKEND_VERSION)) {
+      showVersionMismatchNotice(reportedVersion);
+      log(`Backend API version mismatch: expected v${COMPATIBLE_BACKEND_VERSION}, got v${reportedVersion}`);
+    }
+  } catch (err) {
+    // Backend unreachable or malformed: don't block or alarm the user here;
+    // the existing request paths already surface connectivity problems.
+  }
 }
 
 function showPanel(name) {
@@ -152,6 +232,8 @@ function startCategoryDemandPolling() {
   demandRefreshHandle = setInterval(refreshCategoryDemand, DEMAND_REFRESH_MS);
 }
 
+startCategoryDemandPolling();
+
 // --- Wallet connect (extension) or quick start (local, non-custodial) -----
 // Module list + button wiring live in wallet.js, shared with dashboard.js
 // (issue #19). The one behavioral difference between the two pages — this
@@ -197,6 +279,36 @@ el.btnCopySecret.addEventListener('click', async () => {
     el.backupCopyStatus.textContent = 'Copied to clipboard — store it somewhere safe, then clear your clipboard.';
   } catch (err) {
     el.backupCopyStatus.textContent = `Could not copy automatically (${err.message}) — reveal and copy it manually.`;
+  }
+});
+
+// --- Notification digest preference (pending backend) ---
+//
+// POST /workers/:address/digest does not exist in arbiter-backend yet (see the
+// README's "Notification digest" section), so this is a coming-soon toggle: it
+// tries the call and says plainly when the backend can't take it.
+el.digestSelect.addEventListener('change', async () => {
+  const digest = el.digestSelect.value;
+  if (!state.address) {
+    el.digestStatus.textContent = 'Connect first — digest preference is not saved (coming soon).';
+    return;
+  }
+  try {
+    const token = await ensureSession();
+    const res = await fetch(`${BACKEND_URL}/workers/${state.address}/digest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, digest }),
+    });
+    if ([404, 405, 501].includes(res.status)) {
+      el.digestStatus.textContent = 'Digest is coming soon — the backend does not support it yet, so nothing was saved.';
+    } else if (!res.ok) {
+      el.digestStatus.textContent = `Could not save digest preference (HTTP ${res.status}).`;
+    } else {
+      el.digestStatus.textContent = `Digest preference saved: ${digest}.`;
+    }
+  } catch (err) {
+    el.digestStatus.textContent = `Could not save digest preference: ${err.message}`;
   }
 });
 

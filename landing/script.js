@@ -111,235 +111,173 @@
   });
 
   /* -------------------------------------------------------------------
+     Live pricing calculator (#pricing) — lets a visitor pick a tier and
+     see the current estimated price without connecting a wallet. The
+     number comes from the backend's /price endpoint, which runs the same
+     pricing.js surge logic the /oracle 402 challenge snapshots at quote
+     time — so this is the real price, not a client-side re-derivation.
+     If the endpoint is unreachable we fall back to the static base price
+     and label the result as an approximation.
+  ------------------------------------------------------------------- */
+  const pricingGrid = document.querySelector(".pricing-grid");
+
+  if (pricingGrid) {
+    const TIERS = [
+      { id: "instant", label: "Instant", base: 0.05 },
+      { id: "standard", label: "Standard", base: 0.25 },
+      { id: "express", label: "Express", base: 0.4 },
+      { id: "priority", label: "Priority", base: 0.6 },
+    ];
+
+    const calc = document.createElement("div");
+    calc.className = "pricing-calculator";
+
+    const heading = document.createElement("h3");
+    heading.textContent = "Estimate your cost";
+
+    const tierRow = document.createElement("div");
+    tierRow.className = "pricing-calculator-tiers";
+    tierRow.setAttribute("role", "group");
+    tierRow.setAttribute("aria-label", "Select a pricing tier");
+
+    const output = document.createElement("p");
+    output.className = "pricing-calculator-output";
+    output.setAttribute("aria-live", "polite");
+
+    const note = document.createElement("p");
+    note.className = "pricing-calculator-note";
+
+    let selected = TIERS[1];
+    let livePrices = null;
+
+    function render() {
+      const live = livePrices && typeof livePrices[selected.id] === "number"
+        ? livePrices[selected.id]
+        : null;
+      const price = live !== null ? live : selected.base;
+      output.textContent = `${selected.label}: ${price.toFixed(2)} USDC per request`;
+      note.textContent = live !== null
+        ? "Live price from the backend's current surge calculation."
+        : "Approximate base price — live pricing is temporarily unavailable.";
+    }
+
+    TIERS.forEach((tier) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "pricing-calculator-tier";
+      btn.textContent = tier.label;
+      btn.setAttribute("aria-pressed", String(tier.id === selected.id));
+      btn.addEventListener("click", () => {
+        selected = tier;
+        tierRow.querySelectorAll("button").forEach((b) => {
+          b.setAttribute("aria-pressed", String(b === btn));
+        });
+        render();
+      });
+      tierRow.appendChild(btn);
+    });
+
+    calc.appendChild(heading);
+    calc.appendChild(tierRow);
+    calc.appendChild(output);
+    calc.appendChild(note);
+    pricingGrid.insertAdjacentElement("afterend", calc);
+
+    render();
+
+    fetch("/price")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data || typeof data !== "object") return;
+        const prices = data.prices && typeof data.prices === "object" ? data.prices : data;
+        const next = {};
+        TIERS.forEach((tier) => {
+          if (typeof prices[tier.id] === "number") next[tier.id] = prices[tier.id];
+        });
+        if (Object.keys(next).length) {
+          livePrices = next;
+          render();
+        }
+      })
+      .catch(() => {
+        /* keep the labeled approximation already rendered */
+      });
+  }
+
+  /* -------------------------------------------------------------------
+     Compare-tiers slider (#pricing) — a presentation layer over the same
+     four tiers' already-documented real values (base price, quorum size,
+     answer window) that the static .pricing-grid cards list. The cards
+     remain the no-JS / reduced-motion fallback; this control is only
+     injected when motion is allowed, and it never invents numbers —
+     confidence stays qualitative, matching the existing copy.
+  ------------------------------------------------------------------- */
+  if (pricingGrid && !prefersReducedMotion) {
+    const COMPARE_TIERS = [
+      { label: "Instant", price: 0.05, quorum: 1, window: "30s", confidence: "Single worker — fastest, least redundant" },
+      { label: "Standard", price: 0.25, quorum: 2, window: "20s", confidence: "Two-worker agreement" },
+      { label: "Express", price: 0.4, quorum: 2, window: "12s", confidence: "Two-worker agreement, tighter deadline" },
+      { label: "Priority", price: 0.6, quorum: 3, window: "8s", confidence: "Highest-confidence consensus" },
+    ];
+
+    const compare = document.createElement("div");
+    compare.className = "pricing-compare";
+
+    const compareHeading = document.createElement("h3");
+    compareHeading.textContent = "Compare tiers";
+
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.className = "pricing-compare-slider";
+    slider.min = "0";
+    slider.max = String(COMPARE_TIERS.length - 1);
+    slider.step = "1";
+    slider.value = "1";
+    slider.setAttribute("aria-label", "Compare pricing tiers");
+
+    const readout = document.createElement("div");
+    readout.className = "pricing-compare-readout";
+    readout.setAttribute("aria-live", "polite");
+
+    function renderCompare() {
+      const tier = COMPARE_TIERS[Number(slider.value)];
+      readout.textContent = "";
+
+      const name = document.createElement("p");
+      name.className = "pricing-compare-tier";
+      name.textContent = tier.label;
+
+      const price = document.createElement("p");
+      price.className = "pricing-compare-price";
+      price.textContent = `${tier.price.toFixed(2)} USDC per request`;
+
+      const detail = document.createElement("p");
+      detail.className = "pricing-compare-detail";
+      detail.textContent = `Quorum of ${tier.quorum} worker${tier.quorum === 1 ? "" : "s"} · ${tier.window} answer window`;
+
+      const confidence = document.createElement("p");
+      confidence.className = "pricing-compare-confidence";
+      confidence.textContent = tier.confidence;
+
+      readout.appendChild(name);
+      readout.appendChild(price);
+      readout.appendChild(detail);
+      readout.appendChild(confidence);
+    }
+
+    slider.addEventListener("input", renderCompare);
+
+    compare.appendChild(compareHeading);
+    compare.appendChild(slider);
+    compare.appendChild(readout);
+    pricingGrid.insertAdjacentElement("afterend", compare);
+
+    renderCompare();
+  }
+
+  /* -------------------------------------------------------------------
      Interactive architecture diagram (#architecture) — a hand-authored
      SVG mirroring the README's ASCII flow (app/demo-agent → backend
-     server.js → oracle.js → dispatch.js/reconcile.js → oracle-escrow
-     contract → USDC SAC, with Claude as reconciliation-only). Nodes are
-     clickable and reveal the real README detail for each component.
-     Progressive enhancement: the SVG and its labels are fully legible
-     without JS; this only wires up the click-to-expand detail panel.
-  ------------------------------------------------------------------- */
-  const archDiagram = document.getElementById("architecture-diagram");
-  const archDetail = document.getElementById("architecture-detail");
+     server.js → 
 
-  if (archDiagram && archDetail) {
-    const nodes = Array.from(archDiagram.querySelectorAll("[data-arch-node]"));
-
-    const ARCH_DETAIL = {
-      app: {
-        title: "app / demo-agent",
-        body: "The client that submits a question and pays for an answer. The demo agent (and any integrator's app) POSTs to the backend's /ask endpoint, then polls for the reconciled result. It never talks to the contract or Claude directly.",
-      },
-      backend: {
-        title: "backend (server.js)",
-        body: "Express server exposing /ask, /sandbox, and /health. server.js orchestrates the request: it calls oracle.js to fan the question out to the model providers, then hands the collected answers to dispatch.js and reconcile.js.",
-      },
-      oracle: {
-        title: "oracle.js",
-        body: "Fans a single question out to multiple model providers in parallel and collects their answers. This is the quorum step — the backend needs several independent answers before it can reconcile.",
-      },
-      dispatch: {
-        title: "dispatch.js / reconcile.js",
-        body: "dispatch.js sends the question to the providers; reconcile.js compares the returned answers, picks the consensus result, and decides whether the answer is trustworthy enough to settle. Claude is used here only as a reconciliation aid — never as a primary answer source.",
-      },
-      claude: {
-        title: "Claude (reconciliation-only)",
-        body: "Claude is not one of the answering providers. It is invoked only during reconciliation to help judge agreement between the other providers' answers. It has no role in dispatch and cannot unilaterally settle a payment.",
-      },
-      contract: {
-        title: "oracle-escrow (Soroban contract)",
-        body: "The on-chain escrow that holds funds until an answer is reconciled. Public entry points: submit (record a reconciled answer), resolve (release payment to the provider), refund (return funds to the asker), refund_timeout (refund after the deadline passes), stake / unstake (provider collateral), and withdraw (pull accrued balances).",
-      },
-      usdc: {
-        title: "USDC SAC",
-        body: "The Stellar Asset Contract wrapping USDC. oracle-escrow moves real USDC through this SAC for every stake, resolve, refund, and withdraw — the contract never holds a bespoke token.",
-      },
-    };
-
-    function showArchDetail(key) {
-      const detail = ARCH_DETAIL[key];
-      if (!detail) return;
-      archDetail.innerHTML = "";
-      const heading = document.createElement("h3");
-      heading.textContent = detail.title;
-      const para = document.createElement("p");
-      para.textContent = detail.body;
-      archDetail.appendChild(heading);
-      archDetail.appendChild(para);
-    }
-
-    nodes.forEach((node) => {
-      const key = node.getAttribute("data-arch-node");
-      node.setAttribute("tabindex", "0");
-      node.setAttribute("role", "button");
-      node.setAttribute("aria-label", `Show details for ${ARCH_DETAIL[key] ? ARCH_DETAIL[key].title : key}`);
-
-      const activate = () => {
-        nodes.forEach((n) => n.classList.remove("is-selected"));
-        node.classList.add("is-selected");
-        showArchDetail(key);
-      };
-
-      node.addEventListener("click", activate);
-      node.addEventListener("keydown", (evt) => {
-        if (evt.key === "Enter" || evt.key === " ") {
-          evt.preventDefault();
-          activate();
-        }
-      });
-    });
-  }
-
-  /* -------------------------------------------------------------------
-     "Try it now" sandbox widget — a real call to a real Arbiter backend's
-     zero-payment sandbox endpoint, live in the hero itself rather than a
-     mockup or a link further down the page. This is the single
-     highest-leverage UX fix for a prospective integrator: seeing one real
-     response, with zero wallet/testnet-USDC setup, before scrolling past
-     the first screen. Degrades honestly (not silently) if no backend is
-     reachable — this static page has no way to know whether one is
-     running locally.
-  ------------------------------------------------------------------- */
-  const API_BASE = "https://arbiter-backend-production-4e43.up.railway.app";
-
-  const tryItForm = document.getElementById("try-it-form");
-  const tryItInput = document.getElementById("try-it-input");
-  const tryItResult = document.getElementById("try-it-result");
-  const tryItSubmit = document.getElementById("try-it-submit");
-
-  // The hero widget is already visible without scrolling on desktop (it
-  // sits beside the copy, not below it) — this only matters on mobile,
-  // where the two columns stack and "Ask a question live" needs to jump
-  // the visitor down to it and drop them straight into the input.
-  if (tryItInput) {
-    document.querySelectorAll('a[href="#try-it-input"]').forEach((link) => {
-      link.addEventListener("click", () => {
-        window.setTimeout(() => tryItInput.focus(), 400);
-      });
-    });
-  }
-
-  /* -------------------------------------------------------------------
-     Voice input for the try-it widget — typing a full question on a
-     phone keyboard is real friction for exactly the frictionless
-     first-impression this hero is built to deliver. Uses the Web Speech
-     API where available and only ever fills the same #try-it-input the
-     existing submit handler already reads from, so the submission path
-     to /oracle/sandbox is untouched. Where SpeechRecognition is absent
-     (notably most non-Chrome mobile browsers) the button is never shown
-     at all, matching trustLive's silent-absence-on-failure pattern
-     rather than presenting a broken affordance.
-  ------------------------------------------------------------------- */
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const tryItMic = document.getElementById("try-it-mic");
-
-  if (tryItMic && tryItInput && SpeechRecognition) {
-    const recognition = new SpeechRecognition();
-    recognition.lang = document.documentElement.lang || "en-US";
-    recognition.interimResults = true;
-    recognition.continuous = false;
-
-    let listening = false;
-    let baseText = "";
-
-    function setListening(next) {
-      listening = next;
-      tryItMic.classList.toggle("is-listening", listening);
-      tryItMic.setAttribute("aria-pressed", String(listening));
-      tryItMic.setAttribute("aria-label", listening ? "Stop voice input" : "Ask by voice");
-    }
-
-    recognition.addEventListener("result", (evt) => {
-      let transcript = "";
-      for (let i = evt.resultIndex; i < evt.results.length; i += 1) {
-        transcript += evt.results[i][0].transcript;
-      }
-      const prefix = baseText ? `${baseText} ` : "";
-      tryItInput.value = `${prefix}${transcript}`.trim();
-    });
-
-    recognition.addEventListener("error", () => setListening(false));
-    recognition.addEventListener("end", () => setListening(false));
-
-    tryItMic.addEventListener("click", () => {
-      if (listening) {
-        recognition.stop();
-        return;
-      }
-      baseText = tryItInput.value.trim();
-      try {
-        recognition.start();
-        setListening(true);
-      } catch (err) {
-        setListening(false);
-      }
-    });
-
-    // Only reveal the affordance once we know the API exists — the button
-    // ships hidden in the markup so unsupported browsers never flash it.
-    tryItMic.hidden = false;
-  }
-
-  function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  /* -------------------------------------------------------------------
-     #how-it-works flow animation — a self-contained, generic visual of
-     the four stages (dispatch → quorum answers → reconciliation →
-     settlement). It is driven by the real sandbox lifecycle when a
-     try-it submission is in flight (see setTryItState below), and
-     otherwise idles on a clearly generic loop that never implies a
-     specific fabricated transaction. Respects prefers-reduced-motion by
-     rendering the static, fully-lit end state instead of animating.
-  ------------------------------------------------------------------- */
-  const flowEl = document.getElementById("flow-animation");
-  const flowStages = flowEl ? Array.from(flowEl.querySelectorAll("[data-flow-stage]")) : [];
-  const FLOW_STAGES = ["dispatch", "answers", "reconcile", "settle"];
-
-  function setFlowStage(stage) {
-    if (!flowStages.length) return;
-    const activeIndex = FLOW_STAGES.indexOf(stage);
-    flowStages.forEach((el) => {
-      const idx = FLOW_STAGES.indexOf(el.getAttribute("data-flow-stage"));
-      el.classList.toggle("is-active", idx === activeIndex);
-      el.classList.toggle("is-done", activeIndex >= 0 && idx < activeIndex);
-    });
-  }
-
-  let flowIdleTimer = null;
-
-  function stopFlowIdle() {
-    if (flowIdleTimer !== null) {
-      window.clearInterval(flowIdleTimer);
-      flowIdleTimer = null;
-    }
-  }
-
-  function startFlowIdle() {
-    if (!flowStages.length || prefersReducedMotion) return;
-    stopFlowIdle();
-    let i = 0;
-    setFlowStage(FLOW_STAGES[i]);
-    flowIdleTimer = window.setInterval(() => {
-      i = (i + 1) % FLOW_STAGES.length;
-      setFlowStage(FLOW_STAGES[i]);
-    }, 2200);
-  }
-
-  if (flowStages.length) {
-    if (prefersReducedMotion) {
-      // Static, fully-lit end state — no motion, but the flow is still shown.
-      flowStages.forEach((el) => el.classList.add("is-done"));
-    } else {
-      startFlowIdle();
-    }
-  }
-
-  function setTryItState(state, status, answer) {
-    if (!tryItResult) return;
-    tryItResult.className = `try-it-result is-${state}`;
-    tryItResult.innerHTML = "";
-
-
-/* … truncated 2652 chars — edit only what you need near the top … */
+/* … truncated 3811 chars — edit only what you need near the top … */

@@ -4,14 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Arbiter — Admin Console</title>
+    <link rel="stylesheet" href="/shared/tokens.css" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <section id="panel-login" class="panel" style="max-width: 420px; margin: 3rem auto">
+    <section id="panel-login" class="panel admin-login-panel">
       <h2>Admin console</h2>
       <p class="muted small">Paste the operator token (ADMIN_TOKEN on the backend) to continue.</p>
       <div class="row">
-        <input id="admin-token-input" type="password" placeholder="Admin token" style="flex: 1; padding: 0.5rem 0.7rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)" />
+        <input id="admin-token-input" class="admin-token-input" type="password" placeholder="Admin token" />
         <button id="btn-admin-login">Enter</button>
       </div>
       <p id="admin-login-status" class="muted small"></p>
@@ -20,6 +21,9 @@
     <div id="admin-shell" class="admin-shell hidden">
       <nav class="admin-nav">
         <h1>Arbiter <span class="tag">admin</span></h1>
+        <p id="admin-role" class="muted small admin-role hidden"></p>
+        <button id="btn-admin-customize" class="admin-nav-customize" type="button" aria-expanded="false">Customize</button>
+        <div id="admin-customize-panel" class="admin-customize-panel hidden"></div>
 
         <div class="admin-nav-group">
           <h3>Platform</h3>
@@ -42,11 +46,17 @@
           <h3>Infrastructure</h3>
           <button class="admin-nav-link" data-view="blockchain">Blockchain</button>
           <button class="admin-nav-link" data-view="fraud">Fraud &amp; Trust</button>
+          <button class="admin-nav-link" data-view="audit">Audit Log</button>
         </div>
 
         <div class="admin-nav-group">
           <h3>Growth</h3>
           <a class="admin-nav-link" href="/leaderboard.html">Leaderboard →</a>
+        </div>
+
+        <div class="admin-nav-group">
+          <h3>Session</h3>
+          <button id="btn-admin-logout" class="admin-nav-link" type="button">Log out</button>
         </div>
       </nav>
 
@@ -60,11 +70,11 @@
             </div>
             <div class="panel">
               <div class="muted small">Treasury (USDC)</div>
-              <strong id="ov-treasury-usdc">—</strong>
+              <strong id="ov-treasury-usdc" class="admin-balance">—</strong>
             </div>
             <div class="panel">
               <div class="muted small">Treasury (XLM)</div>
-              <strong id="ov-treasury-xlm">—</strong>
+              <strong id="ov-treasury-xlm" class="admin-balance">—</strong>
             </div>
             <div class="panel">
               <div class="muted small">Known workers</div>
@@ -80,12 +90,23 @@
         <section id="view-transactions" class="admin-view">
           <h2>Transactions</h2>
           <div class="panel">
+            <div id="tx-filters" class="tx-filters">
+              <label class="muted small">From <input id="tx-filter-from" type="date" /></label>
+              <label class="muted small">To <input id="tx-filter-to" type="date" /></label>
+              <label class="muted small">Min USDC <input id="tx-filter-min" type="number" min="0" step="any" placeholder="0" /></label>
+              <label class="muted small">Max USDC <input id="tx-filter-max" type="number" min="0" step="any" placeholder="any" /></label>
+              <label class="muted small">Status <select id="tx-filter-status"><option value="">All</option></select></label>
+              <label class="muted small">Outcome <select id="tx-filter-outcome"><option value="">All</option></select></label>
+              <button id="tx-filter-reset" type="button">Reset</button>
+            </div>
+            <p id="tx-filter-summary" class="muted small">Filters apply only to the most recent 100 transactions loaded, not the full history.</p>
             <table class="leaderboard-table">
               <thead>
                 <tr><th>Question</th><th>Payer</th><th>Amount</th><th>Status</th><th>Outcome</th><th>Created</th></tr>
               </thead>
               <tbody id="tx-body"><tr><td colspan="6" class="muted small">Loading…</td></tr></tbody>
             </table>
+            <button id="btn-tx-load-more" class="secondary hidden" type="button" style="margin-top: 0.75rem">Load more</button>
           </div>
         </section>
 
@@ -186,6 +207,10 @@
         <section id="view-fraud" class="admin-view">
           <h2>Fraud &amp; Trust</h2>
           <div class="panel">
+            <p class="muted small">Match-ratio distribution across established workers.</p>
+            <div id="fraud-chart" class="admin-chart"></div>
+          </div>
+          <div class="panel">
             <p class="muted small">Workers below the minimum match ratio once established — candidates for review.</p>
             <table class="leaderboard-table">
               <thead>
@@ -195,9 +220,23 @@
             </table>
           </div>
         </section>
+
+        <section id="view-audit" class="admin-view">
+          <h2>Audit Log</h2>
+          <div class="panel">
+            <p class="muted small">Admin actions recorded by the backend (GET /admin/audit), newest first.</p>
+            <table class="leaderboard-table">
+              <thead>
+                <tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th></tr>
+              </thead>
+              <tbody id="audit-body"><tr><td colspan="5" class="muted small">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </section>
       </main>
     </div>
 
+    <script type="module" src="/src/a11y.js"></script>
     <script type="module" src="/src/admin.js"></script>
   </body>
 </html>
