@@ -1,114 +1,118 @@
-/* Arbiter "Ask" widget — drop-in, dependency-free, sandbox-only.
+/* Ask Arbiter — embeddable sandbox widget.
  *
- * Usage on any host page:
+ * Drop-in usage on any page:
  *   <div data-arbiter-widget></div>
  *   <script src="https://<host>/widget.js" data-api-base="https://your-backend"></script>
  *
- * Same contract as landing/script.js and demo-agent/sandbox-ask.js:
- * POST /oracle/sandbox → poll GET /oracle/:jobId until status === "settled".
- * No payment, no chain, no signup.
+ * Every element carrying [data-arbiter-widget] gets its own ask box. The
+ * backend is taken from the container's data-api-base, then the script
+ * tag's, then the public Railway deployment. Same contract as the landing
+ * try-it box and demo-agent: POST /oracle/sandbox, then poll
+ * GET /oracle/:jobId (30 × 300ms) until status === "settled".
+ *
+ * Sandbox only: no payment, no chain, no signup. Dependency-free; all
+ * backend text is rendered via textContent, never innerHTML.
  */
 (function () {
   "use strict";
-  var DEFAULT_API = "https://arbiter-backend-production-4e43.up.railway.app";
-  var POLL_MAX = 30;
-  var POLL_MS = 300;
+
+  var DEFAULT_API_BASE = "https://arbiter-backend-production-4e43.up.railway.app";
+  var POLL_ATTEMPTS = 30;
+  var POLL_INTERVAL_MS = 300;
   var script = document.currentScript;
-  var scriptApi = script && script.getAttribute("data-api-base");
+  var scriptApiBase = script && script.getAttribute("data-api-base");
 
   var CSS =
-    ".arb-w{font:14px/1.4 system-ui,sans-serif;border:1px solid #ccc;border-radius:10px;padding:12px;max-width:420px;background:#fff;color:#111}" +
-    ".arb-w form{display:flex;gap:6px}.arb-w input{flex:1;padding:8px;border:1px solid #bbb;border-radius:6px}" +
-    ".arb-w button{padding:8px 12px;border:0;border-radius:6px;background:#111;color:#fff;cursor:pointer}" +
-    ".arb-w button:disabled{opacity:.5}.arb-w .arb-note{font-size:12px;color:#666;margin-top:6px}" +
-    ".arb-w .arb-out{margin-top:10px}.arb-w .is-refunded,.arb-w .is-error{color:#a33}";
+    ".arbiter-w{font:14px/1.4 system-ui,sans-serif;border:1px solid #ccc;border-radius:10px;padding:12px;max-width:420px;background:#fff;color:#111}" +
+    ".arbiter-w form{display:flex;gap:6px}" +
+    ".arbiter-w input{flex:1;padding:8px;border:1px solid #bbb;border-radius:6px;font:inherit}" +
+    ".arbiter-w button{padding:8px 12px;border:0;border-radius:6px;background:#111;color:#fff;font:inherit;cursor:pointer}" +
+    ".arbiter-w button:disabled{opacity:.5;cursor:default}" +
+    ".arbiter-w .aw-note{font-size:12px;opacity:.65;margin:0 0 8px}" +
+    ".arbiter-w .aw-result{margin-top:10px;min-height:1em}" +
+    ".arbiter-w .aw-status{font-size:12px;text-transform:uppercase;letter-spacing:.04em;opacity:.7}" +
+    ".arbiter-w .is-resolved .aw-status{color:#2e9e5b;opacity:1}" +
+    ".arbiter-w .is-refunded .aw-status,.arbiter-w .is-error .aw-status{color:#d64545;opacity:1}";
 
-  function injectCss() {
-    if (document.getElementById("arb-w-css")) return;
-    var s = document.createElement("style");
-    s.id = "arb-w-css";
-    s.textContent = CSS;
-    document.head.appendChild(s);
+  function injectStyles() {
+    if (document.getElementById("arbiter-widget-css")) return;
+    var style = document.createElement("style");
+    style.id = "arbiter-widget-css";
+    style.textContent = CSS;
+    document.head.appendChild(style);
+  }
+
+  function el(tag, props) {
+    var node = document.createElement(tag);
+    for (var k in props) node[k] = props[k];
+    return node;
   }
 
   function sleep(ms) {
     return new Promise(function (r) { setTimeout(r, ms); });
   }
 
-  function mount(el) {
-    if (el.__arbiter) return;
-    el.__arbiter = true;
-    var api = (el.getAttribute("data-api-base") || scriptApi || DEFAULT_API).replace(/\/$/, "");
-    el.classList.add("arb-w");
-    el.innerHTML =
-      '<form><input type="text" required maxlength="500" placeholder="Ask Arbiter a question…" aria-label="Question">' +
-      '<button type="submit">Ask</button></form>' +
-      '<div class="arb-note">Sandbox demo — no payment, no chain, no signup.</div>' +
-      '<div class="arb-out" aria-live="polite"></div>';
-    var form = el.querySelector("form");
-    var input = el.querySelector("input");
-    var btn = el.querySelector("button");
-    var out = el.querySelector(".arb-out");
+  function mount(container) {
+    if (container.getAttribute("data-arbiter-mounted")) return;
+    container.setAttribute("data-arbiter-mounted", "1");
+    var apiBase = (container.getAttribute("data-api-base") || scriptApiBase || DEFAULT_API_BASE).replace(/\/$/, "");
+
+    var root = el("div", { className: "arbiter-w" });
+    var note = el("p", { className: "aw-note", textContent: "Ask Arbiter — sandbox: no payment, no chain, no signup." });
+    var form = el("form");
+    var input = el("input", { type: "text", placeholder: "Ask a question…", required: true, maxLength: 500 });
+    input.setAttribute("aria-label", "Question for Arbiter");
+    var submit = el("button", { type: "submit", textContent: "Ask" });
+    var result = el("div", { className: "aw-result" });
+    result.setAttribute("aria-live", "polite");
+    form.append(input, submit);
+    root.append(note, form, result);
+    container.appendChild(root);
 
     function setState(state, status, answer) {
-      out.className = "arb-out is-" + state;
-      out.textContent = "";
-      var p = document.createElement("div");
-      p.textContent = status;
-      out.appendChild(p);
-      if (answer != null) {
-        var a = document.createElement("strong");
-        a.textContent = typeof answer === "string" ? answer : JSON.stringify(answer);
-        out.appendChild(a);
-      }
-    }
-
-    function render(job) {
-      if (job.refunded || job.outcome === "refunded") {
-        setState("refunded", "No consensus — would have been refunded.");
-      } else {
-        setState("resolved", "Resolved:", job.answer != null ? job.answer : job.outcome);
-      }
+      result.className = "aw-result is-" + state;
+      result.replaceChildren(el("div", { className: "aw-status", textContent: status }));
+      if (answer) result.appendChild(el("div", { className: "aw-answer", textContent: answer }));
     }
 
     form.addEventListener("submit", async function (e) {
       e.preventDefault();
       var question = input.value.trim();
       if (!question) return;
-      btn.disabled = true;
-      setState("loading", "Asking workers…");
+      submit.disabled = true;
+      setState("loading", "Asking…");
       try {
-        var res = await fetch(api + "/oracle/sandbox", {
+        var res = await fetch(apiBase + "/oracle/sandbox", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ question: question }),
         });
-        if (!res.ok) throw new Error("request failed (" + res.status + ")");
-        var job = await res.json();
-        if (!job.jobId || job.status === "settled") return render(job);
-        for (var i = 0; i < POLL_MAX; i++) {
-          await sleep(POLL_MS);
-          var poll = await fetch(api + "/oracle/" + encodeURIComponent(job.jobId));
-          if (!poll.ok) continue;
-          var j = await poll.json();
-          if (j.status === "settled") return render(j);
-          setState("loading", "Waiting for consensus… (" + (j.totalAnswers || 0) + " answers)");
+        if (!res.ok) throw new Error("backend returned " + res.status);
+        var jobId = (await res.json()).jobId;
+
+        for (var i = 0; i < POLL_ATTEMPTS; i++) {
+          await sleep(POLL_INTERVAL_MS);
+          var job = await (await fetch(apiBase + "/oracle/" + encodeURIComponent(jobId))).json();
+          if (job.status !== "settled") continue;
+          if (job.outcome === "resolved") setState("resolved", "Resolved", String(job.answer));
+          else setState("refunded", "Refunded", job.reason ? String(job.reason) : "No consensus reached.");
+          return;
         }
-        setState("error", "Timed out waiting for an answer — try again.");
+        setState("error", "Still working", "No answer yet — try again in a moment.");
       } catch (err) {
-        setState("error", "Couldn't reach Arbiter: " + err.message);
+        setState("error", "Couldn't reach Arbiter", err.message);
       } finally {
-        btn.disabled = false;
+        submit.disabled = false;
       }
     });
   }
 
   function init() {
-    injectCss();
+    injectStyles();
     document.querySelectorAll("[data-arbiter-widget]").forEach(mount);
   }
 
-  window.ArbiterWidget = { mount: function (el) { injectCss(); mount(el); } };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
+  window.ArbiterWidget = { mount: function (c) { injectStyles(); mount(c); } };
 })();

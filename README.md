@@ -166,10 +166,17 @@ run predates this repo's split; see "Round 6" in the archived
 the full run — real `ask.js`/`worker-sim.js`/`sponsored-demo.js`
 executions, transaction links included.)
 
-## Handsoff notes
+## Local stack, widget & demo feed
 
-<!-- handsoff-issue-154 -->
-- #154: Build a real docs page — README link is a stopgap, not documentation
-
-<!-- handsoff-issue-155 -->
-- #155: Give the leaderboard and future red-team results a real place in the marketing site
+- **One-command stack (Docker Compose, sandbox only):** with
+  [arbiter-backend](https://github.com/Arbiter-xyz/arbiter-backend) cloned as a
+  sibling (`../arbiter-backend`, or set `BACKEND_CONTEXT`), run
+  `docker compose up --build` to start the backend plus two `worker-sim.js`
+  workers, then `docker compose run --rm ask "What is 6 x 7?"` to push a sandbox
+  question through to settlement. Secrets come from `.env` files only.
+- **Embeddable widget:** `landing/widget.js` — add `<div data-arbiter-widget></div>`
+  and `<script src=".../widget.js" data-api-base="https://your-backend"></script>`
+  to any page. Sandbox only: no payment, no chain, no signup.
+- **Live demo feed:** `app/demo.html` polls `GET /admin/transactions` and
+  `GET /admin/workers` (admin token required) and shows dispatch, answer and
+  settlement events as they happen — no changes to the CLI scripts needed.
