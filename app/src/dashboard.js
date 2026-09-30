@@ -8,18 +8,22 @@ import {
   AlbedoModule,
   HotWalletModule,
   LedgerModule,
+  WalletConnectModule,
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet } from './localWallet.js';
 import { renderMarkdown } from './markdown.js';
+import { createStarButton, filterStarred, mountStarredFilter } from './starredQuestions.js';
+import { filterQuestions } from './questionFilter.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
 
 // Same hand-picked module list as the worker console — see main.js.
 // Ledger is added explicitly (not via allowAllModules()) so the Trezor/
 // protobufjs surface stays excluded — see the round-5 note in main.js.
 const kit = new StellarWalletsKit({
   network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule()],
+  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule(), ...(WALLETCONNECT_PROJECT_ID ? [new WalletConnectModule({ projectId: WALLETCONNECT_PROJECT_ID, metadata: { name: 'Arbiter', description: 'Arbiter buyer dashboard', url: window.location.origin, icons: [] } })] : [])],
 });
 
 const el = {
@@ -35,10 +39,17 @@ const el = {
   spendCalendarGrid: document.getElementById('spend-calendar-grid'),
   spendCalendarTotal: document.getElementById('spend-calendar-total'),
   questionList: document.getElementById('question-list'),
+  questionSearch: document.getElementById('question-search'),
+  questionStatus: document.getElementById('question-status'),
   log: document.getElementById('log'),
 };
 
-const state = { address: null, activeWallet: null, sessionToken: null, sessionExpiresAt: 0 };
+const state = { address: null, activeWallet: null, sessionToken: null, sessionExpiresAt: 0, data: null, starredOnly: false };
+
+mountStarredFilter(el.questionList, (checked) => {
+  state.starredOnly = checked;
+  renderQuestionList();
+});
 
 function log(message) {
   const li = document.createElement('li');
@@ -143,21 +154,28 @@ async function loadQuestions() {
 }
 
 function render(data) {
+  state.data = data;
+  // Stats always reflect the full history, never the filtered subset.
   el.statSpend.textContent = `${data.totalSpend} USDC`;
   el.statCount.textContent = String(data.totalTracked);
   el.statSuccess.textContent = data.successRate === null ? '—' : `${Math.round(data.successRate * 100)}%`;
   renderSpendCalendar(data.questions, data.totalSpend);
 
   el.questionList.innerHTML = '';
-  if (data.questions.length === 0) {
+  if (visible.length === 0) {
     const li = document.createElement('li');
     li.className = 'muted small';
-    li.textContent = 'No questions yet.';
+    li.textContent =
+      all.length === 0
+        ? 'No questions yet.'
+        : state.starredOnly && matching.length > 0
+          ? 'No starred questions.'
+          : 'No questions match your search.';
     el.questionList.appendChild(li);
     return;
   }
 
-  for (const q of data.questions) {
+  for (const q of visible) {
     el.questionList.appendChild(renderQuestionItem(q));
   }
 }
@@ -204,7 +222,7 @@ function renderQuestionItem(q) {
   renderMarkdown(qText, q.question || q.questionId);
   const qMeta = document.createElement('div');
   qMeta.className = 'q-meta';
-  const parts = [q.tier, q.amount ? `${q.amount} USDC` : null];
+  const parts = [q.tier, q.amount ? formatUsdc(q.amount) : null];
   if (q.status === 'settled' && q.outcome === 'resolved') parts.push(`confidence ${q.confidence}`);
   qMeta.textContent = parts.filter(Boolean).join(' · ');
   left.append(qText, qMeta);
@@ -214,9 +232,41 @@ function renderQuestionItem(q) {
   badge.className = `badge ${cls}`;
   badge.textContent = label;
 
-  row.append(left, badge);
+  // Unstarring while "Starred only" is on should drop the row immediately.
+  const star = createStarButton(state.address, q.questionId, () => {
+    if (state.starredOnly) renderQuestionList();
+  });
+
+  row.append(star, left, badge);
   li.appendChild(row);
+
+  // Surface the real, load-bearing guarantee for still-pending questions:
+  // refund_timeout() is permissionless (no require_auth()), so anyone can
+  // force a refund once the timeout window elapses — even if Arbiter's
+  // backend disappears. Stated plainly, not oversold.
+  if (q.status !== 'settled') {
+    const safety = document.createElement('p');
+    safety.className = 'q-safety muted small';
+    safety.textContent = refundSafetyLine(q);
+    li.appendChild(safety);
+  }
+
   return li;
+}
+
+/** Plain-language statement of the on-chain refund guarantee. The contract's
+ * refund_timeout() is permissionless, so this is checkable against real
+ * behavior — not marketing copy. Kept as a single helper so future guarantees
+ * (pause switch, threshold custody) can be appended without a rewrite. */
+function refundSafetyLine(q) {
+  const base = 'Your funds are recoverable even if Arbiter goes down: after the refund timeout window, anyone can trigger an automatic refund on-chain — no action from Arbiter required.';
+  if (q.refundAvailableAt) {
+    const when = new Date(q.refundAvailableAt);
+    if (!Number.isNaN(when.getTime())) {
+      return `${base} Refund available from ${when.toLocaleString()}.`;
+    }
+  }
+  return base;
 }
 
 function describeStatus(q) {

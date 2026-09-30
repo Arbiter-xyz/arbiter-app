@@ -16,6 +16,7 @@
           <a href="/index.html">Worker console →</a>
           <a href="/leaderboard.html">Leaderboard →</a>
         </p>
+        <button class="secondary" type="button" data-usdc-precision-toggle>2-decimal USDC</button>
       </header>
 
       <section id="panel-connect" class="panel">
@@ -48,6 +49,12 @@
         </div>
         <section class="spend-calendar" aria-labelledby="spend-calendar-heading"><div class="row"><h2 id="spend-calendar-heading">Spend by day</h2><span id="spend-calendar-total" class="muted small"></span></div><div id="spend-calendar-grid" class="spend-calendar-grid" role="list" aria-label="Daily spend calendar"></div><p class="muted small">Derived from the question records returned to this dashboard.</p></section>
 
+        <p class="fund-safety small" id="fund-safety">
+          Your funds are never permanently stuck. If a question stays pending past the contract's
+          refund timeout, <strong>anyone</strong> — including you — can call the permissionless
+          <code>refund_timeout()</code> to return your payment, even if Arbiter's backend goes down.
+        </p>
+
         <ul id="question-list" class="question-list">
           <li class="muted small" id="question-list-empty">No questions yet.</li>
         </ul>
@@ -60,5 +67,6 @@
     </main>
 
     <script type="module" src="/src/dashboard.js"></script>
+    <script type="module" src="/src/amountDisplay.js"></script>
   </body>
 </html>
