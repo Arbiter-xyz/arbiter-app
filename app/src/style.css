@@ -1,11 +1,28 @@
 :root {
   color-scheme: light dark;
+  --font-scale: 1;
   --fg: #1a1a2e;
   --bg: #f7f7fb;
   --panel: #ffffff;
   --border: #dcdce6;
   --accent: #5b4cf0;
   --muted: #75758a;
+  /* Data-viz palette — tuned separately per theme so charts stay legible. */
+  --chart-bar: #5b4cf0;
+  --chart-flag: #d1343f;
+  --chart-grid: #dcdce6;
+  --chart-label: #5d5d72;
+}
+
+/* Explicit user selection wins over the system dark-mode preference. */
+:root[data-theme='high-contrast'] {
+  color-scheme: dark;
+  --fg: #ffffff;
+  --bg: #000000;
+  --panel: #000000;
+  --border: #ffffff;
+  --accent: #ffff00;
+  --muted: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -15,12 +32,18 @@
     --panel: #1e1e2e;
     --border: #33334a;
     --muted: #9494ac;
+    --chart-bar: #8f84ff;
+    --chart-flag: #ff6b75;
+    --chart-grid: #3a3a55;
+    --chart-label: #b4b4cc;
   }
 }
 
 * {
   box-sizing: border-box;
 }
+
+html { font-size: calc(100% * var(--font-scale)); }
 
 body {
   margin: 0;
@@ -149,6 +172,14 @@ button.secondary {
   margin: 0.15rem 0 0;
   font-weight: 600;
 }
+.earnings-history { margin-top: 1rem; padding-top: 0.85rem; border-top: 1px dashed var(--border); }
+.earnings-history-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
+.earnings-history-form input, .earnings-history-form select { min-width: 0; padding: 0.45rem; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--fg); }
+.spend-calendar { margin: 1rem 0; padding: 0.85rem 0; border-bottom: 1px dashed var(--border); }
+.spend-calendar h2 { font-size: 1rem; margin: 0; }
+.spend-calendar-grid { display: grid; grid-template-columns: repeat(14, minmax(1.4rem, 1fr)); gap: 0.3rem; margin-top: 0.65rem; }
+.spend-calendar-cell { background: color-mix(in srgb, var(--accent) calc(var(--spend-intensity) * 100%), var(--panel)); border: 1px solid var(--border); border-radius: 4px; min-height: 1.7rem; display: grid; place-items: center; font-size: 0.7rem; }
+@media (max-width: 620px) { .earnings-history-form { grid-template-columns: 1fr 1fr; } .spend-calendar-grid { grid-template-columns: repeat(7, minmax(1.4rem, 1fr)); } }
 
 .dashboard-stats {
   display: grid;
@@ -162,6 +193,24 @@ button.secondary {
 .dashboard-stats strong {
   display: block;
   font-size: 1.1rem;
+}
+
+.question-filters {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+.question-filters input,
+.question-filters select {
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+}
+.question-filters input {
+  flex: 1;
+  min-width: 0;
 }
 
 .question-list {
@@ -196,6 +245,37 @@ button.secondary {
 .badge-resolved { background: #16a34a33; color: #16a34a; }
 .badge-refunded { background: #d9770633; color: #d97706; }
 .badge-pending { background: #5b4cf033; color: #5b4cf0; }
+.answer-feedback { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem; }
+.answer-feedback-btn { padding: 0.15rem 0.5rem; font-size: 0.85rem; }
+.answer-feedback-btn[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+.answer-feedback-status { font-size: 0.75rem; color: var(--muted); }
+
+:root[data-theme='high-contrast'] .badge {
+  background: #000;
+  color: #fff;
+  border: 2px solid currentColor;
+}
+:root[data-theme='high-contrast'] .badge-resolved { color: #00ff66; }
+:root[data-theme='high-contrast'] .badge-refunded { color: #ffff00; }
+:root[data-theme='high-contrast'] .badge-pending { color: #00e5ff; }
+
+.accessibility-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+.accessibility-controls button { padding: 0.35rem 0.55rem; font-size: 0.8rem; }
+.accessibility-controls output { min-width: 5.5rem; }
+.admin-accessibility-controls { padding: 0.5rem 0.75rem; margin: 0; border-bottom: 1px solid var(--border); }
+
+/* The countdown remains visible because it conveys a deadline, not decoration.
+   Removing the interpolation still honors reduced-motion preferences. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+  .timer-bar { transition: none; }
+}
 
 /* ------------------------------------------------------------------ */
 /* Admin console — a nav-shell layout, distinct from the single-column   */

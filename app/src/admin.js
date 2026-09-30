@@ -1,3 +1,6 @@
+import { filterTransactions, distinctValues } from './txFilters.js';
+import { downloadCsv } from './csv.js';
+
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';
 const DENSITY_KEY = 'arbiter-admin-density';
@@ -92,24 +95,72 @@ function showShell() {
 const loaded = new Set();
 
 async function renderOverview() {
-  const [{ resolvedCount, totalFeeRevenue }, treasury, workers, payers] = await Promise.all([
-    fetchAdmin('/admin/fees'),
-    fetchAdmin('/admin/treasury'),
+  const canFees = canView('fees');
+  const canTreasury = canView('treasury');
+  const [fees, treasury, workers, payers] = await Promise.all([
+    canFees ? fetchAdmin('/admin/fees') : null,
+    canTreasury ? fetchAdmin('/admin/treasury') : null,
     fetchAdmin('/admin/workers'),
     fetchAdmin('/admin/payers'),
   ]);
-  document.getElementById('ov-fees').textContent = `${totalFeeRevenue} USDC (${resolvedCount})`;
-  document.getElementById('ov-treasury-usdc').textContent = treasury.configured ? `${treasury.usdcBalance}` : 'not configured';
-  document.getElementById('ov-treasury-xlm').textContent = treasury.configured ? `${treasury.xlmBalance}` : 'not configured';
+  document.getElementById('ov-fees').textContent = fees ? `${fees.totalFeeRevenue} USDC (${fees.resolvedCount})` : 'restricted';
+  document.getElementById('ov-treasury-usdc').textContent = !treasury ? 'restricted' : treasury.configured ? `${treasury.usdcBalance}` : 'not configured';
+  document.getElementById('ov-treasury-xlm').textContent = !treasury ? 'restricted' : treasury.configured ? `${treasury.xlmBalance}` : 'not configured';
   document.getElementById('ov-workers').textContent = workers.workers.length;
   document.getElementById('ov-payers').textContent = payers.payers.length;
 }
 
-async function renderTransactions() {
+const TX_LIMIT = 100;
+let loadedTransactions = [];
+
+function readTxFilters() {
+  const val = (id) => document.getElementById(id).value;
+  return {
+    from: val('tx-filter-from'),
+    to: val('tx-filter-to'),
+    minUsdc: val('tx-filter-min'),
+    maxUsdc: val('tx-filter-max'),
+    status: val('tx-filter-status'),
+    outcome: val('tx-filter-outcome'),
+  };
+}
+
+function fillSelect(id, values) {
+  const select = document.getElementById(id);
+  const current = select.value;
+  const all = document.createElement('option');
+  all.value = '';
+  all.textContent = 'All';
+  select.replaceChildren(
+    all,
+    ...values.map((v) => {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      return opt;
+    }),
+  );
+  if (values.includes(current)) select.value = current;
+}
+
+function renderTxRows() {
   const tbody = document.getElementById('tx-body');
-  const { transactions } = await fetchAdmin('/admin/transactions?limit=100');
-  if (transactions.length === 0) {
+  const summary = document.getElementById('tx-filter-summary');
+  const filters = readTxFilters();
+  const active = Object.values(filters).some((v) => v !== '');
+  const transactions = filterTransactions(loadedTransactions, filters);
+
+  const scope = `the most recent ${loadedTransactions.length} loaded transactions (up to ${TX_LIMIT}), not the full history`;
+  summary.textContent = active
+    ? `Showing ${transactions.length} of ${scope}. Older matches may exist.`
+    : `Filters apply only to ${scope}.`;
+
+  if (loadedTransactions.length === 0) {
     replaceRows(tbody, [emptyRow(6, 'No transactions yet.')]);
+    return;
+  }
+  if (transactions.length === 0) {
+    replaceRows(tbody, [emptyRow(6, `No transactions match these filters within the most recent ${loadedTransactions.length}.`)]);
     return;
   }
   replaceRows(
@@ -132,6 +183,22 @@ async function renderTransactions() {
     }),
   );
 }
+
+async function renderTransactions() {
+  const { transactions } = await fetchAdmin(`/admin/transactions?limit=${TX_LIMIT}`);
+  loadedTransactions = transactions;
+  fillSelect('tx-filter-status', distinctValues(transactions, 'status'));
+  fillSelect('tx-filter-outcome', distinctValues(transactions, 'outcome'));
+  renderTxRows();
+}
+
+document.getElementById('tx-filters').addEventListener('input', renderTxRows);
+document.getElementById('tx-filter-reset').addEventListener('click', () => {
+  document.querySelectorAll('#tx-filters input, #tx-filters select').forEach((el) => {
+    el.value = '';
+  });
+  renderTxRows();
+});
 
 async function renderWorkers() {
   const tbody = document.getElementById('workers-body');
@@ -213,9 +280,62 @@ function renderBlockchain() {
   `;
 }
 
+// Inline-SVG histogram of established workers' match ratios (10 buckets of
+// 10%). Colors come only from CSS classes backed by the --chart-* custom
+// properties in style.css, so the chart follows the light/dark theme.
+function svgEl(tag, attrs) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function renderMatchRatioChart(container, ratios, flagBelow = 0.5) {
+  const buckets = new Array(10).fill(0);
+  ratios.forEach((r) => buckets[Math.min(9, Math.floor(r * 10))]++);
+  const max = Math.max(1, ...buckets);
+  const W = 400;
+  const H = 140;
+  const pad = { top: 10, bottom: 20, left: 24 };
+  const plotH = H - pad.top - pad.bottom;
+  const bw = (W - pad.left) / 10;
+
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Worker match-ratio distribution' });
+  svg.append(svgEl('line', { class: 'grid', x1: pad.left, x2: W, y1: pad.top + plotH, y2: pad.top + plotH }));
+  svg.append(svgEl('line', { class: 'grid', x1: pad.left, x2: W, y1: pad.top, y2: pad.top }));
+  const maxLabel = svgEl('text', { x: pad.left - 4, y: pad.top + 4, 'text-anchor': 'end' });
+  maxLabel.textContent = max;
+  svg.append(maxLabel);
+
+  buckets.forEach((count, i) => {
+    const h = (count / max) * plotH;
+    const x = pad.left + i * bw + 2;
+    const bar = svgEl('rect', {
+      class: (i + 1) / 10 <= flagBelow ? 'bar flag' : 'bar',
+      x,
+      y: pad.top + plotH - h,
+      width: bw - 4,
+      height: h,
+    });
+    const tip = svgEl('title', {});
+    tip.textContent = `${i * 10}–${(i + 1) * 10}%: ${count} worker(s)`;
+    bar.append(tip);
+    svg.append(bar);
+    if (i % 2 === 0) {
+      const label = svgEl('text', { x: x + (bw - 4) / 2, y: H - 6, 'text-anchor': 'middle' });
+      label.textContent = `${i * 10}%`;
+      svg.append(label);
+    }
+  });
+  container.replaceChildren(svg);
+}
+
 async function renderFraud() {
   const tbody = document.getElementById('fraud-body');
   const { workers } = await fetchAdmin('/admin/workers');
+  renderMatchRatioChart(
+    document.getElementById('fraud-chart'),
+    workers.filter((w) => w.established && w.matchRatio !== null).map((w) => w.matchRatio),
+  );
   const flagged = workers
     .filter((w) => w.established && w.matchRatio !== null)
     .sort((a, b) => a.matchRatio - b.matchRatio);
@@ -281,6 +401,35 @@ async function renderPayouts() {
   );
 }
 
+async function renderAuditLog() {
+  const tbody = document.getElementById('audit-body');
+  let entries;
+  try {
+    ({ entries } = await fetchAdmin('/admin/audit'));
+  } catch (err) {
+    if (err.message === 'unauthorized') throw err;
+    replaceRows(tbody, [emptyRow(5, 'Audit log unavailable — this backend does not expose GET /admin/audit yet.')]);
+    return;
+  }
+  if (!entries || entries.length === 0) {
+    replaceRows(tbody, [emptyRow(5, 'No admin actions recorded yet.')]);
+    return;
+  }
+  // Same textContent-only rendering as every other view — never innerHTML.
+  replaceRows(
+    tbody,
+    entries.map((e) =>
+      row([
+        td(e.at ? new Date(e.at).toLocaleString() : '—', { className: 'muted small' }),
+        td(e.actor || '—'),
+        td(e.action || '—'),
+        td(truncateAddress(e.target), { title: e.target || '' }),
+        td(e.detail === undefined ? '—' : typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail)),
+      ]),
+    ),
+  );
+}
+
 const VIEWS = {
   overview: renderOverview,
   transactions: renderTransactions,
@@ -292,9 +441,60 @@ const VIEWS = {
   payouts: renderPayouts,
   blockchain: renderBlockchain,
   fraud: renderFraud,
+  audit: renderAuditLog,
 };
 
+// ---------------------------------------------------------------------
+// CSV export (#118). One shared exporter for every genuinely tabular view.
+// It reads the rendered table rather than re-fetching, so the file matches
+// exactly what the operator is looking at (including any active filter —
+// hidden rows are skipped). Cells prefer their `title` (the full, untruncated
+// address) over the displayed truncated text.
+//
+// Deliberately excluded: overview (summary tiles aggregating other views),
+// treasury and blockchain — those panels are innerHTML prose/key-value
+// blocks, not row data, so forcing them through a CSV would be misleading.
+// ---------------------------------------------------------------------
+
+const EXPORTABLE_VIEWS = ['transactions', 'workers', 'payers', 'fees', 'kyc', 'payouts', 'fraud'];
+
+function viewTableData(name) {
+  if (name === 'fees') {
+    return {
+      columns: ['Metric', 'Value'],
+      rows: [
+        ['Total resolved questions', document.getElementById('fees-count').textContent],
+        ['Total platform fee revenue (USDC)', document.getElementById('fees-total').textContent],
+      ],
+    };
+  }
+  const table = document.querySelector(`#view-${name} table`);
+  const columns = [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+  const rows = [...table.querySelectorAll('tbody tr')]
+    // Skip hidden (filtered-out) rows and the colspan'd empty/loading placeholder.
+    .filter((tr) => !tr.hidden && tr.style.display !== 'none' && !tr.querySelector('td[colspan]'))
+    .map((tr) => [...tr.cells].map((cell) => cell.title || cell.textContent.trim()));
+  return { columns, rows };
+}
+
+function exportView(name) {
+  const { columns, rows } = viewTableData(name);
+  const date = new Date().toISOString().slice(0, 10);
+  downloadCsv(`arbiter-${name}-${date}.csv`, columns, rows);
+}
+
+EXPORTABLE_VIEWS.forEach((name) => {
+  const heading = document.querySelector(`#view-${name} h2`);
+  const button = document.createElement('button');
+  button.className = 'secondary small';
+  button.textContent = 'Export CSV';
+  button.addEventListener('click', () => exportView(name));
+  heading.append(button);
+});
+
 async function selectView(name) {
+  // Fail closed: a role without access never triggers the view's fetches.
+  if (!canView(name)) return;
   document.querySelectorAll('.admin-nav-link[data-view]').forEach((el) => el.classList.toggle('active', el.dataset.view === name));
   document.querySelectorAll('.admin-view').forEach((el) => el.classList.toggle('active', el.id === `view-${name}`));
 
@@ -317,13 +517,11 @@ document.getElementById('btn-admin-login').addEventListener('click', () => {
   const token = document.getElementById('admin-token-input').value.trim();
   if (!token) return;
   localStorage.setItem(TOKEN_KEY, token);
-  showShell();
-  selectView('overview');
+  enterConsole();
 });
 
 if (localStorage.getItem(TOKEN_KEY)) {
-  showShell();
-  selectView('overview');
+  enterConsole();
 } else {
   showLogin();
 }
