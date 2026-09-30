@@ -30,6 +30,7 @@
           <button class="admin-nav-link" data-view="overview">Overview</button>
           <button class="admin-nav-link" data-view="workers">Workers</button>
           <button class="admin-nav-link" data-view="payers">Payers</button>
+          <button class="admin-nav-link" data-view="pools">Worker Pools</button>
         </div>
 
         <div class="admin-nav-group">
@@ -130,6 +131,29 @@
               </thead>
               <tbody id="payers-body"><tr><td colspan="5" class="muted small">Loading…</td></tr></tbody>
             </table>
+          </div>
+        </section>
+
+        <section id="view-pools" class="admin-view">
+          <h2>Worker Pools</h2>
+          <div class="panel">
+            <p class="muted small">
+              Whitelist-gated dispatch for private worker pools (backend-owned enforcement in dispatch.js). This view
+              manages the whitelist data only — see admin.js's renderPools() for the assumed endpoint shape.
+            </p>
+            <div class="row">
+              <label for="pools-select" class="muted small">Pool</label>
+              <select id="pools-select" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)"></select>
+            </div>
+            <table class="leaderboard-table">
+              <thead><tr><th>Whitelisted worker</th><th></th></tr></thead>
+              <tbody id="pools-body"><tr><td colspan="2" class="muted small">Loading…</td></tr></tbody>
+            </table>
+            <form id="pool-add-form" class="row" style="margin-top: 0.75rem">
+              <input id="pool-add-address" type="text" placeholder="Worker Stellar address (G...)" style="flex: 1; padding: 0.5rem 0.7rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)" />
+              <button id="btn-pool-add" type="submit">Add to whitelist</button>
+            </form>
+            <p id="pools-status" class="muted small"></p>
           </div>
         </section>
 

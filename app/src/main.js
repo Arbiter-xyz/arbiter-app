@@ -1,16 +1,6 @@
-import {
-  StellarWalletsKit,
-  WalletNetwork,
-  FreighterModule,
-  LobstrModule,
-  xBullModule,
-  HanaModule,
-  AlbedoModule,
-  HotWalletModule,
-  LedgerModule,
-  WalletConnectModule,
-} from '@creit.tech/stellar-wallets-kit';
-import { createOrLoadLocalWallet, getLocalWalletSecret } from './localWallet.js';
+import { WalletNetwork } from '@creit.tech/stellar-wallets-kit';
+import { createWalletKit, wireConnectButtons } from './wallet.js';
+import { getLocalWalletSecret } from './localWallet.js';
 import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
@@ -26,25 +16,9 @@ const USDC_ASSET_CODE = import.meta.env.VITE_USDC_ASSET_CODE || 'USDC';
 // (issue #24).
 const MAX_ANSWER_LENGTH = 2000;
 
-// Hand-picked, not allowAllModules(): explicit about which wallets we
-// support (matching the original spec's list) rather than automatically
-// inheriting whatever the kit adds in a future version — including
-// hardware-wallet adapters (Trezor/Ledger) that pull in a large, more
-// security-sensitive dependency tree we have no use for. See the README
-// for the concrete CVE this sidesteps.
-//
-// LedgerModule is the one deliberate exception (issue #75): it is added
-// explicitly by name rather than via allowAllModules(), so the Trezor
-// adapters and their protobufjs dependency tree stay excluded. Ledger's
-// browser integration is WebUSB/WebHID against the device directly (the
-// kit's Ledger module), not a deep link into the Ledger Live companion
-// app. Before merging, re-run round 5's audit process: grep the built
-// bundle for `trezor`/`protobuf` and run `npm audit --audit-level=high`,
-// confirming the critical/high count stays at zero.
-const kit = new StellarWalletsKit({
-  network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule(), ...(WALLETCONNECT_PROJECT_ID ? [new WalletConnectModule({ projectId: WALLETCONNECT_PROJECT_ID, metadata: { name: 'Arbiter', description: 'Arbiter worker console', url: window.location.origin, icons: [] } })] : [])],
-});
+// See wallet.js for the module list and the connect/quick-start button
+// wiring shared with dashboard.js (issue #19).
+const kit = createWalletKit();
 
 const el = {
   connect: document.getElementById('panel-connect'),
@@ -261,49 +235,26 @@ function startCategoryDemandPolling() {
 startCategoryDemandPolling();
 
 // --- Wallet connect (extension) or quick start (local, non-custodial) -----
+// Module list + button wiring live in wallet.js, shared with dashboard.js
+// (issue #19). The one behavioral difference between the two pages — this
+// console shows the backup/reveal panel only for the local quick-start
+// wallet — is handled via the `quickStart` flag onActivated receives,
+// rather than a special case inside the shared helper.
 
-// A user clicking both connect options in quick succession could otherwise
-// let whichever resolves last silently overwrite the other's in-flight
-// state.activeWallet/state.address — guard against that race by disabling
-// both the instant either one starts, and only re-enabling on failure.
-function setConnectButtonsBusy(busy) {
-  el.btnConnect.disabled = busy;
-  el.btnQuickStart.disabled = busy;
-}
-
-el.btnConnect.addEventListener('click', async () => {
-  setConnectButtonsBusy(true);
-  try {
-    await kit.openModal({
-      onWalletSelected: async (option) => {
-        kit.setWallet(option.id);
-        const { address } = await kit.getAddress();
-        el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
-        await activateWallet(kit, address, option.id);
-      },
-      onClosed: (err) => {
-        setConnectButtonsBusy(false);
-        if (err) log(`Wallet selection closed: ${err.message}`);
-      },
-    });
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(`Wallet connect failed: ${err.message}`);
-  }
-});
-
-el.btnQuickStart.addEventListener('click', async () => {
-  setConnectButtonsBusy(true);
-  try {
-    const localWallet = createOrLoadLocalWallet();
-    const { address } = await localWallet.getAddress();
-    log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
-    showBackupPanel();
-    await activateWallet(localWallet, address);
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(`Quick start failed: ${err.message}`);
-  }
+wireConnectButtons({
+  kit,
+  connectButton: el.btnConnect,
+  quickStartButton: el.btnQuickStart,
+  onActivated: async (wallet, address, { quickStart }) => {
+    if (quickStart) {
+      log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
+      showBackupPanel();
+    } else {
+      el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
+    }
+    await activateWallet(wallet, address);
+  },
+  onError: log,
 });
 
 function showBackupPanel() {
@@ -550,7 +501,8 @@ async function activateWallet(wallet, address) {
   log(`Connected wallet ${address}`);
   el.workerAddress.textContent = address;
   await routeAfterConnect();
-  setConnectButtonsBusy(false);
+  // Buttons are re-enabled by wireConnectButtons (wallet.js) once this
+  // resolves — no need to do it here too.
 }
 
 async function hasUsdcTrustline(address) {
@@ -561,13 +513,23 @@ async function hasUsdcTrustline(address) {
   return (account.balances || []).some((b) => b.asset_code === USDC_ASSET_CODE);
 }
 
+// Refreshes earnings/stake once, then arms the recurring 20s refresh loop
+// used by every "online with earnings visible" path (pre-existing trustline
+// via routeAfterConnect, and sponsored onboarding below) so the two paths
+// can't drift out of sync with each other again (issue #40).
+let earningsRefreshHandle = null;
+function startEarningsRefresh() {
+  refreshEarnings();
+  if (earningsRefreshHandle) return; // already armed — don't stack intervals
+  earningsRefreshHandle = setInterval(refreshEarnings, 20_000);
+}
+
 async function routeAfterConnect() {
   try {
     const ready = await hasUsdcTrustline(state.address);
     showPanel(ready ? 'online' : 'onboard');
     if (ready) {
-      refreshEarnings();
-      setInterval(refreshEarnings, 20_000);
+      startEarningsRefresh();
     }
   } catch (err) {
     log(`Trustline check failed (${err.message}) — assuming onboarding is needed`);
@@ -606,7 +568,7 @@ el.btnOnboard.addEventListener('click', async () => {
 
     log(`Onboarded — account created and USDC trustline opened (tx ${hash}), zero XLM spent by you.`);
     showPanel('online');
-    refreshEarnings();
+    startEarningsRefresh(); // issue #40: arm the same 20s auto-refresh loop routeAfterConnect uses
   } catch (err) {
     log(`Onboarding failed: ${err.message}`);
   } finally {
@@ -745,11 +707,6 @@ el.answerForm.addEventListener('submit', async (evt) => {
   const answer = el.answerInput.value.trim();
   if (!q || !answer) return;
 
-  if (answer.length > MAX_ANSWER_LENGTH) {
-    log(`Answer is too long (${answer.length}/${MAX_ANSWER_LENGTH} characters) — shorten it and resubmit.`);
-    return;
-  }
-
   el.btnAnswer.disabled = true;
   el.answerInput.disabled = true;
   try {
@@ -760,20 +717,10 @@ el.answerForm.addEventListener('submit', async (evt) => {
     });
     if (res.status === 401) {
       log('Session expired or invalid — go offline and back online to re-authenticate.');
-      // The question may still be open — re-enable so a worker who follows
-      // that exact instruction can retype and resubmit against it, instead
-      // of the form staying stuck disabled until the question expires or a
-      // new one arrives (issue #24). The 409 (already-closed) branch below
-      // deliberately does NOT do this — there's nothing to retry there.
-      el.btnAnswer.disabled = false;
-      el.answerInput.disabled = false;
     } else if (res.status === 409) {
       log('Answer rejected — question already closed, expired, or already answered');
     } else if (!res.ok) {
-      // Surface the backend's actual reason (e.g. "answer must be at most
-      // 2000 characters") instead of a generic "unexpected status N" —
-      // same pattern the onboard/stake/withdraw handlers already use.
-      throw new Error((await res.json()).error || `unexpected status ${res.status}`);
+      throw new Error(`unexpected status ${res.status}`);
     } else {
       log(`Answer submitted: "${answer}"`);
     }

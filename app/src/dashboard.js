@@ -1,29 +1,14 @@
-import {
-  StellarWalletsKit,
-  WalletNetwork,
-  FreighterModule,
-  LobstrModule,
-  xBullModule,
-  HanaModule,
-  AlbedoModule,
-  HotWalletModule,
-  LedgerModule,
-  WalletConnectModule,
-} from '@creit.tech/stellar-wallets-kit';
-import { createOrLoadLocalWallet } from './localWallet.js';
+import { WalletNetwork } from '@creit.tech/stellar-wallets-kit';
+import { createWalletKit, wireConnectButtons } from './wallet.js';
 import { renderMarkdown } from './markdown.js';
 import { ensureSession as ensureSharedSession } from './session.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
 
-// Same hand-picked module list as the worker console — see main.js.
-// Ledger is added explicitly (not via allowAllModules()) so the Trezor/
-// protobufjs surface stays excluded — see the round-5 note in main.js.
-const kit = new StellarWalletsKit({
-  network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule(), ...(WALLETCONNECT_PROJECT_ID ? [new WalletConnectModule({ projectId: WALLETCONNECT_PROJECT_ID, metadata: { name: 'Arbiter', description: 'Arbiter buyer dashboard', url: window.location.origin, icons: [] } })] : [])],
-});
+// See wallet.js for the module list and the connect/quick-start button
+// wiring shared with main.js (issue #19).
+const kit = createWalletKit();
 
 const el = {
   connect: document.getElementById('panel-connect'),
@@ -57,16 +42,9 @@ function log(message) {
   notify(message);
 }
 
-function setConnectButtonsBusy(busy) {
-  el.btnConnect.disabled = busy;
-  el.btnQuickStart.disabled = busy;
-}
-
-/** Delegates to the shared session module (#143) so the buyer dashboard
- * reuses the same session primitive as the worker console instead of
- * duplicating it. The shared module caches the token on the wallet/session
- * it is given, so a wallet connected on the worker-console route stays
- * connected here without a second prompt. */
+/** Proves control of this address once, same primitive as the worker
+ * console's ensureSession() — these questions/balance are only readable
+ * with a valid session now, not by anyone who just knows the address. */
 async function ensureSession() {
   return ensureSharedSession({
     address: state.address,
@@ -81,36 +59,14 @@ async function ensureSession() {
   });
 }
 
-el.btnConnect.addEventListener('click', async () => {
-  setConnectButtonsBusy(true);
-  try {
-    await kit.openModal({
-      onWalletSelected: async (option) => {
-        kit.setWallet(option.id);
-        const { address } = await kit.getAddress();
-        await activate(kit, address, option.id);
-      },
-      onClosed: (err) => {
-        setConnectButtonsBusy(false);
-        if (err) log(`Wallet selection closed: ${err.message}`);
-      },
-    });
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(`Wallet connect failed: ${err.message}`);
-  }
-});
-
-el.btnQuickStart.addEventListener('click', async () => {
-  setConnectButtonsBusy(true);
-  try {
-    const localWallet = createOrLoadLocalWallet();
-    const { address } = await localWallet.getAddress();
-    await activate(localWallet, address);
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(`Quick start failed: ${err.message}`);
-  }
+// Module list + button wiring live in wallet.js, shared with main.js
+// (issue #19). This page has no backup panel, so `quickStart` is unused.
+wireConnectButtons({
+  kit,
+  connectButton: el.btnConnect,
+  quickStartButton: el.btnQuickStart,
+  onActivated: activate,
+  onError: log,
 });
 
 async function activate(wallet, address, walletId = null) {
@@ -138,6 +94,8 @@ async function switchIdentity(address) {
   }
   el.accountSwitcher.classList.remove('hidden');
   await loadQuestions();
+  // Buttons are re-enabled by wireConnectButtons (wallet.js) once this
+  // resolves — no need to do it here too.
 }
 
 el.accountSelect.addEventListener('change', () => {
