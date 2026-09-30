@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -18,7 +18,10 @@
           <a href="/leaderboard.html">Leaderboard →</a>
           <a href="/admin.html">Admin →</a>
         </p>
-        <button class="secondary" type="button" data-usdc-precision-toggle>2-decimal USDC</button>
+        <div id="account-switcher" class="account-switcher hidden">
+          <select id="account-select" aria-label="Active wallet"></select>
+          <button id="btn-add-wallet" class="secondary small" type="button">+ Add wallet</button>
+        </div>
       </header>
 
       <section id="panel-connect" class="panel">
@@ -28,7 +31,6 @@
           Quick start generates a wallet in this browser — non-custodial (only you hold the key,
           it's just stored locally instead of in an extension), zero setup, zero XLM required.
         </p>
-        <p class="muted small">Set <code>VITE_WALLETCONNECT_PROJECT_ID</code> to offer QR pairing with compatible mobile wallets.</p>
       </section>
 
       <section id="panel-backup" class="panel hidden warning">
@@ -38,8 +40,7 @@
           browsing, or switch devices, <strong>any staked or accrued USDC on this address is
           permanently unrecoverable</strong> — there is no password reset and no support line
           that can get it back. Copy your secret key somewhere safe (a password manager is ideal)
-          before you stake anything or let earnings accrue. On compatible devices, revealing or
-          copying the key asks for your device biometric/PIN after quick start.
+          before you stake anything or let earnings accrue.
         </p>
         <div class="row">
           <input id="backup-secret" type="password" readonly value="" />
@@ -83,10 +84,10 @@
 
         <fieldset id="category-picker">
           <legend>Topics you'll answer (optional — leave all unchecked to answer everything)</legend>
-          <label><input type="checkbox" value="math" /> Math <span class="category-count" data-category-count="math" hidden></span></label>
-          <label><input type="checkbox" value="coding" /> Coding <span class="category-count" data-category-count="coding" hidden></span></label>
-          <label><input type="checkbox" value="history" /> History <span class="category-count" data-category-count="history" hidden></span></label>
-          <label><input type="checkbox" value="general" /> General knowledge <span class="category-count" data-category-count="general" hidden></span></label>
+          <label><input type="checkbox" value="math" /> Math</label>
+          <label><input type="checkbox" value="coding" /> Coding</label>
+          <label><input type="checkbox" value="history" /> History</label>
+          <label><input type="checkbox" value="general" /> General knowledge</label>
         </fieldset>
 
         <div id="category-demand" class="category-demand" aria-live="polite">
@@ -95,7 +96,7 @@
           <p id="category-demand-status" class="muted small"></p>
         </div>
 
-        <div class="push-row" data-flag="pushNotifications">
+        <div class="push-row">
           <div>
             <div class="muted small">Push notifications</div>
             <p id="push-status" class="muted small">Off — you'll only get questions while this tab is open.</p>
@@ -156,16 +157,27 @@
           <div class="muted small">Your track record</div>
           <p id="track-record-summary">No answers yet — this fills in once you start answering.</p>
         </div>
+
+        <div class="referral" id="referral">
+          <div class="muted small">Invite other workers</div>
+          <button id="btn-referral" class="secondary" type="button" disabled>Get referral link</button>
+          <input id="referral-link" class="hidden" type="text" readonly />
+          <p class="muted small" id="referral-stats"></p>
+        </div>
       </section>
 
       <section id="panel-question" class="panel hidden">
         <h2 id="question-heading">Incoming question</h2>
         <div class="timer-track"><div class="timer-bar" id="timer-bar"></div></div>
-        <p id="question-text"></p>
+        <div id="question-text" class="question-text"></div>
         <form id="answer-form">
-          <input id="answer-input" type="text" placeholder="Type your answer…" autocomplete="off" />
+          <input id="answer-input" type="text" maxlength="400" placeholder="Type your answer…" autocomplete="off" aria-describedby="answer-count" />
           <button id="btn-answer" type="submit">Submit answer</button>
         </form>
+        <div class="answer-tools">
+          <span id="answer-count" class="muted small" aria-live="polite">0 / 400</span>
+          <button id="btn-restore-draft" class="secondary hidden" type="button">Restore last draft</button>
+        </div>
       </section>
 
       <section class="panel">
@@ -174,6 +186,7 @@
       </section>
     </main>
 
+    <script type="module" src="/src/a11y.js"></script>
     <script type="module" src="/src/main.js"></script>
     <script type="module" src="/src/whatsNew.js"></script>
   </body>

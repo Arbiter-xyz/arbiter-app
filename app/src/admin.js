@@ -1,17 +1,23 @@
-import { initErrorReporting } from './errorReporting.js';
-initErrorReporting('admin');
+import { filterTransactions, distinctValues } from './txFilters.js';
+import { downloadCsv } from './csv.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';
-const LAYOUT_KEY = 'arbiter-admin-layout';
-const SVG_NS = 'http://www.w3.org/2000/svg';
+const DENSITY_KEY = 'arbiter-admin-density';
 
-// Views each role may open. A role missing from this map (or no role system
-// on the backend at all) keeps today's single-token full access.
-const ROLE_VIEWS = {
-  readonly: ['overview', 'transactions', 'workers', 'payers', 'blockchain', 'fraud'],
-};
-let allowedViews = null; // null = unrestricted
+function applyDensity(compact) {
+  document.getElementById('admin-shell').classList.toggle('density-compact', compact);
+  const toggle = document.getElementById('density-toggle');
+  toggle.classList.toggle('active', compact);
+  toggle.setAttribute('aria-pressed', String(compact));
+}
+
+applyDensity(localStorage.getItem(DENSITY_KEY) === 'compact');
+document.getElementById('density-toggle').addEventListener('click', () => {
+  const compact = !document.getElementById('admin-shell').classList.contains('density-compact');
+  localStorage.setItem(DENSITY_KEY, compact ? 'compact' : 'comfortable');
+  applyDensity(compact);
+});
 
 function truncateAddress(id) {
   if (!id || id.length <= 16 || !id.startsWith('G')) return id || '—';
@@ -104,11 +110,57 @@ async function renderOverview() {
   document.getElementById('ov-payers').textContent = payers.payers.length;
 }
 
-async function renderTransactions() {
+const TX_LIMIT = 100;
+let loadedTransactions = [];
+
+function readTxFilters() {
+  const val = (id) => document.getElementById(id).value;
+  return {
+    from: val('tx-filter-from'),
+    to: val('tx-filter-to'),
+    minUsdc: val('tx-filter-min'),
+    maxUsdc: val('tx-filter-max'),
+    status: val('tx-filter-status'),
+    outcome: val('tx-filter-outcome'),
+  };
+}
+
+function fillSelect(id, values) {
+  const select = document.getElementById(id);
+  const current = select.value;
+  const all = document.createElement('option');
+  all.value = '';
+  all.textContent = 'All';
+  select.replaceChildren(
+    all,
+    ...values.map((v) => {
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      return opt;
+    }),
+  );
+  if (values.includes(current)) select.value = current;
+}
+
+function renderTxRows() {
   const tbody = document.getElementById('tx-body');
-  const { transactions } = await fetchAdmin('/admin/transactions?limit=100');
-  if (transactions.length === 0) {
+  const summary = document.getElementById('tx-filter-summary');
+  const filters = readTxFilters();
+  const active = Object.values(filters).some((v) => v !== '');
+  const transactions = filterTransactions(loadedTransactions, filters);
+
+  const scope = `the most recent ${loadedTransactions.length} loaded transactions (up to ${TX_LIMIT}), not the full history`;
+  summary.textContent = active
+    ? `Showing ${transactions.length} of ${scope}. Older matches may exist.`
+    : `Filters apply only to ${scope}.`;
+
+  if (loadedTransactions.length === 0) {
     replaceRows(tbody, [emptyRow(6, 'No transactions yet.')]);
+    return;
+  }
+  if (transactions.length === 0) {
+    replaceRows(tbody, [emptyRow(6, `No transactions match these filters within the most recent ${loadedTransactions.length}.`)]);
     return;
   }
   replaceRows(
@@ -131,6 +183,22 @@ async function renderTransactions() {
     }),
   );
 }
+
+async function renderTransactions() {
+  const { transactions } = await fetchAdmin(`/admin/transactions?limit=${TX_LIMIT}`);
+  loadedTransactions = transactions;
+  fillSelect('tx-filter-status', distinctValues(transactions, 'status'));
+  fillSelect('tx-filter-outcome', distinctValues(transactions, 'outcome'));
+  renderTxRows();
+}
+
+document.getElementById('tx-filters').addEventListener('input', renderTxRows);
+document.getElementById('tx-filter-reset').addEventListener('click', () => {
+  document.querySelectorAll('#tx-filters input, #tx-filters select').forEach((el) => {
+    el.value = '';
+  });
+  renderTxRows();
+});
 
 async function renderWorkers() {
   const tbody = document.getElementById('workers-body');
@@ -376,138 +444,53 @@ const VIEWS = {
   audit: renderAuditLog,
 };
 
-function canView(name) {
-  return allowedViews === null || allowedViews.includes(name);
-}
-
 // ---------------------------------------------------------------------
-// Role-based access. GET /admin/whoami returning { role } narrows the nav;
-// a backend without it (404) keeps single-token full access unchanged.
-// ---------------------------------------------------------------------
-
-async function loadRole() {
-  const token = localStorage.getItem(TOKEN_KEY);
-  let role = null;
-  try {
-    const res = await fetch(`${BACKEND_URL}/admin/whoami`, { headers: { Authorization: `Bearer ${token}` } });
-    if (res.ok) ({ role } = await res.json());
-  } catch {
-    // no role system reachable — fall through to full access
-  }
-  allowedViews = role && ROLE_VIEWS[role] ? ROLE_VIEWS[role] : null;
-  const label = document.getElementById('admin-role');
-  label.textContent = role ? `Role: ${role}` : '';
-  label.classList.toggle('hidden', !role);
-}
-
-// ---------------------------------------------------------------------
-// Layout preference: per-group order and hidden views, in localStorage.
-// No saved preference = the static default order from admin.html.
+// CSV export (#118). One shared exporter for every genuinely tabular view.
+// It reads the rendered table rather than re-fetching, so the file matches
+// exactly what the operator is looking at (including any active filter —
+// hidden rows are skipped). Cells prefer their `title` (the full, untruncated
+// address) over the displayed truncated text.
+//
+// Deliberately excluded: overview (summary tiles aggregating other views),
+// treasury and blockchain — those panels are innerHTML prose/key-value
+// blocks, not row data, so forcing them through a CSV would be misleading.
 // ---------------------------------------------------------------------
 
-function loadLayout() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(LAYOUT_KEY));
-    return { order: saved?.order || [], hidden: saved?.hidden || [] };
-  } catch {
-    return { order: [], hidden: [] };
-  }
-}
+const EXPORTABLE_VIEWS = ['transactions', 'workers', 'payers', 'fees', 'kyc', 'payouts', 'fraud'];
 
-function saveLayout(layout) {
-  localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
-}
-
-function navLinks() {
-  return [...document.querySelectorAll('.admin-nav-link[data-view]')];
-}
-
-function applyLayout() {
-  const { order, hidden } = loadLayout();
-  document.querySelectorAll('.admin-nav-group').forEach((group) => {
-    const links = [...group.querySelectorAll('.admin-nav-link[data-view]')];
-    const rank = (el) => {
-      const i = order.indexOf(el.dataset.view);
-      return i === -1 ? order.length + links.indexOf(el) : i;
+function viewTableData(name) {
+  if (name === 'fees') {
+    return {
+      columns: ['Metric', 'Value'],
+      rows: [
+        ['Total resolved questions', document.getElementById('fees-count').textContent],
+        ['Total platform fee revenue (USDC)', document.getElementById('fees-total').textContent],
+      ],
     };
-    links.sort((a, b) => rank(a) - rank(b));
-    const anchor = group.querySelector('a.admin-nav-link');
-    links.forEach((el) => group.insertBefore(el, anchor));
-  });
-  navLinks().forEach((el) => {
-    el.classList.toggle('hidden', !canView(el.dataset.view) || hidden.includes(el.dataset.view));
-  });
+  }
+  const table = document.querySelector(`#view-${name} table`);
+  const columns = [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+  const rows = [...table.querySelectorAll('tbody tr')]
+    // Skip hidden (filtered-out) rows and the colspan'd empty/loading placeholder.
+    .filter((tr) => !tr.hidden && tr.style.display !== 'none' && !tr.querySelector('td[colspan]'))
+    .map((tr) => [...tr.cells].map((cell) => cell.title || cell.textContent.trim()));
+  return { columns, rows };
 }
 
-function renderCustomizePanel() {
-  const panel = document.getElementById('admin-customize-panel');
-  const layout = loadLayout();
-  const links = navLinks().filter((el) => canView(el.dataset.view));
-  const rows = links.map((el) => {
-    const view = el.dataset.view;
-    const wrap = document.createElement('div');
-    wrap.className = 'admin-customize-row';
-    const label = document.createElement('label');
-    const box = document.createElement('input');
-    box.type = 'checkbox';
-    box.checked = !layout.hidden.includes(view);
-    box.addEventListener('change', () => {
-      layout.hidden = box.checked ? layout.hidden.filter((v) => v !== view) : [...layout.hidden, view];
-      saveLayout(layout);
-      applyLayout();
-    });
-    label.append(box, ` ${el.textContent}`);
-    const move = (dir) => {
-      const current = navLinks().map((l) => l.dataset.view);
-      const siblings = [...el.parentElement.querySelectorAll('.admin-nav-link[data-view]')].map((l) => l.dataset.view);
-      const i = siblings.indexOf(view);
-      const j = i + dir;
-      if (j < 0 || j >= siblings.length) return;
-      [siblings[i], siblings[j]] = [siblings[j], siblings[i]];
-      layout.order = [...siblings, ...current.filter((v) => !siblings.includes(v))];
-      saveLayout(layout);
-      applyLayout();
-      renderCustomizePanel();
-    };
-    const up = document.createElement('button');
-    up.type = 'button';
-    up.textContent = '↑';
-    up.addEventListener('click', () => move(-1));
-    const down = document.createElement('button');
-    down.type = 'button';
-    down.textContent = '↓';
-    down.addEventListener('click', () => move(1));
-    wrap.append(label, up, down);
-    return wrap;
-  });
-  const reset = document.createElement('button');
-  reset.type = 'button';
-  reset.className = 'admin-nav-customize';
-  reset.textContent = 'Reset to default';
-  reset.addEventListener('click', () => {
-    localStorage.removeItem(LAYOUT_KEY);
-    window.location.reload();
-  });
-  panel.replaceChildren(...rows, reset);
+function exportView(name) {
+  const { columns, rows } = viewTableData(name);
+  const date = new Date().toISOString().slice(0, 10);
+  downloadCsv(`arbiter-${name}-${date}.csv`, columns, rows);
 }
 
-document.getElementById('btn-admin-customize').addEventListener('click', (e) => {
-  const panel = document.getElementById('admin-customize-panel');
-  const open = panel.classList.toggle('hidden') === false;
-  e.currentTarget.setAttribute('aria-expanded', String(open));
-  if (open) renderCustomizePanel();
+EXPORTABLE_VIEWS.forEach((name) => {
+  const heading = document.querySelector(`#view-${name} h2`);
+  const button = document.createElement('button');
+  button.className = 'secondary small';
+  button.textContent = 'Export CSV';
+  button.addEventListener('click', () => exportView(name));
+  heading.append(button);
 });
-
-function firstVisibleView() {
-  return navLinks().find((el) => !el.classList.contains('hidden'))?.dataset.view || 'overview';
-}
-
-async function enterConsole() {
-  showShell();
-  await loadRole();
-  applyLayout();
-  selectView(canView('overview') && !loadLayout().hidden.includes('overview') ? 'overview' : firstVisibleView());
-}
 
 async function selectView(name) {
   // Fail closed: a role without access never triggers the view's fetches.

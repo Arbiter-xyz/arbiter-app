@@ -7,6 +7,9 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
+    <div class="accessibility-controls admin-accessibility-controls" aria-label="Accessibility controls">
+      <button type="button" class="secondary" data-font-decrease aria-label="Decrease text size">A−</button><output class="muted small" data-font-status>100% text size</output><button type="button" class="secondary" data-font-increase aria-label="Increase text size">A+</button><button type="button" class="secondary" data-contrast-toggle aria-pressed="false">High contrast</button>
+    </div>
     <section id="panel-login" class="panel" style="max-width: 420px; margin: 3rem auto">
       <h2>Admin console</h2>
       <p class="muted small">Paste the operator token (ADMIN_TOKEN on the backend) to continue.</p>
@@ -51,6 +54,11 @@
           <h3>Growth</h3>
           <a class="admin-nav-link" href="/leaderboard.html">Leaderboard →</a>
         </div>
+
+        <div class="admin-nav-group">
+          <h3>Display</h3>
+          <button id="density-toggle" class="admin-nav-link" aria-pressed="false">Compact tables</button>
+        </div>
       </nav>
 
       <main class="admin-content">
@@ -83,6 +91,16 @@
         <section id="view-transactions" class="admin-view">
           <h2>Transactions</h2>
           <div class="panel">
+            <div id="tx-filters" class="tx-filters">
+              <label class="muted small">From <input id="tx-filter-from" type="date" /></label>
+              <label class="muted small">To <input id="tx-filter-to" type="date" /></label>
+              <label class="muted small">Min USDC <input id="tx-filter-min" type="number" min="0" step="any" placeholder="0" /></label>
+              <label class="muted small">Max USDC <input id="tx-filter-max" type="number" min="0" step="any" placeholder="any" /></label>
+              <label class="muted small">Status <select id="tx-filter-status"><option value="">All</option></select></label>
+              <label class="muted small">Outcome <select id="tx-filter-outcome"><option value="">All</option></select></label>
+              <button id="tx-filter-reset" type="button">Reset</button>
+            </div>
+            <p id="tx-filter-summary" class="muted small">Filters apply only to the most recent 100 transactions loaded, not the full history.</p>
             <table class="leaderboard-table">
               <thead>
                 <tr><th>Question</th><th>Payer</th><th>Amount</th><th>Status</th><th>Outcome</th><th>Created</th></tr>
@@ -195,6 +213,7 @@
       </main>
     </div>
 
+    <script type="module" src="/src/a11y.js"></script>
     <script type="module" src="/src/admin.js"></script>
   </body>
 </html>

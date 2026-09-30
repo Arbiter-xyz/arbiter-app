@@ -4,6 +4,7 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
+  "compatibleBackendVersion": "1.0.0",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -12,8 +13,8 @@
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
     "e2e:report": "playwright show-report",
-    "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "visual": "playwright test -c visual/playwright.config.js",
+    "visual:update": "playwright test -c visual/playwright.config.js --update-snapshots"
   },
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "^1.7.5",
