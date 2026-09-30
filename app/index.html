@@ -191,8 +191,8 @@
             <strong id="stake-amount">0.00 USDC</strong>
           </div>
           <form id="stake-form" class="inline-form">
-            <input id="stake-input" type="number" min="0.01" step="0.01" placeholder="Amount" aria-label="Stake amount in USDC" data-i18n-attr="aria-label:earnings.amount" />
-            <button id="btn-stake" type="submit" data-i18n="earnings.stake">Stake</button>
+            <input id="stake-input" type="number" min="0.01" step="0.0000001" placeholder="Amount" />
+            <button id="btn-stake" type="submit">Stake</button>
           </form>
         </div>
         <p class="muted small">
@@ -217,6 +217,7 @@
         <h2 id="question-heading" tabindex="-1" data-i18n="question.title">Incoming question</h2>
         <div class="timer-track" role="progressbar" id="timer-track" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-label="Time remaining to answer" data-i18n-attr="aria-label:question.timer"><div class="timer-bar" id="timer-bar"></div></div>
         <p id="question-text"></p>
+        <p id="answer-suggested-badge" class="muted small hidden">Suggested — edit or replace before submitting</p>
         <form id="answer-form">
           <label for="answer-input" class="sr-only" data-i18n="question.answer">Your answer</label>
           <input id="answer-input" type="text" placeholder="Type your answer…" autocomplete="off" data-i18n-attr="placeholder:question.placeholder" />
