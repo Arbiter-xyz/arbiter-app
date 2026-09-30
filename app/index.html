@@ -33,6 +33,47 @@
         </p>
       </section>
 
+      <section id="panel-apikey" class="panel">
+        <h2>Get an API key — no wallet needed</h2>
+        <p class="muted small">
+          Pay with a card, get an API key, and call the oracle over HTTP. No wallet, no gas, no
+          testnet faucet — this is the wallet-free onramp.
+        </p>
+
+        <form id="apikey-checkout-form" class="inline-form">
+          <input id="apikey-email" type="email" placeholder="you@example.com" autocomplete="email" required />
+          <input id="apikey-amount" type="number" min="1" step="1" placeholder="Top-up (USDC)" required />
+          <button id="btn-apikey-checkout" type="submit">Continue to checkout</button>
+        </form>
+        <p class="muted small" id="apikey-checkout-status"></p>
+
+        <div id="apikey-reveal" class="hidden warning">
+          <h3>⚠ Your API key — shown once</h3>
+          <p>
+            This is the only time this key will ever be shown. Copy it somewhere safe now.
+            <strong>If you navigate away, this UI cannot recover it</strong> — there is no
+            "show key again" and no key reset in this version.
+          </p>
+          <div class="row">
+            <input id="apikey-reveal-input" type="text" readonly value="" />
+            <button id="btn-copy-apikey" class="secondary" type="button">Copy</button>
+          </div>
+          <p class="muted small" id="apikey-copy-status"></p>
+        </div>
+
+        <div id="apikey-account" class="hidden">
+          <h3>Account</h3>
+          <div class="row">
+            <div>
+              <div class="muted small">Credit balance</div>
+              <strong id="apikey-balance">—</strong>
+            </div>
+            <button id="btn-apikey-topup" class="secondary" type="button">Top up</button>
+          </div>
+          <p class="muted small" id="apikey-account-status"></p>
+        </div>
+      </section>
+
       <section id="panel-backup" class="panel hidden warning">
         <h2>⚠ Back up your quick-start key</h2>
         <p>
@@ -188,6 +229,6 @@
 
     <script type="module" src="/src/a11y.js"></script>
     <script type="module" src="/src/main.js"></script>
-    <script type="module" src="/src/whatsNew.js"></script>
+    <script type="module" src="/src/apikey.js"></script>
   </body>
 </html>

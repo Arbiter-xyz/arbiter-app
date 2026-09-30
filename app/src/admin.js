@@ -19,6 +19,13 @@ document.getElementById('density-toggle').addEventListener('click', () => {
   applyDensity(compact);
 });
 
+// Low-balance thresholds for the treasury / fiat-pool figures. These are the
+// numbers that page someone when they dip — the whole point of the admin
+// console's overview. Kept here (not inline in the HTML) so the renderers
+// below can flag them consistently.
+const LOW_BALANCE_USDC = 100;
+const LOW_BALANCE_XLM = 50;
+
 function truncateAddress(id) {
   if (!id || id.length <= 16 || !id.startsWith('G')) return id || '—';
   return `${id.slice(0, 6)}…${id.slice(-6)}`;
@@ -26,6 +33,16 @@ function truncateAddress(id) {
 
 function formatRatio(ratio) {
   return ratio === null || ratio === undefined ? '—' : `${(ratio * 100).toFixed(1)}%`;
+}
+
+// A balance figure that reads as "this is the number that pages someone"
+// when it's low, and as a routine figure otherwise. Uses the shared token
+// classes from #146 (balance / balance-low) rather than standalone values.
+function balanceFigure(value, { low = false, unit = 'USDC' } = {}) {
+  const el = document.createElement('span');
+  el.className = low ? 'balance balance-low' : 'balance';
+  el.textContent = `${value} ${unit}`;
+  return el;
 }
 
 // Every table below renders data that traces back to caller-controlled
@@ -253,31 +270,93 @@ async function renderTreasury() {
   const panel = document.getElementById('treasury-panel');
   const treasury = await fetchAdmin('/admin/treasury');
   if (!treasury.configured) {
-    panel.innerHTML = '<p class="muted small">PLATFORM_ADDRESS is not configured on the backend.</p>';
+    panel.replaceChildren();
+    const note = document.createElement('p');
+    note.className = 'muted small';
+    note.textContent = 'PLATFORM_ADDRESS is not configured on the backend.';
+    panel.appendChild(note);
     return;
   }
-  panel.innerHTML = `
-    <p>Platform address: <span title="${treasury.platformAddress}">${truncateAddress(treasury.platformAddress)}</span></p>
-    <p>USDC balance: <strong>${treasury.usdcBalance}</strong></p>
-    <p>XLM balance: <strong>${treasury.xlmBalance}</strong> (network fee reserve)</p>
-    <p class="muted small">Read live from Horizon — this is where resolve() sends its platform fee cut directly, so it's independently verifiable on-chain.</p>
-    ${
-      treasury.fiatPool
-        ? `<hr />
-    <p>Fiat pool address: <span title="${treasury.fiatPool.address}">${truncateAddress(treasury.fiatPool.address)}</span></p>
-    <p>USDC balance: <strong>${treasury.fiatPool.usdcBalance}</strong></p>
-    <p class="muted small">Backs every API-key/Stripe question (billing.js) — watch this for low-float 503s before customers hit them.</p>`
-        : '<hr /><p class="muted small">Fiat pool not configured (FIAT_POOL_ADDRESS unset) — the API-key onramp is disabled.</p>'
-    }
-  `;
+
+  const nodes = [];
+
+  const platformLine = document.createElement('p');
+  platformLine.append('Platform address: ');
+  const platformAddr = document.createElement('span');
+  platformAddr.title = treasury.platformAddress;
+  platformAddr.textContent = truncateAddress(treasury.platformAddress);
+  platformLine.appendChild(platformAddr);
+  nodes.push(platformLine);
+
+  const usdcLine = document.createElement('p');
+  usdcLine.append('USDC balance: ');
+  usdcLine.appendChild(
+    balanceFigure(treasury.usdcBalance, { low: Number(treasury.usdcBalance) < LOW_BALANCE_USDC }),
+  );
+  nodes.push(usdcLine);
+
+  const xlmLine = document.createElement('p');
+  xlmLine.append('XLM balance: ');
+  xlmLine.appendChild(
+    balanceFigure(treasury.xlmBalance, { low: Number(treasury.xlmBalance) < LOW_BALANCE_XLM, unit: 'XLM' }),
+  );
+  xlmLine.append(' (network fee reserve)');
+  nodes.push(xlmLine);
+
+  const horizonNote = document.createElement('p');
+  horizonNote.className = 'muted small';
+  horizonNote.textContent =
+    "Read live from Horizon — this is where resolve() sends its platform fee cut directly, so it's independently verifiable on-chain.";
+  nodes.push(horizonNote);
+
+  nodes.push(document.createElement('hr'));
+
+  if (treasury.fiatPool) {
+    const poolLine = document.createElement('p');
+    poolLine.append('Fiat pool address: ');
+    const poolAddr = document.createElement('span');
+    poolAddr.title = treasury.fiatPool.address;
+    poolAddr.textContent = truncateAddress(treasury.fiatPool.address);
+    poolLine.appendChild(poolAddr);
+    nodes.push(poolLine);
+
+    const poolUsdcLine = document.createElement('p');
+    poolUsdcLine.append('USDC balance: ');
+    poolUsdcLine.appendChild(
+      balanceFigure(treasury.fiatPool.usdcBalance, {
+        low: Number(treasury.fiatPool.usdcBalance) < LOW_BALANCE_USDC,
+      }),
+    );
+    nodes.push(poolUsdcLine);
+
+    const poolNote = document.createElement('p');
+    poolNote.className = 'muted small';
+    poolNote.textContent =
+      'Backs every API-key/Stripe question (billing.js) — watch this for low-float 503s before customers hit them.';
+    nodes.push(poolNote);
+  } else {
+    const noPool = document.createElement('p');
+    noPool.className = 'muted small';
+    noPool.textContent =
+      'Fiat pool not configured (FIAT_POOL_ADDRESS unset) — the API-key onramp is disabled.';
+    nodes.push(noPool);
+  }
+
+  panel.replaceChildren(...nodes);
 }
 
 function renderBlockchain() {
   const panel = document.getElementById('blockchain-panel');
-  panel.innerHTML = `
-    <p class="muted small">Static config this backend was started with — not a live query.</p>
-    <p>Backend: <span class="muted small">${BACKEND_URL}</span></p>
-  `;
+  const note = document.createElement('p');
+  note.className = 'muted small';
+  note.textContent = 'Static config this backend was started with — not a live query.';
+  const backendLine = document.createElement('p');
+  backendLine.append('Backend: ');
+  const backendVal = document.createElement('span');
+  backendVal.className = 'muted small';
+  backendVal.textContent = BACKEND_URL;
+  backendLine.appendChild(backendVal);
+  panel.replaceChildren(note, backendLine);
 }
 
 // Inline-SVG histogram of established workers' match ratios (10 buckets of
@@ -347,181 +426,6 @@ async function renderFraud() {
     tbody,
     flagged.map((w) =>
       row([
-        td(truncateAddress(w.workerId), { title: w.workerId }),
-        td(formatRatio(w.matchRatio)),
-        td(w.totalAnswers),
-        td(`${w.stake} USDC`),
-      ]),
-    ),
-  );
-}
+        td(truncateAddress(w.workerId), { title: w.worker
 
-async function renderKyc() {
-  const tbody = document.getElementById('kyc-body');
-  const { customers } = await fetchAdmin('/admin/kyc');
-  if (customers.length === 0) {
-    replaceRows(tbody, [emptyRow(4, 'No self-reported KYC status yet.')]);
-    return;
-  }
-  // status/tier are fully self-reported via POST /anchor/report by any
-  // session-holding caller — the single most attacker-reachable data this
-  // console renders. Never interpolated into HTML.
-  replaceRows(
-    tbody,
-    customers.map((c) =>
-      row([
-        td(truncateAddress(c.address), { title: c.address }),
-        td(c.status || '—'),
-        td(c.tier || '—'),
-        td(new Date(c.reportedAt).toLocaleString(), { className: 'muted small' }),
-      ]),
-    ),
-  );
-}
-
-async function renderPayouts() {
-  const tbody = document.getElementById('payouts-body');
-  const { payouts } = await fetchAdmin('/admin/payouts');
-  if (payouts.length === 0) {
-    replaceRows(tbody, [emptyRow(4, 'No self-reported payouts yet.')]);
-    return;
-  }
-  // amount/assetCode/status are also fully self-reported via POST
-  // /anchor/report — same reasoning as renderKyc above.
-  replaceRows(
-    tbody,
-    payouts.map((p) =>
-      row([
-        td(truncateAddress(p.address), { title: p.address }),
-        td(`${p.amount || '—'} ${p.assetCode || ''}`),
-        td(p.status || '—'),
-        td(new Date(p.reportedAt).toLocaleString(), { className: 'muted small' }),
-      ]),
-    ),
-  );
-}
-
-async function renderAuditLog() {
-  const tbody = document.getElementById('audit-body');
-  let entries;
-  try {
-    ({ entries } = await fetchAdmin('/admin/audit'));
-  } catch (err) {
-    if (err.message === 'unauthorized') throw err;
-    replaceRows(tbody, [emptyRow(5, 'Audit log unavailable — this backend does not expose GET /admin/audit yet.')]);
-    return;
-  }
-  if (!entries || entries.length === 0) {
-    replaceRows(tbody, [emptyRow(5, 'No admin actions recorded yet.')]);
-    return;
-  }
-  // Same textContent-only rendering as every other view — never innerHTML.
-  replaceRows(
-    tbody,
-    entries.map((e) =>
-      row([
-        td(e.at ? new Date(e.at).toLocaleString() : '—', { className: 'muted small' }),
-        td(e.actor || '—'),
-        td(e.action || '—'),
-        td(truncateAddress(e.target), { title: e.target || '' }),
-        td(e.detail === undefined ? '—' : typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail)),
-      ]),
-    ),
-  );
-}
-
-const VIEWS = {
-  overview: renderOverview,
-  transactions: renderTransactions,
-  workers: renderWorkers,
-  payers: renderPayers,
-  fees: renderFees,
-  treasury: renderTreasury,
-  kyc: renderKyc,
-  payouts: renderPayouts,
-  blockchain: renderBlockchain,
-  fraud: renderFraud,
-  audit: renderAuditLog,
-};
-
-// ---------------------------------------------------------------------
-// CSV export (#118). One shared exporter for every genuinely tabular view.
-// It reads the rendered table rather than re-fetching, so the file matches
-// exactly what the operator is looking at (including any active filter —
-// hidden rows are skipped). Cells prefer their `title` (the full, untruncated
-// address) over the displayed truncated text.
-//
-// Deliberately excluded: overview (summary tiles aggregating other views),
-// treasury and blockchain — those panels are innerHTML prose/key-value
-// blocks, not row data, so forcing them through a CSV would be misleading.
-// ---------------------------------------------------------------------
-
-const EXPORTABLE_VIEWS = ['transactions', 'workers', 'payers', 'fees', 'kyc', 'payouts', 'fraud'];
-
-function viewTableData(name) {
-  if (name === 'fees') {
-    return {
-      columns: ['Metric', 'Value'],
-      rows: [
-        ['Total resolved questions', document.getElementById('fees-count').textContent],
-        ['Total platform fee revenue (USDC)', document.getElementById('fees-total').textContent],
-      ],
-    };
-  }
-  const table = document.querySelector(`#view-${name} table`);
-  const columns = [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
-  const rows = [...table.querySelectorAll('tbody tr')]
-    // Skip hidden (filtered-out) rows and the colspan'd empty/loading placeholder.
-    .filter((tr) => !tr.hidden && tr.style.display !== 'none' && !tr.querySelector('td[colspan]'))
-    .map((tr) => [...tr.cells].map((cell) => cell.title || cell.textContent.trim()));
-  return { columns, rows };
-}
-
-function exportView(name) {
-  const { columns, rows } = viewTableData(name);
-  const date = new Date().toISOString().slice(0, 10);
-  downloadCsv(`arbiter-${name}-${date}.csv`, columns, rows);
-}
-
-EXPORTABLE_VIEWS.forEach((name) => {
-  const heading = document.querySelector(`#view-${name} h2`);
-  const button = document.createElement('button');
-  button.className = 'secondary small';
-  button.textContent = 'Export CSV';
-  button.addEventListener('click', () => exportView(name));
-  heading.append(button);
-});
-
-async function selectView(name) {
-  // Fail closed: a role without access never triggers the view's fetches.
-  if (!canView(name)) return;
-  document.querySelectorAll('.admin-nav-link[data-view]').forEach((el) => el.classList.toggle('active', el.dataset.view === name));
-  document.querySelectorAll('.admin-view').forEach((el) => el.classList.toggle('active', el.id === `view-${name}`));
-
-  if (!loaded.has(name)) {
-    loaded.add(name);
-    try {
-      await VIEWS[name]();
-    } catch (err) {
-      if (err.message !== 'unauthorized') console.error(`failed to load ${name}:`, err);
-      loaded.delete(name);
-    }
-  }
-}
-
-document.querySelectorAll('.admin-nav-link[data-view]').forEach((el) => {
-  el.addEventListener('click', () => selectView(el.dataset.view));
-});
-
-document.getElementById('btn-admin-login').addEventListener('click', () => {
-  const token = document.getElementById('admin-token-input').value.trim();
-  if (!token) return;
-  localStorage.setItem(TOKEN_KEY, token);
-  enterConsole();
-});
-
-if (localStorage.getItem(TOKEN_KEY)) {
-  enterConsole();
-} else {
-  showLogin();
-}
+/* … truncated 2897 chars — edit only what you need near the top … */
