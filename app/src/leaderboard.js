@@ -1,4 +1,4 @@
-import { truncateAddress, formatRatio, workerProfileUrl } from './format.js';
+import { truncateAddress, formatRatio } from './format.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 

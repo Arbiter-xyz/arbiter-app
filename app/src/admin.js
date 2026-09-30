@@ -1,5 +1,4 @@
-import { filterTransactions, distinctValues } from './txFilters.js';
-import { downloadCsv } from './csv.js';
+import { truncateAddress, formatRatio } from './format.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';
@@ -25,25 +24,6 @@ document.getElementById('density-toggle').addEventListener('click', () => {
 // below can flag them consistently.
 const LOW_BALANCE_USDC = 100;
 const LOW_BALANCE_XLM = 50;
-
-function truncateAddress(id) {
-  if (!id || id.length <= 16 || !id.startsWith('G')) return id || '—';
-  return `${id.slice(0, 6)}…${id.slice(-6)}`;
-}
-
-function formatRatio(ratio) {
-  return ratio === null || ratio === undefined ? '—' : `${(ratio * 100).toFixed(1)}%`;
-}
-
-// A balance figure that reads as "this is the number that pages someone"
-// when it's low, and as a routine figure otherwise. Uses the shared token
-// classes from #146 (balance / balance-low) rather than standalone values.
-function balanceFigure(value, { low = false, unit = 'USDC' } = {}) {
-  const el = document.createElement('span');
-  el.className = low ? 'balance balance-low' : 'balance';
-  el.textContent = `${value} ${unit}`;
-  return el;
-}
 
 // Every table below renders data that traces back to caller-controlled
 // input somewhere upstream — a non-address workerId (no auth required,
