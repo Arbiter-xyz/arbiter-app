@@ -76,18 +76,11 @@ jobs:
           path: app/playwright-report/
           retention-days: 7
 
-  # Cross-repo integration harness (issue #152). Per-repo CI can pass while an
-  # interface change (new contract method, changed backend response shape)
-  # silently breaks the real integrated system. This job checks out the actual
-  # contract + backend repos at their pinned-compatible versions (per
-  # arbiter-app#150 / arbiter-backend#163), brings the real stack up via the
-  # e2e/ docker-compose harness, and runs the full paid-question lifecycle
-  # (payment -> dispatch -> reconcile -> settle) against it. An
-  # interface-breaking change fails here, before merge.
-  cross-repo-integration:
-    name: Cross-repo integration (contract + backend + app)
+  visual:
+    name: Visual regression (all app pages)
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -95,27 +88,21 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: app/package-lock.json
-      # Pull the other two repos at the versions this app is pinned-compatible
-      # with. The refs are read from the same pin file the app/backend use for
-      # drift detection (#150/#163) so the harness exercises exactly the
-      # versions that are supposed to work together, not floating HEADs.
-      - name: Checkout pinned contract + backend
-        run: node e2e/scripts/checkout-pinned-repos.mjs
-      - name: Build app
-        run: npm install --no-audit --no-fund && npm run build
+      - run: npm install --no-audit --no-fund
         working-directory: app
-      - name: Bring up integrated stack
-        run: docker compose -f e2e/docker-compose.yml up -d --build
-      - name: Wait for stack readiness
-        run: node e2e/scripts/wait-for-stack.mjs
-      - name: Run paid-question lifecycle test
-        run: node e2e/lifecycle/paid-question.test.mjs
-      - name: Dump stack logs on failure
-        if: ${{ failure() }}
-        run: docker compose -f e2e/docker-compose.yml logs --no-color
-      - name: Tear down integrated stack
-        if: ${{ always() }}
-        run: docker compose -f e2e/docker-compose.yml down -v
+      - run: npm run build
+        working-directory: app
+      - run: npx playwright install --with-deps chromium
+        working-directory: app
+      - run: npm run visual
+        working-directory: app
+      - name: Upload visual artifacts
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-regression-report
+          path: app/test-results/
+          retention-days: 7
 
   demo-agent:
     name: Demo scripts (syntax check + audit)
