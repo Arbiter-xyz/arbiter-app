@@ -142,12 +142,12 @@
           <div class="muted small">Your track record</div>
           <p id="track-record-summary">No answers yet — this fills in once you start answering.</p>
         </div>
-        <div class="earnings-history">
-          <div class="row"><div><div class="muted small">Local tax records</div><p id="earnings-history-total" class="muted small"></p></div><button id="btn-export-earnings" class="secondary" type="button">Export CSV</button></div>
-          <p class="muted small">Browser-local records only. Add payouts and withdrawals you want included; this cannot recover activity from another browser or a cleared profile.</p>
-          <form id="earnings-history-form" class="earnings-history-form">
-            <input name="date" type="date" aria-label="Date" /><select name="type" aria-label="Record type"><option value="payout">Resolved payout</option><option value="withdrawal">Withdrawal</option></select><input name="amount" type="number" min="0.0000001" step="0.0000001" placeholder="USDC amount" aria-label="USDC amount" required /><input name="question" type="text" placeholder="Question reference" aria-label="Question reference" /><input name="transaction" type="text" placeholder="Transaction hash" aria-label="Transaction hash" /><button type="submit">Add record</button>
-          </form>
+
+        <div class="referral" id="referral">
+          <div class="muted small">Invite other workers</div>
+          <button id="btn-referral" class="secondary" type="button" disabled>Get referral link</button>
+          <input id="referral-link" class="hidden" type="text" readonly />
+          <p class="muted small" id="referral-stats"></p>
         </div>
       </section>
 
@@ -155,6 +155,7 @@
         <h2 id="question-heading">Incoming question</h2>
         <div class="timer-track"><div class="timer-bar" id="timer-bar"></div></div>
         <p id="question-text"></p>
+        <img id="question-image" class="question-image hidden" alt="" />
         <form id="answer-form">
           <input id="answer-input" type="text" placeholder="Type your answer…" autocomplete="off" />
           <button id="btn-answer" type="submit">Submit answer</button>
@@ -168,6 +169,7 @@
     </main>
 
     <script type="module" src="/src/main.js"></script>
-    <script type="module" src="/src/earningsHistory.js"></script>
+    <script type="module" src="/src/referral.js"></script>
+    <script type="module" src="/src/attachments.js"></script>
   </body>
 </html>

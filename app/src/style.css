@@ -436,39 +436,14 @@ fieldset label {
   border-bottom: 1px dashed var(--border);
 }
 
-.starred-filter {
-  margin: 0.75rem 0 0.5rem;
+.question-image {
+  display: block;
+  max-width: 100%;
+  max-height: 24rem;
+  margin: 0.5rem 0;
+  border-radius: 6px;
 }
-.question-item .star-toggle {
-  background: transparent;
-  color: #d97706;
-  border: none;
-  padding: 0 0.4rem 0 0;
-  font-size: 1.1rem;
-  line-height: 1;
-}
-.question-item .star-toggle + div {
-  flex: 1;
-}
-.tx-filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.75rem;
-}
-.tx-filters label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-.tx-filters input,
-.tx-filters select {
-  padding: 0.35rem 0.5rem;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--fg);
-}
-.tx-filters input[type='number'] {
-  width: 7rem;
+
+.referral {
+  margin-top: 0.75rem;
 }
