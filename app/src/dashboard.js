@@ -254,33 +254,92 @@ function renderQuestionItem(q) {
   row.append(star, left, badge);
   li.appendChild(row);
 
-  // Surface the real, load-bearing guarantee for still-pending questions:
-  // refund_timeout() is permissionless (no require_auth()), so anyone can
-  // force a refund once the timeout window elapses — even if Arbiter's
-  // backend disappears. Stated plainly, not oversold.
-  if (q.status !== 'settled') {
-    const safety = document.createElement('p');
-    safety.className = 'q-safety muted small';
-    safety.textContent = refundSafetyLine(q);
-    li.appendChild(safety);
+  // Issue #32: a question still inside its undo window gets a live
+  // countdown and a Cancel button, mirroring the worker console's
+  // setInterval-driven timer-bar pattern (main.js's startCountdown()/
+  // el.timerBar) rather than inventing a second countdown UI.
+  if (q.status !== 'settled' && Number.isFinite(q.cancelableUntil) && q.cancelableUntil > Date.now()) {
+    li.appendChild(renderCancelControls(q));
   }
 
   return li;
 }
 
-/** Plain-language statement of the on-chain refund guarantee. The contract's
- * refund_timeout() is permissionless, so this is checkable against real
- * behavior — not marketing copy. Kept as a single helper so future guarantees
- * (pause switch, threshold custody) can be appended without a rewrite. */
-function refundSafetyLine(q) {
-  const base = 'Your funds are recoverable even if Arbiter goes down: after the refund timeout window, anyone can trigger an automatic refund on-chain — no action from Arbiter required.';
-  if (q.refundAvailableAt) {
-    const when = new Date(q.refundAvailableAt);
-    if (!Number.isNaN(when.getTime())) {
-      return `${base} Refund available from ${when.toLocaleString()}.`;
+/** Renders the countdown + Cancel button for a question still inside its
+ * undo window (`q.cancelableUntil`, an epoch-ms timestamp assumed to be
+ * added to the GET /payers/:address/questions response for an in-progress
+ * question — see issue #32). Wired to the assumed
+ * POST /payers/:address/questions/:questionId/cancel endpoint, reusing the
+ * existing payer session token from ensureSession(). */
+function renderCancelControls(q) {
+  const wrap = document.createElement('div');
+  wrap.className = 'cancel-controls';
+
+  const track = document.createElement('div');
+  track.className = 'timer-track';
+  const bar = document.createElement('div');
+  bar.className = 'timer-bar';
+  track.appendChild(bar);
+
+  const label = document.createElement('p');
+  label.className = 'muted small';
+
+  const btnCancel = document.createElement('button');
+  btnCancel.type = 'button';
+  btnCancel.className = 'secondary';
+  btnCancel.textContent = 'Cancel';
+
+  wrap.append(track, label, btnCancel);
+
+  const total = q.cancelableUntil - Date.now();
+  let handle = null;
+
+  function tick() {
+    const remainingMs = q.cancelableUntil - Date.now();
+    if (remainingMs <= 0) {
+      clearInterval(handle);
+      wrap.remove();
+      return;
     }
+    const pct = Math.max(0, Math.min(100, (remainingMs / total) * 100));
+    bar.style.width = `${pct}%`;
+    label.textContent = `You can cancel this for ${Math.ceil(remainingMs / 1000)}s`;
   }
-  return base;
+  tick();
+  handle = setInterval(tick, 250);
+
+  btnCancel.addEventListener('click', async () => {
+    btnCancel.disabled = true;
+    try {
+      const token = await ensureSession();
+      const res = await fetch(
+        `${BACKEND_URL}/payers/${state.address}/questions/${encodeURIComponent(q.questionId)}/cancel`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        }
+      );
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `unexpected status ${res.status}`);
+      clearInterval(handle);
+      wrap.remove();
+      const li = wrap.closest('.question-item');
+      if (li) {
+        const badge = li.querySelector('.badge');
+        if (badge) {
+          badge.className = 'badge badge-refunded';
+          badge.textContent = 'cancelled';
+        }
+      }
+      log(`Cancelled question ${q.questionId}.`);
+    } catch (err) {
+      clearInterval(handle);
+      btnCancel.disabled = false;
+      log(`Could not cancel question ${q.questionId}: ${err.message}`);
+    }
+  });
+
+  return wrap;
 }
 
 function describeStatus(q) {
