@@ -39,6 +39,34 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
         working-directory: app
 
+  a11y:
+    name: Accessibility (axe-core, WCAG 2.1 AA, LTR + RTL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm install --no-audit --no-fund
+        working-directory: app
+      - run: npm run build
+        working-directory: app
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: app
+      # Serve the built app and the static landing page, then fail the build
+      # on any new WCAG 2.1 A/AA violation (issue #5).
+      - name: Run axe-core against every page
+        working-directory: app
+        run: |
+          npx vite preview --port 4173 --strictPort &
+          npx vite ../landing --port 4174 --strictPort &
+          for i in $(seq 1 30); do curl -sf http://localhost:4173 >/dev/null && curl -sf http://localhost:4174 >/dev/null && break; sleep 2; done
+          npm run a11y -- http://localhost:4173 http://localhost:4174
+
   e2e:
     name: E2E (Playwright quick-start wallet flow)
     runs-on: ubuntu-latest

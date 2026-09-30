@@ -21,7 +21,9 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         dashboard: resolve(__dirname, 'dashboard.html'),
         leaderboard: resolve(__dirname, 'leaderboard.html'),
+        worker: resolve(__dirname, 'worker.html'),
         admin: resolve(__dirname, 'admin.html'),
+        demo: resolve(__dirname, 'demo.html'),
       },
       output: {
         // Real per-adapter code splitting: each wallet-adapter SDK is loaded

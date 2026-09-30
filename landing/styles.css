@@ -73,7 +73,7 @@ code { font-family: var(--font-mono); }
 .skip-link {
   position: absolute;
   top: -100%;
-  left: var(--space-3);
+  inset-inline-start: var(--space-3);
   background: var(--accent-btn);
   color: #fff;
   padding: var(--space-2) var(--space-4);
@@ -412,7 +412,7 @@ pre:focus-visible {
 .dot-yellow { background: #ffbd2e; }
 .dot-green { background: #27c93f; }
 .terminal-title {
-  margin-left: var(--space-2);
+  margin-inline-start: var(--space-2);
   color: var(--text-muted);
   font-size: 0.8rem;
   font-family: var(--font-mono);
@@ -426,7 +426,7 @@ pre:focus-visible {
   flex: 1 1 auto;
 }
 .copy-btn {
-  margin-left: auto;
+  margin-inline-start: auto;
   flex-shrink: 0;
   font-size: 0.75rem;
   font-weight: 600;
@@ -623,13 +623,13 @@ pre:focus-visible {
 }
 .dev-list li {
   position: relative;
-  padding-left: var(--space-4);
+  padding-inline-start: var(--space-4);
   color: var(--text-muted);
 }
 .dev-list li::before {
   content: "";
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0.55em;
   width: 6px;
   height: 6px;
@@ -693,13 +693,13 @@ pre:focus-visible {
 .price-card li {
   color: var(--text-muted);
   font-size: 0.9rem;
-  padding-left: var(--space-4);
+  padding-inline-start: var(--space-4);
   position: relative;
 }
 .price-card li::before {
   content: "";
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0.5em;
   width: 6px;
   height: 6px;
