@@ -100,9 +100,9 @@ async function reportToArbiter({ address, arbiterSessionToken, transaction }) {
  * Wires up a "Withdraw to bank" button. Hides it entirely if the backend
  * has no anchor configured. `deps` needs: button element, status element,
  * getAddress()/getWallet() (same shape main.js already uses for the
- * on-chain withdraw button), getArbiterSessionToken() (from ensureSession()
- * — reused here purely to authenticate the /anchor/report call, not the
- * anchor itself), networkPassphrase, and assetCode.
+ * on-chain withdraw button), getArbiterSessionToken() (from the shared
+ * session module — reused here purely to authenticate the /anchor/report
+ * call, not the anchor itself), networkPassphrase, and assetCode.
  */
 export function initBankWithdraw({ button, status, getAddress, getWallet, getArbiterSessionToken, networkPassphrase, assetCode }) {
   let anchorConfigPromise = null;

@@ -6,3 +6,10 @@ node_modules/
 *.log
 .DS_Store
 dist/
+
+# Cross-repo integration harness (#152)
+# Local checkouts of the sibling repos pulled at their pinned-compatible versions
+e2e/repos/
+# Runtime artifacts produced by the integrated stack (volumes, logs, state)
+e2e/.runtime/
+e2e/**/node_modules/

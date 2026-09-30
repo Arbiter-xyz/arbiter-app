@@ -9,36 +9,23 @@ import {
   HotWalletModule,
   LedgerModule,
 } from '@creit.tech/stellar-wallets-kit';
-import { createOrLoadLocalWallet, getLocalWalletSecret } from './localWallet.js';
+import { openSecureLocalWallet } from './localWallet.js';
+import { initI18n, t } from './i18n.js';
+import { initA11y } from './a11y.js';
 import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
+import { renderFencedCode } from './codeBlocks.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
 const USDC_ASSET_CODE = import.meta.env.VITE_USDC_ASSET_CODE || 'USDC';
 const USDC_ASSET_ISSUER = import.meta.env.VITE_USDC_ASSET_ISSUER || 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 
-// Hand-picked, not allowAllModules(): explicit about which wallets we
-// support (matching the original spec's list) rather than automatically
-// inheriting whatever the kit adds in a future version — including
-// hardware-wallet adapters (Trezor/Ledger) that pull in a large, more
-// security-sensitive dependency tree we have no use for. See the README
-// for the concrete CVE this sidesteps.
-//
-// LedgerModule is the one deliberate exception (issue #75): it is added
-// explicitly by name rather than via allowAllModules(), so the Trezor
-// adapters and their protobufjs dependency tree stay excluded. Ledger's
-// browser integration is WebUSB/WebHID against the device directly (the
-// kit's Ledger module), not a deep link into the Ledger Live companion
-// app. Before merging, re-run round 5's audit process: grep the built
-// bundle for `trezor`/`protobuf` and run `npm audit --audit-level=high`,
-// confirming the critical/high count stays at zero.
-const kit = new StellarWalletsKit({
-  network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule()],
-});
+// See wallet.js for the module list and the connect/quick-start button
+// wiring shared with dashboard.js (issue #19).
+const kit = createWalletKit();
 
 const el = {
   connect: document.getElementById('panel-connect'),
@@ -52,6 +39,7 @@ const el = {
   backupSecret: document.getElementById('backup-secret'),
   btnRevealSecret: document.getElementById('btn-reveal-secret'),
   btnCopySecret: document.getElementById('btn-copy-secret'),
+  btnBackupDone: document.getElementById('btn-backup-done'),
   backupCopyStatus: document.getElementById('backup-copy-status'),
   btnOnboard: document.getElementById('btn-onboard'),
   btnToggle: document.getElementById('btn-toggle'),
@@ -62,12 +50,15 @@ const el = {
   timerBar: document.getElementById('timer-bar'),
   answerForm: document.getElementById('answer-form'),
   answerInput: document.getElementById('answer-input'),
+  answerSuggestedBadge: document.getElementById('answer-suggested-badge'),
   btnAnswer: document.getElementById('btn-answer'),
   owedAmount: document.getElementById('owed-amount'),
   stakeAmount: document.getElementById('stake-amount'),
   trackRecordSummary: document.getElementById('track-record-summary'),
   btnEnablePush: document.getElementById('btn-enable-push'),
   pushStatus: document.getElementById('push-status'),
+  digestSelect: document.getElementById('digest-select'),
+  digestStatus: document.getElementById('digest-status'),
   btnWithdraw: document.getElementById('btn-withdraw'),
   btnWithdrawBank: document.getElementById('btn-withdraw-bank'),
   bankWithdrawStatus: document.getElementById('bank-withdraw-status'),
@@ -76,27 +67,108 @@ const el = {
   stakeInput: document.getElementById('stake-input'),
   btnStake: document.getElementById('btn-stake'),
   log: document.getElementById('log'),
+  // Social-recovery panel: no matching markup exists in index.html yet, so
+  // these are always null today — see the guard comment further down.
+  btnSetupRecovery: document.getElementById('btn-setup-recovery'),
+  btnRecoverWallet: document.getElementById('btn-recover-wallet'),
+  recoveryShares: document.getElementById('recovery-shares'),
+  recoveryStatus: document.getElementById('recovery-status'),
+  recoveryThreshold: document.getElementById('recovery-threshold'),
+  recoveryShareCount: document.getElementById('recovery-share-count'),
+  recoveryInput: document.getElementById('recovery-input'),
 };
 
+initI18n();
+initA11y();
+
 const state = {
+  localWallet: null,
   // Either the StellarWalletsKit instance or a local quick-start wallet —
   // both expose the same {getAddress, signTransaction} shape, so nothing
   // downstream needs to know which one is active.
   activeWallet: null,
   address: null,
+  get identity() {
+    return this.identities.get(this.address) || null;
+  },
+  get activeWallet() {
+    return this.identity?.wallet || null;
+  },
+  get sessionToken() {
+    return this.identity?.sessionToken || null;
+  },
+  get sessionExpiresAt() {
+    return this.identity?.sessionExpiresAt || 0;
+  },
   online: false,
   eventSource: null,
   currentQuestion: null,
   countdownHandle: null,
   sessionToken: null,
   sessionExpiresAt: 0,
+  lastDraft: null,
 };
 
+const notify = createNotificationCenter({ mount: document.querySelector('header'), storageKey: 'arbiter-worker-notifications' });
+
+/** Activity-log entry; also mirrored into the header bell (issue #133). */
 function log(message) {
   const li = document.createElement('li');
   const time = new Date().toLocaleTimeString();
   li.textContent = `[${time}] ${message}`;
   el.log.prepend(li);
+  notify(message);
+}
+
+// --- Backend API version check (issue #150) -------------------------------
+//
+// arbiter-backend and this app are independently deployed repos, so a
+// backend API change would otherwise only surface as a broken request
+// mid-flow. On load we read the version the backend reports at GET /health
+// and, on mismatch, show a visible-but-non-blocking banner. HTTP APIs are
+// forgiving, so this informs rather than gates: a mismatch never blocks
+// app usage.
+
+function showVersionMismatchNotice(reportedVersion) {
+  const banner = document.createElement('div');
+  banner.id = 'backend-version-notice';
+  banner.setAttribute('role', 'status');
+  banner.style.cssText = [
+    'position:fixed',
+    'top:0',
+    'left:0',
+    'right:0',
+    'z-index:9999',
+    'padding:8px 12px',
+    'background:#7a1f1f',
+    'color:#fff',
+    'font:13px/1.4 system-ui,sans-serif',
+    'text-align:center',
+  ].join(';');
+  banner.textContent =
+    `Backend API version mismatch: this app expects v${COMPATIBLE_BACKEND_VERSION}, ` +
+    `but the backend reports v${reportedVersion}. Some features may not work as expected.`;
+  document.body.prepend(banner);
+}
+
+async function checkBackendVersion() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/health`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const reportedVersion = data.apiVersion ?? data.version;
+    if (reportedVersion == null) {
+      // Backend predates the /health version field; nothing to compare.
+      return;
+    }
+    if (String(reportedVersion) !== String(COMPATIBLE_BACKEND_VERSION)) {
+      showVersionMismatchNotice(reportedVersion);
+      log(`Backend API version mismatch: expected v${COMPATIBLE_BACKEND_VERSION}, got v${reportedVersion}`);
+    }
+  } catch (err) {
+    // Backend unreachable or malformed: don't block or alarm the user here;
+    // the existing request paths already surface connectivity problems.
+  }
 }
 
 function showPanel(name) {
@@ -139,7 +211,17 @@ function renderCategoryDemand(demand) {
     // Scarcity = demand: fewer online workers means a taller bar.
     const scarcity = 1 - count / max;
     bar.style.width = `${Math.round(scarcity * 100)}%`;
-    bar.title = `${count} worker${count === 1 ? '' : 's'} online now`;
+    bar.title = t('demand.workers', { n: count });
+    // Non-colour cue (WCAG 1.4.1): a text label + border style per level,
+    // so urgency is readable without perceiving the bar's colour or width.
+    const level = scarcity >= 0.66 ? 'high' : scarcity >= 0.33 ? 'medium' : 'low';
+    const tag = bar.parentElement.querySelector('.demand-level');
+    if (tag) {
+      tag.hidden = false;
+      tag.dataset.level = level;
+      tag.textContent = t(`demand.${level}`);
+      tag.title = bar.title;
+    }
   }
 }
 
@@ -147,6 +229,8 @@ function clearCategoryDemand() {
   for (const bar of el.categoryPicker.querySelectorAll('.category-demand-bar')) {
     bar.style.width = '0%';
     bar.removeAttribute('title');
+    const tag = bar.parentElement.querySelector('.demand-level');
+    if (tag) tag.hidden = true;
   }
 }
 
@@ -169,45 +253,23 @@ function startCategoryDemandPolling() {
   demandRefreshHandle = setInterval(refreshCategoryDemand, DEMAND_REFRESH_MS);
 }
 
+startCategoryDemandPolling();
+
 // --- Wallet connect (extension) or quick start (local, non-custodial) -----
-
-// A user clicking both connect options in quick succession could otherwise
-// let whichever resolves last silently overwrite the other's in-flight
-// state.activeWallet/state.address — guard against that race by disabling
-// both the instant either one starts, and only re-enabling on failure.
-function setConnectButtonsBusy(busy) {
-  el.btnConnect.disabled = busy;
-  el.btnQuickStart.disabled = busy;
-}
-
-el.btnConnect.addEventListener('click', async () => {
-  setConnectButtonsBusy(true);
-  try {
-    await kit.openModal({
-      onWalletSelected: async (option) => {
-        kit.setWallet(option.id);
-        const { address } = await kit.getAddress();
-        el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
-        await activateWallet(kit, address);
-      },
-      onClosed: (err) => {
-        setConnectButtonsBusy(false);
-        if (err) log(`Wallet selection closed: ${err.message}`);
-      },
-    });
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(`Wallet connect failed: ${err.message}`);
-  }
-});
+// Module list + button wiring live in wallet.js, shared with dashboard.js
+// (issue #19). The one behavioral difference between the two pages — this
+// console shows the backup/reveal panel only for the local quick-start
+// wallet — is handled via the `quickStart` flag onActivated receives,
+// rather than a special case inside the shared helper.
 
 el.btnQuickStart.addEventListener('click', async () => {
   setConnectButtonsBusy(true);
   try {
-    const localWallet = createOrLoadLocalWallet();
+    const localWallet = await openSecureLocalWallet();
+    state.localWallet = localWallet;
     const { address } = await localWallet.getAddress();
     log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
-    showBackupPanel();
+    if (localWallet.state === 'pending-backup') showBackupPanel();
     await activateWallet(localWallet, address);
   } catch (err) {
     setConnectButtonsBusy(false);
@@ -222,15 +284,27 @@ function showBackupPanel() {
   el.backupCopyStatus.textContent = '';
 }
 
-el.btnRevealSecret.addEventListener('click', () => {
+el.btnRevealSecret.addEventListener('click', async () => {
   const revealed = el.backupSecret.type === 'password';
-  if (revealed) el.backupSecret.value = getLocalWalletSecret() || '';
+  if (revealed) el.backupSecret.value = (await state.localWallet?.exportSecret()) || '';
   el.backupSecret.type = revealed ? 'text' : 'password';
-  el.btnRevealSecret.textContent = revealed ? 'Hide' : 'Reveal';
+  el.btnRevealSecret.textContent = t(revealed ? 'backup.hide' : 'backup.reveal');
+  el.btnRevealSecret.setAttribute('aria-pressed', String(revealed));
+});
+
+// Confirming the backup converts the key into a non-extractable WebCrypto
+// key (issue #7): after this, no script on the page — including an XSS
+// payload — can read the secret again, only request signatures.
+el.btnBackupDone.addEventListener('click', async () => {
+  if (!state.localWallet) return;
+  await state.localWallet.lockExport();
+  el.backupSecret.value = '';
+  el.backup.classList.add('hidden');
+  log('Backup confirmed — the quick-start key is now locked in this browser and can no longer be exported.');
 });
 
 el.btnCopySecret.addEventListener('click', async () => {
-  const secret = getLocalWalletSecret();
+  const secret = await state.localWallet?.exportSecret();
   if (!secret) return;
   try {
     await navigator.clipboard.writeText(secret);

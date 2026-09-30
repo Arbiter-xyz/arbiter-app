@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arbiter — Live Demo Feed</title>
+    <link rel="stylesheet" href="/src/style.css" />
+    <style>
+      .feed { list-style: none; padding: 0; margin: 1rem 0 0; max-height: 60vh; overflow-y: auto; }
+      .feed li { padding: 0.4rem 0; border-bottom: 1px solid rgba(128, 128, 128, 0.2); }
+      .feed time { opacity: 0.6; font-size: 0.8rem; margin-right: 0.5rem; }
+      .ev-kind { font-weight: 600; margin-right: 0.4rem; }
+      .ev-dispatch .ev-kind { color: #3b7ddd; }
+      .ev-answer .ev-kind { color: #d9a520; }
+      .ev-settle .ev-kind { color: #2e9e5b; }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>Arbiter <span class="tag">live demo feed</span></h1>
+        <p class="sub">
+          Watch a running demo (backend + worker-sim.js + ask.js) as it happens. Built on the admin
+          API, so it needs the admin token. <a href="/admin.html">Admin console →</a>
+        </p>
+      </header>
+
+      <section id="panel-login" class="panel hidden">
+        <form id="demo-login" class="row">
+          <input id="demo-token" type="password" placeholder="Admin token" required />
+          <button type="submit">Connect</button>
+        </form>
+        <p id="demo-login-status" class="muted small"></p>
+      </section>
+
+      <section id="demo-shell" class="panel hidden">
+        <div class="row">
+          <div id="demo-status" class="muted small">Connecting…</div>
+          <button id="btn-clear" class="secondary">Clear</button>
+        </div>
+        <ul id="demo-feed" class="feed" aria-live="polite"></ul>
+      </section>
+    </main>
+
+    <script type="module" src="/src/demo.js"></script>
+  </body>
+</html>

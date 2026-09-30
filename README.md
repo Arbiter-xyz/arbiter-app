@@ -15,13 +15,86 @@ reported API version rather than kept in lockstep by hand (see #150).
 Pre-split history and the round-by-round build narrative live in the
 archived [`arbiter`](https://github.com/rudeus112266/arbiter) repo.
 
+## Backend compatibility
+
+This app and `arbiter-backend` are deployed independently, so they can
+drift out of sync. To catch that early, the app declares the backend API
+version it was built against as `COMPATIBLE_BACKEND_VERSION` (in
+`app/package.json`), and on load fetches the backend's `GET /health`
+(via `VITE_BACKEND_URL`) to read the version string it reports.
+
+- **Match** — nothing happens; the app runs normally.
+- **Mismatch** — the app shows a visible, non-blocking banner naming both
+  versions. It does **not** block or gate usage: HTTP APIs are forgiving,
+  and most mismatches won't actually break anything, so the notice only
+  informs (developer or end user) that the two are out of sync.
+
+This mirrors `arbiter-backend`'s own pin against `arbiter-contract`: the
+version is declared in one place and checked at runtime, rather than
+assumed to stay in lockstep by hand.
+
+## Cross-repo integration harness
+
+Each of the three split repos (contract/backend/app) has its own CI, but
+nothing exercises them *together* — an interface change (a new contract
+method, a changed backend response shape) can pass all three repos' CI
+independently while silently breaking the real integrated system. The
+`e2e/` directory is the home for a harness that closes that gap from the
+consumer's side.
+
+`e2e/docker-compose.integration.yml` deploys the real stack together:
+
+- **contract** — `arbiter-contract` checked out at the version pinned in
+  `e2e/versions.env` (`CONTRACT_REF`), built and deployed to a local
+  Soroban sandbox.
+- **backend** — `arbiter-backend` checked out at its pinned-compatible
+  version (`BACKEND_REF`, per arbiter-backend#163), pointed at the
+  deployed contract and reporting its API version on `GET /health`.
+- **app** — this repo's `app/` built against the backend, with
+  `COMPATIBLE_BACKEND_VERSION` (per #150) asserted against the backend's
+  reported version before the lifecycle test runs.
+
+`e2e/integration/lifecycle.test.js` runs one full paid-question lifecycle
+against that real integrated stack — **payment → dispatch → reconcile →
+settle** — so an interface-breaking change fails loudly here rather than
+at deploy time. It is wired into this repo's CI (`.github/workflows/`),
+which brings up the compose stack, waits for the backend health check,
+and runs the lifecycle test.
+
+## Frontend surfaces
+
+Today the repo ships five disconnected entry points, each requiring its
+own wallet connection with no shared session between them:
+
+- `landing/` — static marketing site + live "try it now" sandbox widget
+- `app/index.html` — worker console
+- `app/dashboard.html` — buyer dashboard
+- `app/leaderboard.html` — leaderboard
+- `app/admin.html` — bearer-token-gated read-only ops console
+
+A wallet holder who both asks and answers questions reconnects twice, in
+two different tabs, because nothing carries that connection across pages
+(`ensureSession()` is duplicated near-identically in `app/src/main.js`
+and `app/src/dashboard.js`).
+
+The target is one unified app shell behind a single connection, with
+role-aware views and a consistent design system applied across every
+surface including admin. This is tracked as an epic (#151) and broken
+into dependency-ordered work:
+
+- #143 — shared app shell with router and one wallet-connect/session module
+- #144 — migrate buyer dashboard into the unified app shell (depends on #143)
+- #145 — migrate leaderboard into the unified app shell as a public route (depends on #143)
+- #146 — extract shared design tokens from `landing/` into an app-wide stylesheet
+- #147 — apply the shared design system to the admin console (depends on #146)
+
 ## Layout
 
 ```
 app/          # Vite worker console (index.html) + buyer dashboard (dashboard.html)
 landing/      # static marketing site + live "try it now" sandbox widget
 demo-agent/   # headless buyer/worker/proof scripts (ask.js, worker-sim.js, sponsored-demo.js)
-e2e/          # browser click-through harness (stubbed)
+e2e/          # browser click-through harness + cross-repo integration harness
 ```
 
 ## Notable pieces
@@ -39,7 +112,40 @@ e2e/          # browser click-through harness (stubbed)
   (transactions, workers, payers, live treasury balance, fee revenue,
   fraud/trust monitoring) served against arbiter-backend's `/admin/*`.
 
+## Notification digest (pending backend)
+
+The push panel has an instant / daily / weekly digest toggle, marked "coming
+soon" and non-functional until the backend supports it. It POSTs
+`{ token, digest: 'instant' | 'daily' | 'weekly' }` (session token from
+`ensureSession()`) to `/workers/:address/digest`, and shows a "not supported
+yet" message on 404/405/501. Required from arbiter-backend, none of which exists
+today:
+
+- that endpoint, persisting the per-worker preference;
+- email (or other digest) delivery — `push.js` only does instant Web Push;
+- per-worker "eligible but missed" question history to aggregate — only
+  outcome/reputation (`rep:`) records are kept now.
+
 ## Running it
+
+### One command (Docker Compose, sandbox flow)
+
+```sh
+docker compose up --build                                   # backend + 2 worker-sim.js instances
+docker compose run --rm ask "What is the capital of France?" # sandbox question → settlement
+```
+
+Testnet secrets (optional) go in a root `.env`; they are never baked into `docker-compose.yml`.
+Watch activity live at `app/demo.html` (`npm run dev` in `app/`, uses the admin token).
+
+### Embeddable widget
+
+```html
+<div data-arbiter-widget></div>
+<script src="https://<host>/widget.js" data-api-base="https://your-backend"></script>
+```
+
+Sandbox-only (`/oracle/sandbox` + poll `/oracle/:jobId`) — no payment, no chain, no signup.
 
 ```sh
 cd app && npm install && npm run dev      # or: npm run build
@@ -49,6 +155,9 @@ cd demo-agent && npm install
 cp .env.example .env
 node sandbox-ask.js "What year did Stellar launch?"   # zero setup
 node ask.js "What is the capital of France?"           # real on-chain flow
+
+# cross-repo integration harness (real contract + backend + app together)
+docker compose -f e2e/docker-compose.integration.yml up --build --abort-on-container-exit
 ```
 
 Verified live against a real deployed contract on Stellar testnet. (That
@@ -56,3 +165,18 @@ run predates this repo's split; see "Round 6" in the archived
 [`arbiter`](https://github.com/rudeus112266/arbiter) monorepo README for
 the full run — real `ask.js`/`worker-sim.js`/`sponsored-demo.js`
 executions, transaction links included.)
+
+## Local stack, widget & demo feed
+
+- **One-command stack (Docker Compose, sandbox only):** with
+  [arbiter-backend](https://github.com/Arbiter-xyz/arbiter-backend) cloned as a
+  sibling (`../arbiter-backend`, or set `BACKEND_CONTEXT`), run
+  `docker compose up --build` to start the backend plus two `worker-sim.js`
+  workers, then `docker compose run --rm ask "What is 6 x 7?"` to push a sandbox
+  question through to settlement. Secrets come from `.env` files only.
+- **Embeddable widget:** `landing/widget.js` — add `<div data-arbiter-widget></div>`
+  and `<script src=".../widget.js" data-api-base="https://your-backend"></script>`
+  to any page. Sandbox only: no payment, no chain, no signup.
+- **Live demo feed:** `app/demo.html` polls `GET /admin/transactions` and
+  `GET /admin/workers` (admin token required) and shows dispatch, answer and
+  settlement events as they happen — no changes to the CLI scripts needed.
