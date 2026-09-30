@@ -13,16 +13,14 @@ import { openSecureLocalWallet } from './localWallet.js';
 import { subscribeQuestionStatus } from './statusChannel.js';
 import { initI18n, onLocaleChange, t, formatUsdc, formatNumber } from './i18n.js';
 import { renderMarkdown } from './markdown.js';
+import { ensureSession as ensureSharedSession } from './session.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
 
-// Same hand-picked module list as the worker console — see main.js.
-// Ledger is added explicitly (not via allowAllModules()) so the Trezor/
-// protobufjs surface stays excluded — see the round-5 note in main.js.
-const kit = new StellarWalletsKit({
-  network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule()],
-});
+// See wallet.js for the module list and the connect/quick-start button
+// wiring shared with main.js (issue #19).
+const kit = createWalletKit();
 
 const el = {
   connect: document.getElementById('panel-connect'),
@@ -30,11 +28,17 @@ const el = {
   btnConnect: document.getElementById('btn-connect'),
   btnQuickStart: document.getElementById('btn-quick-start'),
   btnRefresh: document.getElementById('btn-refresh'),
+  btnExportCsv: document.getElementById('btn-export-csv'),
+  btnExportJson: document.getElementById('btn-export-json'),
   payerAddress: document.getElementById('payer-address'),
   statSpend: document.getElementById('stat-spend'),
   statCount: document.getElementById('stat-count'),
   statSuccess: document.getElementById('stat-success'),
+  spendCalendarGrid: document.getElementById('spend-calendar-grid'),
+  spendCalendarTotal: document.getElementById('spend-calendar-total'),
   questionList: document.getElementById('question-list'),
+  questionSearch: document.getElementById('question-search'),
+  questionStatus: document.getElementById('question-status'),
   log: document.getElementById('log'),
   liveStatus: document.getElementById('live-status'),
 };
@@ -56,60 +60,34 @@ function log(message) {
   const li = document.createElement('li');
   li.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
   el.log.prepend(li);
-}
-
-function setConnectButtonsBusy(busy) {
-  el.btnConnect.disabled = busy;
-  el.btnQuickStart.disabled = busy;
+  notify(message);
 }
 
 /** Proves control of this address once, same primitive as the worker
  * console's ensureSession() — these questions/balance are only readable
  * with a valid session now, not by anyone who just knows the address. */
 async function ensureSession() {
-  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) return state.sessionToken;
-
-  log('Proving control of your address (one signature)…');
-  const challengeRes = await fetch(`${BACKEND_URL}/payers/${state.address}/session/challenge`, { method: 'POST' });
-  if (!challengeRes.ok) throw new Error((await challengeRes.json()).error || 'failed to get session challenge');
-  const { xdr } = await challengeRes.json();
-
-  const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
+  return ensureSharedSession({
     address: state.address,
-    networkPassphrase: WalletNetwork.TESTNET,
+    activeWallet: state.activeWallet,
+    sessionToken: state.sessionToken,
+    sessionExpiresAt: state.sessionExpiresAt,
+    onSession: ({ token, expiresAt }) => {
+      state.sessionToken = token;
+      state.sessionExpiresAt = expiresAt;
+    },
+    log,
   });
-
-  const sessionRes = await fetch(`${BACKEND_URL}/payers/${state.address}/session`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ signedXdr: signedTxXdr }),
-  });
-  if (!sessionRes.ok) throw new Error((await sessionRes.json()).error || 'failed to establish session');
-  const { token, expiresAt } = await sessionRes.json();
-  state.sessionToken = token;
-  state.sessionExpiresAt = expiresAt;
-  log('Session established.');
-  return token;
 }
 
-el.btnConnect.addEventListener('click', async () => {
-  setConnectButtonsBusy(true);
-  try {
-    await kit.openModal({
-      onWalletSelected: async (option) => {
-        kit.setWallet(option.id);
-        const { address } = await kit.getAddress();
-        await activate(kit, address);
-      },
-      onClosed: (err) => {
-        setConnectButtonsBusy(false);
-        if (err) log(`Wallet selection closed: ${err.message}`);
-      },
-    });
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(`Wallet connect failed: ${err.message}`);
-  }
+// Module list + button wiring live in wallet.js, shared with main.js
+// (issue #19). This page has no backup panel, so `quickStart` is unused.
+wireConnectButtons({
+  kit,
+  connectButton: el.btnConnect,
+  quickStartButton: el.btnQuickStart,
+  onActivated: activate,
+  onError: log,
 });
 
 el.btnQuickStart.addEventListener('click', async () => {
@@ -124,9 +102,9 @@ el.btnQuickStart.addEventListener('click', async () => {
   }
 });
 
-async function activate(wallet, address) {
-  state.activeWallet = wallet;
+async function switchIdentity(address) {
   state.address = address;
+  if (state.identity.walletId) kit.setWallet(state.identity.walletId);
   el.payerAddress.textContent = address;
   el.connect.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
@@ -208,6 +186,33 @@ function render(data) {
   }
 }
 
+function renderSpendCalendar(questions, totalSpend) {
+  const daily = new Map();
+  for (const question of questions) {
+    const dateValue = question.createdAt || question.created_at || question.timestamp;
+    const date = dateValue ? new Date(dateValue) : null;
+    const amount = Number(question.amount || 0);
+    if (!date || Number.isNaN(date.valueOf()) || !Number.isFinite(amount)) continue;
+    const day = date.toISOString().slice(0, 10);
+    daily.set(day, (daily.get(day) || 0) + amount);
+  }
+  const entries = [...daily.entries()].sort(([left], [right]) => left.localeCompare(right)).slice(-84);
+  const max = Math.max(...entries.map(([, amount]) => amount), 1);
+  el.spendCalendarGrid.replaceChildren();
+  for (const [day, amount] of entries) {
+    const cell = document.createElement('div');
+    cell.className = 'spend-calendar-cell';
+    cell.style.setProperty('--spend-intensity', String(Math.max(0.12, amount / max)));
+    cell.setAttribute('role', 'listitem');
+    cell.title = `${day}: ${amount.toFixed(2)} USDC`;
+    cell.setAttribute('aria-label', cell.title);
+    cell.textContent = day.slice(8);
+    el.spendCalendarGrid.append(cell);
+  }
+  if (!entries.length) el.spendCalendarGrid.textContent = 'No dated question records are available yet.';
+  el.spendCalendarTotal.textContent = `${Number(totalSpend || 0).toFixed(2)} USDC total`;
+}
+
 function renderQuestionItem(q) {
   const li = document.createElement('li');
   li.className = 'question-item';
@@ -218,9 +223,10 @@ function renderQuestionItem(q) {
   const left = document.createElement('div');
   const qText = document.createElement('p');
   qText.className = 'q-text';
-  // Markdown is rendered through a sanitizing renderer (markdown.js) that
-  // builds safe DOM nodes — never innerHTML of raw user content.
-  renderMarkdown(qText, q.question || q.questionId);
+  // This renderer only creates DOM nodes and assigns textContent to untrusted
+  // text. Fenced code is tokenised into isolated safe spans; raw HTML is never
+  // interpreted.
+  renderFencedCode(qText, q.question || q.questionId);
   const qMeta = document.createElement('div');
   qMeta.className = 'q-meta';
   const parts = [q.tier, q.amount ? formatUsdc(q.amount) : null];
@@ -228,14 +234,53 @@ function renderQuestionItem(q) {
   qMeta.textContent = parts.filter(Boolean).join(' · ');
   left.append(qText, qMeta);
 
+  if (q.answer) {
+    const answerText = document.createElement('div');
+    answerText.className = 'answer-text';
+    renderFencedCode(answerText, q.answer);
+    left.append(answerText);
+  }
+
   const badge = document.createElement('span');
   const { label, cls } = describeStatus(q);
   badge.className = `badge ${cls}`;
   badge.textContent = label;
 
-  row.append(left, badge);
+  // Unstarring while "Starred only" is on should drop the row immediately.
+  const star = createStarButton(state.address, q.questionId, () => {
+    if (state.starredOnly) renderQuestionList();
+  });
+
+  row.append(star, left, badge);
   li.appendChild(row);
+
+  // Surface the real, load-bearing guarantee for still-pending questions:
+  // refund_timeout() is permissionless (no require_auth()), so anyone can
+  // force a refund once the timeout window elapses — even if Arbiter's
+  // backend disappears. Stated plainly, not oversold.
+  if (q.status !== 'settled') {
+    const safety = document.createElement('p');
+    safety.className = 'q-safety muted small';
+    safety.textContent = refundSafetyLine(q);
+    li.appendChild(safety);
+  }
+
   return li;
+}
+
+/** Plain-language statement of the on-chain refund guarantee. The contract's
+ * refund_timeout() is permissionless, so this is checkable against real
+ * behavior — not marketing copy. Kept as a single helper so future guarantees
+ * (pause switch, threshold custody) can be appended without a rewrite. */
+function refundSafetyLine(q) {
+  const base = 'Your funds are recoverable even if Arbiter goes down: after the refund timeout window, anyone can trigger an automatic refund on-chain — no action from Arbiter required.';
+  if (q.refundAvailableAt) {
+    const when = new Date(q.refundAvailableAt);
+    if (!Number.isNaN(when.getTime())) {
+      return `${base} Refund available from ${when.toLocaleString()}.`;
+    }
+  }
+  return base;
 }
 
 function describeStatus(q) {

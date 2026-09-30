@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { Agent } from 'undici';
 import { Keypair, Transaction } from '@stellar/stellar-sdk';
 import { env, buildSignedStakeXdr, buildSignedWithdrawXdr, sleep } from './lib/stellar.js';
+import { sseFrames } from './lib/demo.js';
 
 /**
  * The SSE connection (`GET /app/events`) is deliberately never fully
@@ -38,40 +39,7 @@ const stakeAmountStroops = BigInt(process.env.STAKE_AMOUNT_STROOPS || '1000000')
 const autoWithdraw = process.env.AUTO_WITHDRAW === 'true';
 const withdrawIntervalMs = Number(process.env.WITHDRAW_INTERVAL_MS || 30_000);
 
-/** Reproduces exactly what the browser app does at the protocol level
- * without a browser: fetch() the SSE endpoint and manually parse the
- * `event:`/`data:` frame format out of the streamed body. There is no
- * EventSource client here on purpose — this proves the wire protocol works
- * for any HTTP client, not just browsers with EventSource support. */
-async function* sseFrames(response) {
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) return;
-    buffer += decoder.decode(value, { stream: true });
-
-    let boundary;
-    while ((boundary = buffer.indexOf('\n\n')) !== -1) {
-      const rawFrame = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      yield parseFrame(rawFrame);
-    }
-  }
-}
-
-function parseFrame(rawFrame) {
-  let event = 'message';
-  const dataLines = [];
-  for (const line of rawFrame.split('\n')) {
-    if (line.startsWith(':')) continue; // keep-alive comment
-    if (line.startsWith('event:')) event = line.slice(6).trim();
-    else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
-  }
-  return { event, data: dataLines.join('\n') };
-}
+// SSE frame parsing lives in lib/demo.js, shared with the in-process scenario workers.
 
 /** Cached bearer session — see workerAuth.js on the backend. A real
  * address workerId now REQUIRES this for both /app/events and

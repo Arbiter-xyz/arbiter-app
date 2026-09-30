@@ -20,6 +20,10 @@
             <select class="lang-switch"><option value="en">English</option><option value="ar">العربية</option></select>
           </label>
         </p>
+        <div id="account-switcher" class="account-switcher hidden">
+          <select id="account-select" aria-label="Active wallet"></select>
+          <button id="btn-add-wallet" class="secondary small" type="button">+ Add wallet</button>
+        </div>
       </header>
 
       <section id="panel-connect" class="panel">
@@ -50,6 +54,13 @@
             <strong id="stat-success">—</strong>
           </div>
         </div>
+        <section class="spend-calendar" aria-labelledby="spend-calendar-heading"><div class="row"><h2 id="spend-calendar-heading">Spend by day</h2><span id="spend-calendar-total" class="muted small"></span></div><div id="spend-calendar-grid" class="spend-calendar-grid" role="list" aria-label="Daily spend calendar"></div><p class="muted small">Derived from the question records returned to this dashboard.</p></section>
+
+        <p class="fund-safety small" id="fund-safety">
+          Your funds are never permanently stuck. If a question stays pending past the contract's
+          refund timeout, <strong>anyone</strong> — including you — can call the permissionless
+          <code>refund_timeout()</code> to return your payment, even if Arbiter's backend goes down.
+        </p>
 
         <ul id="question-list" class="question-list" aria-live="polite" aria-relevant="additions text">
           <li class="muted small" id="question-list-empty">No questions yet.</li>
@@ -62,6 +73,8 @@
       </section>
     </main>
 
+    <script type="module" src="/src/a11y.js"></script>
     <script type="module" src="/src/dashboard.js"></script>
+    <script type="module" src="/src/amountDisplay.js"></script>
   </body>
 </html>

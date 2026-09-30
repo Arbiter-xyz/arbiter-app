@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Arbiter — Put a stake on the answer, verified by staked humans</title>
-  <meta name="description" content="Arbiter is a pay-per-question verification API. Ask anything you need a real answer on — an audit finding, a contract's behavior, a claim an AI got wrong — and a staked quorum of humans checks it. Pay with a wallet or a card, settled on-chain or fully refunded." />
+  <meta name="description" content="Arbiter is a pay-per-question verification API. Ask anything you need a real answer on — an audit finding, a contract's behavior, a claim an AI got wrong — and a staked quorum of humans checks it. Pay with a card in seconds, or connect a Stellar wallet if you already have one. Settled on-chain or fully refunded." />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -46,8 +46,8 @@
           <p class="hero-sub" data-i18n="hero.sub">
             Arbiter checks any claim you need a real answer on — an audit finding, a contract's
             behavior, something an AI got wrong — with a real, staked human quorum, not a raw
-            LLM guess. Pay with a wallet or a card, get a settled answer, or a full refund if
-            consensus isn&rsquo;t reached. No stuck funds, no partial states.
+            LLM guess. Pay with a card in seconds — no wallet needed — and get a settled answer,
+            or a full refund if consensus isn&rsquo;t reached. No stuck funds, no partial states.
           </p>
           <div class="hero-actions">
             <a href="#try-it-input" class="btn btn-primary" data-i18n="hero.cta">Verify a claim live</a>
@@ -101,8 +101,9 @@
           <li class="step reveal">
             <span class="step-index">02</span>
             <h3>Pay</h3>
-            <p>Submit USDC on Stellar to escrow (the platform covers your network fee, zero XLM
-              needed), or use an API key billed by the question — no wallet required.</p>
+            <p>The easy way: pay by card — no wallet, no XLM, no setup. If you already have a
+              Stellar wallet, you can instead submit USDC to escrow (the platform covers your
+              network fee, zero XLM needed) or use an API key billed by the question.</p>
           </li>
           <li class="step reveal">
             <span class="step-index">03</span>
@@ -227,6 +228,19 @@
         <h2 id="pricing-heading" class="section-heading reveal" data-i18n="nav.pricing">Pricing</h2>
         <p class="section-sub reveal">Pay per question, with a wallet or a card. Price is locked
           in at quote time.</p>
+      </div>
+    </section>
+
+    <!-- FOR WORKERS -->
+    <section class="worker-band" aria-labelledby="worker-heading">
+      <div class="container worker-band-inner reveal">
+        <div>
+          <h2 id="worker-heading">Verify claims. Get paid in USDC.</h2>
+          <p>Auditors, on-chain analysts, and technical reviewers: stake a bond, check what you
+            actually know, get settled on-chain automatically. Wrong quorum answers cost you a
+            slice of your stake — right ones build a public, verifiable track record.</p>
+        </div>
+        <a href="https://arbiter-app-ten.vercel.app/index.html" class="btn btn-secondary btn-on-dark">Start earning</a>
       </div>
     </section>
 
