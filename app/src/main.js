@@ -1,15 +1,7 @@
-import {
-  StellarWalletsKit,
-  WalletNetwork,
-  FreighterModule,
-  LobstrModule,
-  xBullModule,
-  HanaModule,
-  AlbedoModule,
-  HotWalletModule,
-  LedgerModule,
-} from '@creit.tech/stellar-wallets-kit';
+import { WalletNetwork } from '@creit.tech/stellar-wallets-kit';
 import { openSecureLocalWallet } from './localWallet.js';
+import { createWalletKit, wireConnectButtons } from './wallet.js';
+import { consumeReferralCode } from './referral.js';
 import { initI18n, t } from './i18n.js';
 import { initA11y } from './a11y.js';
 import { StrKey } from '@stellar/stellar-sdk';
@@ -88,18 +80,6 @@ const state = {
   // downstream needs to know which one is active.
   activeWallet: null,
   address: null,
-  get identity() {
-    return this.identities.get(this.address) || null;
-  },
-  get activeWallet() {
-    return this.identity?.wallet || null;
-  },
-  get sessionToken() {
-    return this.identity?.sessionToken || null;
-  },
-  get sessionExpiresAt() {
-    return this.identity?.sessionExpiresAt || 0;
-  },
   online: false,
   eventSource: null,
   currentQuestion: null,
@@ -262,6 +242,22 @@ startCategoryDemandPolling();
 // wallet — is handled via the `quickStart` flag onActivated receives,
 // rather than a special case inside the shared helper.
 
+function setConnectButtonsBusy(busy) {
+  if (el.btnConnect) el.btnConnect.disabled = busy;
+  if (el.btnQuickStart) el.btnQuickStart.disabled = busy;
+}
+
+wireConnectButtons({
+  kit,
+  connectButton: el.btnConnect,
+  quickStartButton: null,
+  onActivated: async (wallet, address) => {
+    el.backup.classList.add('hidden');
+    await activateWallet(wallet, address);
+  },
+  onError: log,
+});
+
 el.btnQuickStart.addEventListener('click', async () => {
   setConnectButtonsBusy(true);
   try {
@@ -370,10 +366,14 @@ el.btnOnboard.addEventListener('click', async () => {
   el.btnOnboard.disabled = true;
   try {
     log('Building sponsored onboarding transaction…');
+    const referralCode = consumeReferralCode();
     const buildRes = await fetch(`${BACKEND_URL}/sponsor/onboard/build`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address: state.address }),
+      body: JSON.stringify({
+        address: state.address,
+        ...(referralCode ? { referralCode } : {}),
+      }),
     });
     if (!buildRes.ok) throw new Error((await buildRes.json()).error || `build failed: ${buildRes.status}`);
     const { xdr } = await buildRes.json();
@@ -428,7 +428,12 @@ el.btnToggle.addEventListener('click', async () => {
  * expires. This exists because the backend now REQUIRES it for any
  * real-address workerId — see workerAuth.js. */
 async function ensureSession() {
-  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) return state.sessionToken;
+  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) {
+    window.dispatchEvent(
+      new CustomEvent('arbiter:session', { detail: { address: state.address, token: state.sessionToken } }),
+    );
+    return state.sessionToken;
+  }
 
   log('Proving control of your address (one signature)…');
   const challengeRes = await fetch(`${BACKEND_URL}/workers/${state.address}/session/challenge`, { method: 'POST' });
@@ -449,6 +454,7 @@ async function ensureSession() {
   const { token, expiresAt } = await sessionRes.json();
   state.sessionToken = token;
   state.sessionExpiresAt = expiresAt;
+  window.dispatchEvent(new CustomEvent('arbiter:session', { detail: { address: state.address, token } }));
   log('Session established — you can answer questions as yourself, and only yourself.');
   return token;
 }
@@ -681,17 +687,27 @@ el.stakeForm.addEventListener('submit', async (evt) => {
   evt.preventDefault();
   el.btnStake.disabled = true;
   try {
-    state.activeWallet = wallet;
-    state.address = address;
-    el.workerAddress.textContent = address;
-    el.connect.classList.add('hidden');
-
-    const trusted = await hasUsdcTrustline(address);
-    showPanel(trusted ? 'online' : 'onboard');
-    if (trusted) startCategoryDemandPolling();
-    log(`Connected ${address}${trusted ? '' : ' — USDC trustline required before going online.'}`);
+    const amountStroops = stroopsFromUsdcInput(el.stakeInput.value);
+    log(`Building stake transaction for ${el.stakeInput.value} USDC…`);
+    const xdr = await buildStakeXdr(state.address, amountStroops);
+    const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
+      address: state.address,
+      networkPassphrase: WalletNetwork.TESTNET,
+    });
+    const res = await fetch(`${BACKEND_URL}/sponsor/stake`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ xdr: signedTxXdr, workerAddress: state.address, amountStroops: amountStroops.toString() }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || `stake failed: ${res.status}`);
+    const { hash } = await res.json();
+    log(`Staked (tx ${hash})`);
+    el.stakeInput.value = '';
+    await refreshEarnings();
+  } catch (err) {
+    log(`Stake failed: ${err.message}`);
   } finally {
-    setConnectButtonsBusy(false);
+    el.btnStake.disabled = false;
   }
 });
 
