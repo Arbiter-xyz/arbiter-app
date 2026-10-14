@@ -24,6 +24,7 @@
         <h1>Arbiter <span class="tag">admin</span></h1>
         <p id="admin-role" class="muted small admin-role hidden"></p>
         <button id="btn-admin-customize" class="admin-nav-customize" type="button" aria-expanded="false">Customize</button>
+        <button id="density-toggle" class="admin-nav-customize" type="button" aria-pressed="false">Compact density</button>
         <div id="admin-customize-panel" class="admin-customize-panel hidden"></div>
 
         <div class="admin-nav-group">
@@ -59,6 +60,11 @@
           <h3>App</h3>
           <a class="admin-nav-link" href="/index.html">Worker console →</a>
           <a class="admin-nav-link" href="/dashboard.html">Buyer dashboard →</a>
+        </div>
+
+        <div class="admin-nav-group">
+          <h3>Session</h3>
+          <button id="btn-admin-logout" class="admin-nav-link" type="button">Log out</button>
         </div>
       </nav>
 
