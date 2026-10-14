@@ -7,9 +7,8 @@ import {
   HanaModule,
   AlbedoModule,
   HotWalletModule,
-  LedgerModule,
 } from '@creit.tech/stellar-wallets-kit';
-import { createOrLoadLocalWallet } from './localWallet.js';
+import { openSecureLocalWallet } from './localWallet.js';
 
 // Shared wallet-connect setup for the worker console (main.js) and the buyer
 // dashboard (dashboard.js) — see issue #19. Both pages need the exact same
@@ -24,19 +23,10 @@ import { createOrLoadLocalWallet } from './localWallet.js';
 // hardware-wallet adapters (Trezor/Ledger) that pull in a large, more
 // security-sensitive dependency tree we have no use for. See the README
 // for the concrete CVE this sidesteps.
-//
-// LedgerModule is the one deliberate exception (issue #75): it is added
-// explicitly by name rather than via allowAllModules(), so the Trezor
-// adapters and their protobufjs dependency tree stay excluded. Ledger's
-// browser integration is WebUSB/WebHID against the device directly (the
-// kit's Ledger module), not a deep link into the Ledger Live companion
-// app. Before merging, re-run round 5's audit process: grep the built
-// bundle for `trezor`/`protobuf` and run `npm audit --audit-level=high`,
-// confirming the critical/high count stays at zero.
 export function createWalletKit() {
   return new StellarWalletsKit({
     network: WalletNetwork.TESTNET,
-    modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule()],
+    modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule()],
   });
 }
 
@@ -61,8 +51,8 @@ export function createWalletKit() {
  */
 export function wireConnectButtons({ kit, connectButton, quickStartButton, onActivated, onError }) {
   function setBusy(busy) {
-    connectButton.disabled = busy;
-    quickStartButton.disabled = busy;
+    if (connectButton) connectButton.disabled = busy;
+    if (quickStartButton) quickStartButton.disabled = busy;
   }
 
   connectButton.addEventListener('click', async () => {
@@ -86,16 +76,18 @@ export function wireConnectButtons({ kit, connectButton, quickStartButton, onAct
     }
   });
 
-  quickStartButton.addEventListener('click', async () => {
-    setBusy(true);
-    try {
-      const localWallet = createOrLoadLocalWallet();
-      const { address } = await localWallet.getAddress();
-      await onActivated(localWallet, address, { quickStart: true });
-      setBusy(false);
-    } catch (err) {
-      setBusy(false);
-      onError?.(`Quick start failed: ${err.message}`);
-    }
-  });
+  if (quickStartButton) {
+    quickStartButton.addEventListener('click', async () => {
+      setBusy(true);
+      try {
+        const localWallet = await openSecureLocalWallet();
+        const { address } = await localWallet.getAddress();
+        await onActivated(localWallet, address, { quickStart: true });
+        setBusy(false);
+      } catch (err) {
+        setBusy(false);
+        onError?.(`Quick start failed: ${err.message}`);
+      }
+    });
+  }
 }

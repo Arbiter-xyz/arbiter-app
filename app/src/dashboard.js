@@ -1,18 +1,11 @@
-import {
-  StellarWalletsKit,
-  WalletNetwork,
-  FreighterModule,
-  LobstrModule,
-  xBullModule,
-  HanaModule,
-  AlbedoModule,
-  HotWalletModule,
-  LedgerModule,
-} from '@creit.tech/stellar-wallets-kit';
 import { openSecureLocalWallet } from './localWallet.js';
+import { createWalletKit, wireConnectButtons } from './wallet.js';
 import { subscribeQuestionStatus } from './statusChannel.js';
 import { initI18n, onLocaleChange, t, formatUsdc, formatNumber } from './i18n.js';
 import { renderMarkdown } from './markdown.js';
+import { renderFencedCode } from './codeBlocks.js';
+import { createStarButton } from './starredQuestions.js';
+import { createNotificationCenter } from './notifications.js';
 import { ensureSession as ensureSharedSession } from './session.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
@@ -41,19 +34,32 @@ const el = {
   questionStatus: document.getElementById('question-status'),
   log: document.getElementById('log'),
   liveStatus: document.getElementById('live-status'),
+  accountSwitcher: document.getElementById('account-switcher'),
+  accountSelect: document.getElementById('account-select'),
+  btnAddWallet: document.getElementById('btn-add-wallet'),
 };
 
 initI18n();
 
+const headerEl = document.querySelector('header');
+const notify = headerEl
+  ? createNotificationCenter({ mount: headerEl, storageKey: 'arbiter-dashboard-notifications' })
+  : () => {};
+
 const state = {
+  identities: new Map(),
   address: null,
   activeWallet: null,
   sessionToken: null,
   sessionExpiresAt: 0,
   channel: null,
   lastData: null,
+  starredOnly: false,
   // questionId -> <li>, so a pushed status change patches one row in place.
   items: new Map(),
+  get identity() {
+    return this.identities.get(this.address) || null;
+  },
 };
 
 function log(message) {
@@ -61,6 +67,11 @@ function log(message) {
   li.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
   el.log.prepend(li);
   notify(message);
+}
+
+function setConnectButtonsBusy(busy) {
+  if (el.btnConnect) el.btnConnect.disabled = busy;
+  if (el.btnQuickStart) el.btnQuickStart.disabled = busy;
 }
 
 /** Proves control of this address once, same primitive as the worker
@@ -75,17 +86,23 @@ async function ensureSession() {
     onSession: ({ token, expiresAt }) => {
       state.sessionToken = token;
       state.sessionExpiresAt = expiresAt;
+      if (state.identity) {
+        state.identity.sessionToken = token;
+        state.identity.sessionExpiresAt = expiresAt;
+      }
     },
     log,
   });
 }
 
 // Module list + button wiring live in wallet.js, shared with main.js
-// (issue #19). This page has no backup panel, so `quickStart` is unused.
+// (issue #19). Quick-start button is wired explicitly below with
+// openSecureLocalWallet() so legacy plaintext secrets in localStorage are
+// migrated into the hardened worker store (issue #195).
 wireConnectButtons({
   kit,
   connectButton: el.btnConnect,
-  quickStartButton: el.btnQuickStart,
+  quickStartButton: null,
   onActivated: activate,
   onError: log,
 });
@@ -102,16 +119,44 @@ el.btnQuickStart.addEventListener('click', async () => {
   }
 });
 
-async function switchIdentity(address) {
+async function activate(wallet, address, opts = {}) {
+  const walletId = typeof opts === 'string' ? opts : opts?.walletId || null;
+  state.activeWallet = wallet;
+  const existing = state.identities.get(address);
+  if (existing) Object.assign(existing, { wallet, walletId });
+  else state.identities.set(address, { address, wallet, walletId, sessionToken: null, sessionExpiresAt: 0 });
+  await switchIdentity(address, wallet);
+}
+
+async function switchIdentity(address, wallet = null) {
   state.address = address;
-  if (state.identity.walletId) kit.setWallet(state.identity.walletId);
+  const identity = state.identity;
+  if (wallet) state.activeWallet = wallet;
+  else if (identity?.wallet) state.activeWallet = identity.wallet;
+  if (identity?.walletId) kit.setWallet(identity.walletId);
+  state.sessionToken = identity?.sessionToken || null;
+  state.sessionExpiresAt = identity?.sessionExpiresAt || 0;
   el.payerAddress.textContent = address;
   el.connect.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
+  if (el.accountSelect && el.accountSwitcher && state.identities.size > 0) {
+    el.accountSelect.innerHTML = '';
+    for (const addr of state.identities.keys()) {
+      const option = document.createElement('option');
+      option.value = addr;
+      option.textContent = `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+      option.selected = addr === address;
+      el.accountSelect.append(option);
+    }
+    el.accountSwitcher.classList.remove('hidden');
+  }
   log(`Connected ${address}`);
   startLiveUpdates();
   setConnectButtonsBusy(false);
 }
+
+el.accountSelect?.addEventListener('change', () => switchIdentity(el.accountSelect.value));
+el.btnAddWallet?.addEventListener('click', () => el.btnConnect.click());
 
 // Live updates (issue #6): one shared push stream across all dashboard tabs
 // for this address instead of each tab polling. The snapshot is only
@@ -168,7 +213,15 @@ function render(data) {
   el.statSpend.textContent = formatUsdc(data.totalSpend);
   el.statCount.textContent = formatNumber(data.totalTracked);
   el.statSuccess.textContent = data.successRate === null ? '—' : formatNumber(data.successRate, { style: 'percent' });
+  if (el.spendCalendarGrid && el.spendCalendarTotal) {
+    renderSpendCalendar(data.questions || [], data.totalSpend);
+  }
+  renderQuestionList();
+}
 
+function renderQuestionList() {
+  const data = state.lastData;
+  if (!data) return;
   el.questionList.innerHTML = '';
   state.items.clear();
   if (data.questions.length === 0) {
