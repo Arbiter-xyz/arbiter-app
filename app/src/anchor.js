@@ -47,8 +47,12 @@ async function sep10Auth(anchorConfig, address, wallet, networkPassphrase) {
   return token;
 }
 
+function getTransferServer(anchorConfig) {
+  return anchorConfig.transferServer || anchorConfig.transferServerSep24;
+}
+
 async function startInteractiveWithdraw(anchorConfig, jwt, address, assetCode) {
-  const res = await fetch(`${anchorConfig.transferServerSep24}/transactions/withdraw/interactive`, {
+  const res = await fetch(`${getTransferServer(anchorConfig)}/transactions/withdraw/interactive`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ asset_code: assetCode, account: address }),
@@ -62,7 +66,7 @@ async function pollTransaction(anchorConfig, jwt, id, onUpdate) {
   let lastStatus = null;
 
   while (Date.now() < deadline) {
-    const url = new URL(`${anchorConfig.transferServerSep24}/transaction`);
+    const url = new URL(`${getTransferServer(anchorConfig)}/transaction`);
     url.searchParams.set('id', id);
     const res = await fetch(url, { headers: { Authorization: `Bearer ${jwt}` } });
     if (res.ok) {

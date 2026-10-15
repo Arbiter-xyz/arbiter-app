@@ -265,20 +265,21 @@ function renderQuestionItem(q) {
   // countdown and a Cancel button, mirroring the worker console's
   // setInterval-driven timer-bar pattern (main.js's startCountdown()/
   // el.timerBar) rather than inventing a second countdown UI.
-  if (q.status !== 'settled' && Number.isFinite(q.cancelableUntil) && q.cancelableUntil > Date.now()) {
-    li.appendChild(renderCancelControls(q));
+  const cancellableUntil = q.cancellableUntil ?? q.cancelableUntil;
+  if (q.status !== 'settled' && Number.isFinite(cancellableUntil) && cancellableUntil > Date.now()) {
+    li.appendChild(renderCancelControls(q, cancellableUntil));
   }
 
   return li;
 }
 
 /** Renders the countdown + Cancel button for a question still inside its
- * undo window (`q.cancelableUntil`, an epoch-ms timestamp assumed to be
- * added to the GET /payers/:address/questions response for an in-progress
- * question — see issue #32). Wired to the assumed
- * POST /payers/:address/questions/:questionId/cancel endpoint, reusing the
+ * undo window (`q.cancellableUntil`, an epoch-ms timestamp returned in the
+ * GET /payers/:address/questions response for an in-progress question —
+ * see issue #32 / #203). Wired to
+ * POST /payers/:address/questions/:questionId/cancel, reusing the
  * existing payer session token from ensureSession(). */
-function renderCancelControls(q) {
+function renderCancelControls(q, cancellableUntil = q.cancellableUntil ?? q.cancelableUntil) {
   const wrap = document.createElement('div');
   wrap.className = 'cancel-controls';
 
@@ -298,11 +299,11 @@ function renderCancelControls(q) {
 
   wrap.append(track, label, btnCancel);
 
-  const total = q.cancelableUntil - Date.now();
+  const total = cancellableUntil - Date.now();
   let handle = null;
 
   function tick() {
-    const remainingMs = q.cancelableUntil - Date.now();
+    const remainingMs = cancellableUntil - Date.now();
     if (remainingMs <= 0) {
       clearInterval(handle);
       wrap.remove();
