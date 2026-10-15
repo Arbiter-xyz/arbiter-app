@@ -6,7 +6,7 @@
 const DSN = import.meta.env.VITE_SENTRY_DSN;
 
 // DOM elements whose content/interaction must never reach a report.
-const SENSITIVE_SELECTORS = ['#backup-secret', '#admin-token-input'];
+const SENSITIVE_SELECTORS = ['#backup-secret', '#admin-token-input', '#apikey-reveal-input', '#demo-token'];
 
 const PATTERNS = [
   /\b[GSCMT][A-Z2-7]{55,68}\b/g, // Stellar public/secret/contract/muxed keys
@@ -14,7 +14,7 @@ const PATTERNS = [
   /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, // JWTs
   /\b[0-9a-f]{64}\b/gi, // hex keys / hashes
 ];
-const SENSITIVE_KEY = /secret|token|authorization|password|seed|mnemonic|private|kyc|cookie|address|pubkey/i;
+const SENSITIVE_KEY = /secret|token|authorization|password|seed|mnemonic|private|kyc|cookie|address|pubkey|apikey|api_key/i;
 
 export function scrubString(value) {
   return PATTERNS.reduce((s, re) => s.replace(re, '[redacted]'), String(value));

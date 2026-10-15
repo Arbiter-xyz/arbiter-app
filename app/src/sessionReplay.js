@@ -28,6 +28,10 @@ export const BLOCKED_SELECTORS = [
   // admin.js — renderPayouts(): p.address, amounts, status
   '#view-payouts',
   '#payouts-body',
+  // customer.js — one-time revealed plaintext API key and demo bearer token
+  '#apikey-reveal-input',
+  '#apikey-reveal',
+  '#demo-token',
 ];
 
 // Masked elements keep layout but have their text replaced with asterisks.
