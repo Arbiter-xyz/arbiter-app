@@ -46,6 +46,17 @@ export function bucket(flag, id) {
   return (h >>> 0) % 100;
 }
 
+// Whether a flag is enabled for a user at a given 0-100 rollout percentage.
+// rollout <= 0 disables everyone; rollout >= 100 enables everyone; in between
+// the stable per-(flag, user) bucket decides. Exported so the bucketing math
+// can be tested directly.
+export function isInRollout(flag, id, rollout) {
+  if (!Number.isFinite(rollout)) return true;
+  if (rollout <= 0) return false;
+  if (rollout >= 100) return true;
+  return bucket(flag, id) < rollout;
+}
+
 async function fetchJson(url, headers) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
@@ -76,7 +87,7 @@ async function loadFromJson(userId) {
     if (typeof v === 'boolean') out[name] = v;
     else if (v && typeof v === 'object') {
       const rollout = Number.isFinite(v.rollout) ? v.rollout : 100;
-      out[name] = v.enabled !== false && bucket(name, userId) < rollout;
+      out[name] = v.enabled !== false && isInRollout(name, userId, rollout);
     }
   }
   return out;
