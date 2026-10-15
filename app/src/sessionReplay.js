@@ -43,6 +43,34 @@ export const MASKED_TEXT_SELECTORS = [
   '#treasury-panel',
 ];
 
+// Sensitive-field ids that must be covered by BLOCKED_SELECTORS. Kept in sync
+// with the ids referenced in main.js/admin.js/customer.js so a new
+// secret-bearing field can't ship unmasked without a signal. See
+// assertBlockedSelectorsCoverSensitiveFields() below.
+const SENSITIVE_FIELD_IDS = [
+  // main.js — worker's raw Stellar secret key
+  'backup-secret',
+  // main.js — payout address the worker types for withdrawTo
+  'withdraw-beneficiary-input',
+  // admin.js — privileged bearer token entry
+  'admin-token-input',
+];
+
+// Dev-time drift check: verifies every known sensitive field id is covered by
+// BLOCKED_SELECTORS. Returns the list of uncovered ids (empty when in sync) so
+// callers/tests can assert on it; logs a warning in dev builds. No-op in prod.
+export function assertBlockedSelectorsCoverSensitiveFields() {
+  const blocked = new Set(BLOCKED_SELECTORS);
+  const uncovered = SENSITIVE_FIELD_IDS.filter((id) => !blocked.has(`#${id}`));
+  if (uncovered.length > 0 && import.meta.env.DEV) {
+    console.warn(
+      'session replay: sensitive field ids missing from BLOCKED_SELECTORS:',
+      uncovered,
+    );
+  }
+  return uncovered;
+}
+
 function userOptedOut() {
   return navigator.doNotTrack === '1' || navigator.globalPrivacyControl === true;
 }
@@ -52,6 +80,7 @@ function userOptedOut() {
 export async function initSessionReplay({ page } = {}) {
   if (!KEY || userOptedOut()) return false;
   if (page === 'admin' && !ADMIN_ENABLED) return false;
+  assertBlockedSelectorsCoverSensitiveFields();
   try {
     const { default: posthog } = await import('posthog-js');
     posthog.init(KEY, {
