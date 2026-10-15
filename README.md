@@ -180,3 +180,8 @@ executions, transaction links included.)
 - **Live demo feed:** `app/demo.html` polls `GET /admin/transactions` and
   `GET /admin/workers` (admin token required) and shows dispatch, answer and
   settlement events as they happen — no changes to the CLI scripts needed.
+
+## Handsoff notes
+
+<!-- handsoff-issue-249 -->
+- #249: Review: format.js's null-safety fix has no regression test
