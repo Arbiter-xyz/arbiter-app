@@ -1,26 +1,16 @@
-// API-key/fiat customer account page (issues #30, #37).
+// API-key/fiat customer account page (issues #30, #37, #194, #201, #217).
 //
-// #30 hadn't landed on `main` when this was picked up, so this file stands
-// up the minimal page/login shell itself, per that issue's own text
-// ("the two are expected to merge cleanly either order"): a "paste your API
-// key" gate structurally identical to admin.js's showLogin()/showShell()/
-// token-in-localStorage pattern, plus the account-balance view and a "top
-// up" affordance against the existing POST /billing/checkout endpoint.
-//
-// #37 (this account's assigned issue) is the webhook registration/management
-// section below. Assumed backend endpoints, documented here since they
-// don't exist in this frontend-only repo:
-//   GET    /billing/account/webhook  -> { url: string | null }
-//   POST   /billing/account/webhook  { url }  -> { url }
-//   DELETE /billing/account/webhook          -> { ok: true }
-// Assumed auth header: unlike the admin console's `Authorization: Bearer
-// <adminToken>`, an API-key customer is assumed to authenticate with
-// `X-Api-Key: <key>` (backend/src/apiKeyAuth.js's resolveApiKey() isn't in
-// this repo to confirm against — flagging this as the one guess this page
-// makes, easy to swap for whatever header the backend actually expects).
+// Authenticates against arbiter-backend using `Authorization: Bearer <apiKey>`
+// (matching `backend/src/apiKeyAuth.js::extractApiKey`), manages webhooks via
+// the backend's `/webhooks` endpoints (`GET /webhooks`, `POST /webhooks`,
+// `DELETE /webhooks/:id`), and initiates top-up checkout via
+// `POST /billing/checkout` with `{ successUrl, cancelUrl }` returning
+// `{ checkoutUrl }`.
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const KEY_STORAGE = 'arbiter-customer-api-key';
+
+let activeWebhookId = null;
 
 const el = {
   login: document.getElementById('panel-login'),
@@ -61,7 +51,10 @@ async function fetchCustomer(path, options = {}) {
   const key = localStorage.getItem(KEY_STORAGE);
   const res = await fetch(`${BACKEND_URL}${path}`, {
     ...options,
-    headers: { 'X-Api-Key': key, ...(options.headers || {}) },
+    headers: {
+      ...(key ? { Authorization: `Bearer ${key}` } : {}),
+      ...(options.headers || {}),
+    },
   });
   if (res.status === 401) {
     localStorage.removeItem(KEY_STORAGE);
@@ -87,8 +80,12 @@ async function loadAccount() {
 
 async function loadWebhook() {
   try {
-    const { url } = await fetchCustomer('/billing/account/webhook');
-    el.webhookInput.value = url || '';
+    const data = await fetchCustomer('/webhooks');
+    const webhooks = Array.isArray(data?.webhooks) ? data.webhooks : [];
+    const current = webhooks[0] || null;
+    activeWebhookId = current?.id ?? null;
+    const url = current?.url || '';
+    el.webhookInput.value = url;
     el.webhookStatus.textContent = url ? `Currently registered: ${url}` : 'No webhook registered yet.';
   } catch (err) {
     if (err.message !== 'unauthorized') el.webhookStatus.textContent = `Could not load webhook: ${err.message}`;
@@ -109,15 +106,22 @@ function isPlausibleWebhookUrl(value) {
 }
 
 el.btnLogin.addEventListener('click', async () => {
+  if (el.btnLogin.disabled) return;
   const key = el.keyInput.value.trim();
   if (!key) return;
+  el.btnLogin.disabled = true;
   localStorage.setItem(KEY_STORAGE, key);
   el.loginStatus.textContent = '';
-  await loadAccount();
+  try {
+    await loadAccount();
+  } finally {
+    el.btnLogin.disabled = false;
+  }
 });
 
 el.btnLogout.addEventListener('click', () => {
   localStorage.removeItem(KEY_STORAGE);
+  activeWebhookId = null;
   el.keyInput.value = '';
   showLogin();
 });
@@ -125,9 +129,18 @@ el.btnLogout.addEventListener('click', () => {
 el.btnTopUp.addEventListener('click', async () => {
   el.btnTopUp.disabled = true;
   try {
-    const { url } = await fetchCustomer('/billing/checkout', { method: 'POST' });
-    if (!url) throw new Error('checkout session had no redirect url');
-    window.location.href = url;
+    const returnUrl = window.location.href;
+    const data = await fetchCustomer('/billing/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        successUrl: returnUrl,
+        cancelUrl: returnUrl,
+      }),
+    });
+    const redirectUrl = data?.checkoutUrl || data?.url;
+    if (!redirectUrl) throw new Error('checkout session had no redirect url');
+    window.location.href = redirectUrl;
   } catch (err) {
     if (err.message !== 'unauthorized') log(`Could not start checkout: ${err.message}`);
   } finally {
@@ -143,11 +156,21 @@ el.btnWebhookSave.addEventListener('click', async () => {
   }
   el.btnWebhookSave.disabled = true;
   try {
-    await fetchCustomer('/billing/account/webhook', {
+    if (activeWebhookId) {
+      await fetchCustomer(`/webhooks/${encodeURIComponent(activeWebhookId)}`, {
+        method: 'DELETE',
+      }).catch(() => {});
+      activeWebhookId = null;
+    }
+    const created = await fetchCustomer('/webhooks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({
+        url,
+        description: 'Customer settlement webhook',
+      }),
     });
+    activeWebhookId = created?.id ?? created?.webhook?.id ?? null;
     el.webhookStatus.textContent = `Saved — Arbiter will call ${url} on settlement.`;
     log('Webhook saved.');
   } catch (err) {
@@ -160,7 +183,17 @@ el.btnWebhookSave.addEventListener('click', async () => {
 el.btnWebhookDelete.addEventListener('click', async () => {
   el.btnWebhookDelete.disabled = true;
   try {
-    await fetchCustomer('/billing/account/webhook', { method: 'DELETE' });
+    if (!activeWebhookId) {
+      await loadWebhook();
+    }
+    if (!activeWebhookId) {
+      el.webhookStatus.textContent = 'No webhook registered to remove.';
+      return;
+    }
+    await fetchCustomer(`/webhooks/${encodeURIComponent(activeWebhookId)}`, {
+      method: 'DELETE',
+    });
+    activeWebhookId = null;
     el.webhookInput.value = '';
     el.webhookStatus.textContent = 'Webhook removed.';
     log('Webhook removed.');
@@ -176,3 +209,4 @@ if (localStorage.getItem(KEY_STORAGE)) {
 } else {
   showLogin();
 }
+
