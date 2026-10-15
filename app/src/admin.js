@@ -449,17 +449,16 @@ async function renderPayouts() {
 }
 
 // ---------------------------------------------------------------------
-// Worker pool whitelists (issue #36). Whitelist-gated dispatch for private
-// worker pools is assumed to be backend-owned enforcement (dispatch.js) —
-// this view only manages the whitelist data itself, against an assumed
-// contract (the authoritative shape is the backend agent's to set):
-//   GET    /admin/worker-pools                          -> { pools: [{ id, name, whitelist: string[] }] }
-//   POST   /admin/worker-pools/:poolId/whitelist         { address } -> { whitelist: string[] }
-//   DELETE /admin/worker-pools/:poolId/whitelist/:address            -> { whitelist: string[] }
+// Worker pool whitelists (issue #36 / #202). arbiter-backend implements
+// private worker pools as a per-payer whitelist authenticated with a payer
+// session token:
+//   GET    /payers/:address/pool?token=...         -> { workers: string[] }
+//   POST   /payers/:address/pool  { token, worker } -> { workers: string[] }
+//   DELETE /payers/:address/pool/:worker?token=...  -> { workers: string[] }
 // ---------------------------------------------------------------------
 
-let poolsCache = [];
-let selectedPoolId = null;
+let selectedPoolPayer = '';
+let currentPoolWorkers = [];
 
 // Mirrors the StrKey.isValidEd25519PublicKey check main.js already uses for
 // the optional withdraw-beneficiary field — reject malformed input before
@@ -468,39 +467,98 @@ function isValidWorkerAddress(address) {
   return /^G[A-Z2-7]{55}$/.test(address);
 }
 
+function getSelectedPayerAddress() {
+  const manual = document.getElementById('pool-payer-address')?.value.trim();
+  if (manual) return manual;
+  return document.getElementById('pools-select')?.value.trim() || selectedPoolPayer || '';
+}
+
+function getPayerPoolToken() {
+  return document.getElementById('pool-payer-token')?.value.trim() || localStorage.getItem(TOKEN_KEY) || '';
+}
+
+async function fetchPayerPool(payerAddress, options = {}) {
+  const token = getPayerPoolToken();
+  const method = options.method || 'GET';
+  const query = `?token=${encodeURIComponent(token)}`;
+  const path = options.worker
+    ? `/payers/${encodeURIComponent(payerAddress)}/pool/${encodeURIComponent(options.worker)}${query}`
+    : `/payers/${encodeURIComponent(payerAddress)}/pool${method === 'GET' ? query : ''}`;
+  const res = await fetch(`${BACKEND_URL}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY) || ''}`,
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+  });
+  if (!res.ok) {
+    let message = `backend returned ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body && body.error) message = body.error;
+    } catch {
+      // ignore non-JSON body
+    }
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+async function loadSelectedPayerPool() {
+  const status = document.getElementById('pools-status');
+  const payerAddress = getSelectedPayerAddress();
+  if (!payerAddress) {
+    currentPoolWorkers = [];
+    replaceRows(
+      document.getElementById('pools-body'),
+      [emptyRow(2, 'Select or enter a payer address and session token to load their worker pool.')],
+    );
+    return;
+  }
+  selectedPoolPayer = payerAddress;
+  try {
+    const data = await fetchPayerPool(payerAddress);
+    currentPoolWorkers = data.workers || data.whitelist || [];
+    status.textContent = '';
+    renderPoolWhitelist();
+  } catch (err) {
+    currentPoolWorkers = [];
+    replaceRows(document.getElementById('pools-body'), [emptyRow(2, `Could not load pool: ${err.message}`)]);
+  }
+}
+
 async function renderPools() {
   const poolsSelect = document.getElementById('pools-select');
-  const { pools } = await fetchAdmin('/admin/worker-pools');
-  poolsCache = pools || [];
+  const { payers } = await fetchAdmin('/admin/payers');
+  const payerList = payers || [];
   poolsSelect.replaceChildren(
-    ...poolsCache.map((p) => {
+    ...payerList.map((p) => {
       const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.name || p.id;
+      opt.value = p.payerAddress;
+      opt.textContent = truncateAddress(p.payerAddress);
       return opt;
     }),
   );
-  if (poolsCache.length === 0) {
-    selectedPoolId = null;
-    replaceRows(document.getElementById('pools-body'), [emptyRow(2, 'No worker pools configured yet.')]);
+  if (payerList.length === 0) {
+    selectedPoolPayer = '';
+    replaceRows(document.getElementById('pools-body'), [emptyRow(2, 'No payers recorded yet — enter a payer address above.')]);
     return;
   }
-  selectedPoolId = poolsCache[0].id;
-  poolsSelect.value = selectedPoolId;
-  renderPoolWhitelist();
+  selectedPoolPayer = payerList[0].payerAddress;
+  poolsSelect.value = selectedPoolPayer;
+  await loadSelectedPayerPool();
 }
 
 function renderPoolWhitelist() {
   const tbody = document.getElementById('pools-body');
-  const pool = poolsCache.find((p) => p.id === selectedPoolId);
-  const whitelist = (pool && pool.whitelist) || [];
-  if (whitelist.length === 0) {
+  if (currentPoolWorkers.length === 0) {
     replaceRows(tbody, [emptyRow(2, 'No whitelisted workers in this pool yet.')]);
     return;
   }
   replaceRows(
     tbody,
-    whitelist.map((address) => {
+    currentPoolWorkers.map((address) => {
       const btnRemove = document.createElement('button');
       btnRemove.textContent = 'Remove';
       btnRemove.className = 'small';
@@ -513,35 +571,39 @@ function renderPoolWhitelist() {
 }
 
 document.getElementById('pools-select').addEventListener('change', (evt) => {
-  selectedPoolId = evt.target.value;
-  renderPoolWhitelist();
+  selectedPoolPayer = evt.target.value;
+  loadSelectedPayerPool();
+});
+
+document.getElementById('btn-pool-load')?.addEventListener('click', () => {
+  loadSelectedPayerPool();
 });
 
 document.getElementById('pool-add-form').addEventListener('submit', async (evt) => {
   evt.preventDefault();
   const status = document.getElementById('pools-status');
   const input = document.getElementById('pool-add-address');
-  const address = input.value.trim();
-  if (!selectedPoolId) {
-    status.textContent = 'No pool selected.';
+  const worker = input.value.trim();
+  const payerAddress = getSelectedPayerAddress();
+  if (!payerAddress) {
+    status.textContent = 'No payer selected.';
     return;
   }
-  if (!isValidWorkerAddress(address)) {
+  if (!isValidWorkerAddress(worker)) {
     status.textContent = 'Not a valid Stellar worker address.';
     return;
   }
-  const pool = poolsCache.find((p) => p.id === selectedPoolId);
-  if (pool && (pool.whitelist || []).includes(address)) {
+  if (currentPoolWorkers.includes(worker)) {
     status.textContent = 'That address is already whitelisted for this pool.';
     return;
   }
   try {
-    const { whitelist } = await fetchAdmin(`/admin/worker-pools/${encodeURIComponent(selectedPoolId)}/whitelist`, {
+    const token = getPayerPoolToken();
+    const data = await fetchPayerPool(payerAddress, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address }),
+      body: { token, worker },
     });
-    if (pool) pool.whitelist = whitelist;
+    currentPoolWorkers = data.workers || data.whitelist || [];
     input.value = '';
     status.textContent = 'Added.';
     renderPoolWhitelist();
@@ -550,15 +612,18 @@ document.getElementById('pool-add-form').addEventListener('submit', async (evt) 
   }
 });
 
-async function removeFromWhitelist(address) {
+async function removeFromWhitelist(worker) {
   const status = document.getElementById('pools-status');
+  const payerAddress = getSelectedPayerAddress();
+  if (!payerAddress) return;
   try {
-    const { whitelist } = await fetchAdmin(
-      `/admin/worker-pools/${encodeURIComponent(selectedPoolId)}/whitelist/${encodeURIComponent(address)}`,
-      { method: 'DELETE' },
-    );
-    const pool = poolsCache.find((p) => p.id === selectedPoolId);
-    if (pool) pool.whitelist = whitelist;
+    const token = getPayerPoolToken();
+    const data = await fetchPayerPool(payerAddress, {
+      method: 'DELETE',
+      worker,
+      body: { token },
+    });
+    currentPoolWorkers = data.workers || data.whitelist || [];
     status.textContent = 'Removed.';
     renderPoolWhitelist();
   } catch (err) {

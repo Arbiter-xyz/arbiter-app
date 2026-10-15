@@ -140,16 +140,20 @@
           <h2>Worker Pools</h2>
           <div class="panel">
             <p class="muted small">
-              Whitelist-gated dispatch for private worker pools (backend-owned enforcement in dispatch.js). This view
-              manages the whitelist data only — see admin.js's renderPools() for the assumed endpoint shape.
+              Whitelist-gated dispatch for per-payer private worker pools (<code>/payers/:address/pool</code> in
+              <code>arbiter-backend</code>). Select or enter a payer address and their session token to inspect or
+              update their whitelisted workers.
             </p>
-            <div class="row">
-              <label for="pools-select" class="muted small">Pool</label>
-              <select id="pools-select" style="flex: 1; padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)"></select>
+            <div class="row" style="gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem">
+              <label for="pools-select" class="muted small">Payer</label>
+              <select id="pools-select" style="flex: 1; min-width: 180px; padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)"></select>
+              <input id="pool-payer-address" type="text" placeholder="Or payer Stellar address (G...)" style="flex: 1; min-width: 200px; padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)" />
+              <input id="pool-payer-token" type="password" placeholder="Payer session token" style="flex: 1; min-width: 160px; padding: 0.4rem 0.6rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)" />
+              <button id="btn-pool-load" type="button" class="secondary">Load pool</button>
             </div>
             <table class="leaderboard-table">
               <thead><tr><th>Whitelisted worker</th><th></th></tr></thead>
-              <tbody id="pools-body"><tr><td colspan="2" class="muted small">Loading…</td></tr></tbody>
+              <tbody id="pools-body"><tr><td colspan="2" class="muted small">Enter a payer address and session token to load their pool.</td></tr></tbody>
             </table>
             <form id="pool-add-form" class="row" style="margin-top: 0.75rem">
               <input id="pool-add-address" type="text" placeholder="Worker Stellar address (G...)" style="flex: 1; padding: 0.5rem 0.7rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)" />

@@ -1,12 +1,8 @@
-// Worker referral links (issue #84).
+// Worker referral links (issues #84, #205).
 //
-// Backend contract (arbiter-backend, store.js-backed like Stake/Owed):
-//   POST /workers/:address/referral        (Bearer session) -> { code }
-//   GET  /workers/:address/referral/stats  (Bearer session) -> { referred, established }
-// Attribution happens at sponsored onboarding: the stored ?ref= code is sent
-// as `referralCode` in the POST /sponsor/onboard/build body. Counts are only
-// readable by the referring worker's own session — no public surface.
-// Rewards are reputational only (a visible count); no USDC reward.
+// Backend contract (arbiter-backend referrals.js):
+//   POST /workers/:address/referral-code   body: { token }  -> { code }
+//   GET  /workers/:address/referrals?token=<token>          -> { referrer, code, referees, counts: { pending, qualified, disqualified } }
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const STORAGE_KEY = 'arbiter.referralCode';
@@ -39,10 +35,19 @@ export function referralLink(code) {
   return `${location.origin}/index.html?ref=${encodeURIComponent(code)}`;
 }
 
-async function authedFetch(path, token, init = {}) {
-  const res = await fetch(`${BACKEND_URL}${path}`, {
-    ...init,
-    headers: { ...(init.headers || {}), Authorization: `Bearer ${token}` },
+async function fetchReferralSummary(address, token) {
+  const url = new URL(`${BACKEND_URL}/workers/${encodeURIComponent(address)}/referrals`);
+  url.searchParams.set('token', token);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`backend returned ${res.status}`);
+  return res.json();
+}
+
+async function createReferralCode(address, token) {
+  const res = await fetch(`${BACKEND_URL}/workers/${encodeURIComponent(address)}/referral-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
   });
   if (!res.ok) throw new Error(`backend returned ${res.status}`);
   return res.json();
@@ -61,11 +66,19 @@ export function initReferralPanel() {
   async function refreshStats() {
     if (!session) return;
     try {
-      const { referred = 0, established = 0 } = await authedFetch(
-        `/workers/${session.address}/referral/stats`,
-        session.token,
-      );
-      stats.textContent = `${referred} referred · ${established} reached established status`;
+      const data = await fetchReferralSummary(session.address, session.token);
+      const counts = data?.counts || {};
+      const qualified = counts.qualified ?? 0;
+      const pending = counts.pending ?? 0;
+      const disqualified = counts.disqualified ?? 0;
+      const referred = Array.isArray(data?.referees)
+        ? data.referees.length
+        : pending + qualified + disqualified;
+      if (data?.code) {
+        input.value = referralLink(data.code);
+        input.classList.remove('hidden');
+      }
+      stats.textContent = `${referred} referred (${pending} pending · ${qualified} qualified)`;
     } catch {
       stats.textContent = '';
     }
@@ -81,7 +94,7 @@ export function initReferralPanel() {
     if (!session) return;
     btn.disabled = true;
     try {
-      const { code } = await authedFetch(`/workers/${session.address}/referral`, session.token, { method: 'POST' });
+      const { code } = await createReferralCode(session.address, session.token);
       input.value = referralLink(code);
       input.classList.remove('hidden');
       try {

@@ -31,18 +31,21 @@
  *   3. A tab returning to the foreground, or coming back online, resyncs
  *      from the snapshot and the stream resumes from its cursor.
  */
-const RETRY_MIN_MS = 1_000;
-const RETRY_MAX_MS = 30_000;
+const POLL_INTERVAL_MS = 10_000;
 
 export function subscribeQuestionStatus({ backendUrl, address, getToken, onSnapshot, onEvent, onConnection }) {
   const channelName = `arbiter-status:${address}`;
   const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel(channelName) : null;
   let cursor = 0;
   let closed = false;
-  let source = null;
-  let retryMs = RETRY_MIN_MS;
+  let pollTimer = null;
   let releaseLock = null;
   let resyncing = null;
+
+  function announce(connected) {
+    onConnection?.(connected);
+    bc?.postMessage({ type: 'connection', connected });
+  }
 
   async function resync() {
     if (resyncing) return resyncing;
@@ -54,6 +57,11 @@ export function subscribeQuestionStatus({ backendUrl, address, getToken, onSnaps
         const data = await res.json();
         if (Number.isFinite(data.cursor)) cursor = Math.max(cursor, data.cursor);
         onSnapshot(data);
+        bc?.postMessage({ type: 'snapshot', data });
+        announce(true);
+      } catch (err) {
+        announce(false);
+        throw err;
       } finally {
         resyncing = null;
       }
@@ -64,63 +72,47 @@ export function subscribeQuestionStatus({ backendUrl, address, getToken, onSnaps
   function deliver(seq, payload) {
     if (seq <= cursor) return; // duplicate (replay overlap / own broadcast)
     if (cursor && seq > cursor + 1) {
-      resync(); // gap: we missed intermediate statuses
+      resync().catch(() => {}); // gap: we missed intermediate statuses
       return;
     }
     cursor = seq;
-    onEvent(payload);
+    onEvent?.(payload);
   }
 
   bc?.addEventListener('message', ({ data }) => {
-    if (data?.type === 'status') deliver(data.seq, data.payload);
-    else if (data?.type === 'connection') onConnection?.(data.connected);
+    if (data?.type === 'snapshot' && data.data) {
+      if (Number.isFinite(data.data.cursor)) cursor = Math.max(cursor, data.data.cursor);
+      onSnapshot(data.data);
+    } else if (data?.type === 'status') {
+      deliver(data.seq, data.payload);
+    } else if (data?.type === 'connection') {
+      onConnection?.(data.connected);
+    }
   });
 
-  function announce(connected) {
-    onConnection?.(connected);
-    bc?.postMessage({ type: 'connection', connected });
-  }
-
-  async function openStream() {
+  function startLeaderPolling() {
     if (closed) return;
-    const token = await getToken();
-    const url = `${backendUrl}/payers/${address}/questions/stream?token=${encodeURIComponent(token)}&since=${cursor}`;
-    source = new EventSource(url);
-    source.onopen = () => {
-      retryMs = RETRY_MIN_MS;
-      announce(true);
-    };
-    source.addEventListener('status', (e) => {
-      const seq = Number(e.lastEventId);
-      const payload = JSON.parse(e.data);
-      bc?.postMessage({ type: 'status', seq, payload });
-      deliver(seq, payload);
-    });
-    source.onerror = () => {
-      announce(false);
-      // CONNECTING: the browser is auto-reconnecting with Last-Event-ID.
-      // CLOSED (e.g. 401 after the session token expired): reopen ourselves
-      // with a fresh token and `since=cursor`, with backoff.
-      if (source.readyState === EventSource.CLOSED && !closed) {
-        source = null;
-        setTimeout(openStream, retryMs);
-        retryMs = Math.min(retryMs * 2, RETRY_MAX_MS);
-      }
-    };
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(() => {
+      if (!closed) resync().catch(() => {});
+    }, POLL_INTERVAL_MS);
   }
 
   function becomeLeaderWhenAvailable() {
-    if (!navigator.locks) return openStream();
+    if (typeof navigator === 'undefined' || !navigator.locks) {
+      startLeaderPolling();
+      return;
+    }
     navigator.locks.request(channelName, () => {
       if (closed) return;
-      openStream();
+      startLeaderPolling();
       // Hold the lock until unsubscribe (or the tab dies).
       return new Promise((resolve) => (releaseLock = resolve));
     });
   }
 
-  const onVisible = () => document.visibilityState === 'visible' && resync();
-  const onOnline = () => resync();
+  const onVisible = () => document.visibilityState === 'visible' && resync().catch(() => {});
+  const onOnline = () => resync().catch(() => {});
   document.addEventListener('visibilitychange', onVisible);
   window.addEventListener('online', onOnline);
 
@@ -131,7 +123,10 @@ export function subscribeQuestionStatus({ backendUrl, address, getToken, onSnaps
     resync,
     close() {
       closed = true;
-      source?.close();
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
       releaseLock?.();
       bc?.close();
       document.removeEventListener('visibilitychange', onVisible);
