@@ -33,7 +33,14 @@ function saveStarred(address, starred) {
   }
 }
 
-/** Flips the star on questionId for address; returns the new starred state. */
+/**
+ * Flips the star on questionId for address; returns the new starred state.
+ *
+ * Reads the persisted set fresh on every call (rather than caching it in
+ * module state), so two toggles on the same questionId in the same tick
+ * resolve deterministically: the second call sees the first call's write
+ * and flips it back. The returned boolean always reflects what was saved.
+ */
 export function toggleStarred(address, questionId) {
   const starred = loadStarred(address);
   const nowStarred = !starred.has(questionId);
