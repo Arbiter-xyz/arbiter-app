@@ -28,6 +28,15 @@ const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 // treated as untrusted and falls back to the manual-instructions display.
 const MAX_AUTO_RELAY_AMOUNT = 100000;
 
+// How long a cached anchor config is trusted before we re-fetch it. The
+// config pins the anchor's webAuthEndpoint and transferServerSep24, so a
+// long-lived tab that cached it once could otherwise keep opening the
+// withdrawal popup against an endpoint the backend has since changed
+// (e.g. an anchor migration or a rotated/compromised endpoint). Re-fetching
+// bounds that staleness window without re-hitting the backend on every
+// click.
+const ANCHOR_CONFIG_TTL_MS = 5 * 60 * 1000;
+
 async function getAnchorConfig() {
   const res = await fetch(`${BACKEND_URL}/anchor/config`);
   if (res.status === 503) return null; // no anchor configured on this backend
@@ -122,9 +131,23 @@ async function reportToArbiter({ address, arbiterSessionToken, transaction }) {
  */
 export function initBankWithdraw({ button, status, getAddress, getWallet, getArbiterSessionToken, networkPassphrase, assetCode, autoRelayWithdrawal }) {
   let anchorConfigPromise = null;
+  let anchorConfigFetchedAt = 0;
 
+  // Re-fetch the anchor config once the cached copy is older than
+  // ANCHOR_CONFIG_TTL_MS, so a long-lived tab can't keep opening the
+  // withdrawal popup against a stale endpoint after the backend's anchor
+  // config has changed. Concurrent callers share the in-flight promise.
   async function ensureAnchorConfig() {
-    if (!anchorConfigPromise) anchorConfigPromise = getAnchorConfig();
+    const isStale = !anchorConfigPromise || Date.now() - anchorConfigFetchedAt > ANCHOR_CONFIG_TTL_MS;
+    if (isStale) {
+      anchorConfigFetchedAt = Date.now();
+      anchorConfigPromise = getAnchorConfig().catch((err) => {
+        // Don't cache a failed fetch — let the next call retry.
+        anchorConfigPromise = null;
+        anchorConfigFetchedAt = 0;
+        throw err;
+      });
+    }
     return anchorConfigPromise;
   }
 
@@ -171,33 +194,6 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
         let fallbackPrefix = '';
         if (canAutoRelay && window.confirm(`Send ${transaction.amount_in} ${assetCode} to the anchor to complete this withdrawal?`)) {
           try {
-            status.textContent = 'Sending the payment to the anchor…';
-            await autoRelayWithdrawal({
-              amount: transaction.amount_in,
-              beneficiary: transaction.withdraw_anchor_account,
-              memo: transaction.withdraw_memo
-                ? { type: transaction.withdraw_memo_type || 'text', value: transaction.withdraw_memo }
-                : null,
-            });
-            status.textContent = 'Payment sent — waiting for the anchor to confirm receipt…';
-            return;
-          } catch (err) {
-            fallbackPrefix = `Automatic payment failed (${err.message}). `;
-          }
-        } else if (transaction.amount_in && relayAmount > MAX_AUTO_RELAY_AMOUNT) {
-          fallbackPrefix = `The anchor requested ${transaction.amount_in} ${assetCode}, which exceeds the automatic payment limit. `;
-        }
+            st
 
-        status.textContent = `${fallbackPrefix}Send ${transaction.amount_in} ${assetCode} to ${transaction.withdraw_anchor_account}` +
-          (transaction.withdraw_memo ? ` with memo ${transaction.withdraw_memo}` : '') +
-          ' to complete this withdrawal.';
-      } else {
-        status.textContent = `Anchor status: ${transaction.status}`;
-      }
-    } catch (err) {
-      status.textContent = `Withdrawal failed: ${err.message}`;
-    } finally {
-      button.disabled = false;
-    }
-  });
-}
+/* … truncated 1355 chars — edit only what you need near the top … */
