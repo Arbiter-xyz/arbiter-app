@@ -15,6 +15,17 @@ export async function enrollBiometricUnlock() {
   } catch { return false; }
 }
 
+/**
+ * Runs a WebAuthn assertion to prove the user is present and verified.
+ *
+ * IMPORTANT: This only proves the biometric ceremony succeeded. It does NOT
+ * decrypt, derive, or return any wallet secret/key material. The resolved
+ * value is a bare boolean indicating ceremony success, not key access.
+ * Callers must not treat a `true` result as authorization to read or use
+ * secret material; any actual secret retrieval must be performed separately.
+ *
+ * @returns {Promise<boolean>} `true` if the WebAuthn ceremony succeeded, `false` otherwise.
+ */
 export async function unlockLocalWalletSecret() {
   const id = localStorage.getItem(CREDENTIAL_KEY);
   if (!id || !window.PublicKeyCredential) return false;
