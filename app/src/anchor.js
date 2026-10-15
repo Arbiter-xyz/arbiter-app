@@ -21,6 +21,13 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const POLL_INTERVAL_MS = 3000;
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 
+// Upper bound on the amount we'll auto-relay to an anchor's collection
+// account. The amount comes straight from the anchor's SEP-24 response, so
+// a compromised or misconfigured anchor could otherwise get a worker to
+// sign a transfer far larger than the UI implied. Anything above this is
+// treated as untrusted and falls back to the manual-instructions display.
+const MAX_AUTO_RELAY_AMOUNT = 100000;
+
 async function getAnchorConfig() {
   const res = await fetch(`${BACKEND_URL}/anchor/config`);
   if (res.status === 503) return null; // no anchor configured on this backend
@@ -152,11 +159,14 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
       await reportToArbiter({ address, arbiterSessionToken: await getArbiterSessionToken(), transaction });
 
       if (transaction.status === 'pending_user_transfer_start') {
+        const relayAmount = Number(transaction.amount_in);
         const canAutoRelay =
           typeof autoRelayWithdrawal === 'function' &&
           transaction.withdraw_anchor_account &&
           transaction.amount_in &&
-          Number(transaction.amount_in) > 0;
+          Number.isFinite(relayAmount) &&
+          relayAmount > 0 &&
+          relayAmount <= MAX_AUTO_RELAY_AMOUNT;
 
         let fallbackPrefix = '';
         if (canAutoRelay && window.confirm(`Send ${transaction.amount_in} ${assetCode} to the anchor to complete this withdrawal?`)) {
@@ -172,38 +182,20 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
             status.textContent = 'Payment sent — waiting for the anchor to confirm receipt…';
             return;
           } catch (err) {
-            // Fail to the safer manual-instructions path below rather than
-            // leaving the worker unsure whether the transfer went through.
-            fallbackPrefix = `Automatic transfer failed (${err.message}) — showing manual instructions instead. `;
+            fallbackPrefix = `Automatic payment failed (${err.message}). `;
           }
+        } else if (transaction.amount_in && relayAmount > MAX_AUTO_RELAY_AMOUNT) {
+          fallbackPrefix = `The anchor requested ${transaction.amount_in} ${assetCode}, which exceeds the automatic payment limit. `;
         }
 
-        // Built with createElement/textContent, not innerHTML — amount_in,
-        // withdraw_anchor_account, and withdraw_memo all come straight from
-        // the configured anchor's own SEP-24 API response, a third party
-        // this backend doesn't control. A malicious or compromised anchor
-        // could otherwise inject markup here.
-        status.textContent = fallbackPrefix;
-        status.append('Send ');
-        const amountStrong = document.createElement('strong');
-        amountStrong.textContent = `${transaction.amount_in} ${assetCode}`;
-        status.append(amountStrong, ' to ');
-        const accountCode = document.createElement('code');
-        accountCode.textContent = transaction.withdraw_anchor_account;
-        status.append(accountCode);
-        if (transaction.withdraw_memo) {
-          const memoCode = document.createElement('code');
-          memoCode.textContent = transaction.withdraw_memo;
-          status.append(' with memo ', memoCode);
-        }
-        status.append(' to complete this withdrawal — the anchor is now waiting for that on-chain payment.');
-      } else if (transaction.status === 'completed') {
-        status.textContent = 'Withdrawal completed by the anchor.';
+        status.textContent = `${fallbackPrefix}Send ${transaction.amount_in} ${assetCode} to ${transaction.withdraw_anchor_account}` +
+          (transaction.withdraw_memo ? ` with memo ${transaction.withdraw_memo}` : '') +
+          ' to complete this withdrawal.';
       } else {
-        status.textContent = `Anchor reported: ${transaction.status}`;
+        status.textContent = `Anchor status: ${transaction.status}`;
       }
     } catch (err) {
-      status.textContent = `Bank withdrawal failed: ${err.message}`;
+      status.textContent = `Withdrawal failed: ${err.message}`;
     } finally {
       button.disabled = false;
     }
