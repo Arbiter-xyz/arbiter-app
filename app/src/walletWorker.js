@@ -17,6 +17,14 @@
  *    signatures while it is running, which is the same capability any
  *    extension wallet's content-script bridge has.
  *
+ *  - "locked-fallback": on browsers without WebCrypto Ed25519 the seed
+ *    cannot be imported as a non-extractable key, so the encrypted secret
+ *    is retained and signing happens in-worker. This is WEAKER than
+ *    "locked": the wrapping key is non-extractable, but the seed is still
+ *    recoverable by code running in this worker (e.g. an XSS payload that
+ *    reaches the worker). The UI must disclose this distinction rather than
+ *    presenting it as equivalent to "locked".
+ *
  * The raw secret, when it exists at all, only ever lives in this worker's
  * heap; the page talks to it through the narrow RPC below.
  */
@@ -84,7 +92,9 @@ async function lock() {
   if (!rec || rec.state !== 'pending-backup') return { state: rec?.state };
   if (!(await ed25519Supported())) {
     // No WebCrypto Ed25519 (older Safari/Firefox): keep the encrypted secret
-    // and in-worker signing, but still refuse further exports.
+    // and in-worker signing, but still refuse further exports. This is
+    // weaker than "locked" — the seed remains recoverable by code in this
+    // worker — so report it distinctly for the UI to disclose.
     rec = { ...rec, state: 'locked-fallback' };
   } else {
     const seed = StrKey.decodeEd25519SecretSeed(keypair.secret());
