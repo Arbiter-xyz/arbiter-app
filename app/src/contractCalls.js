@@ -1,4 +1,4 @@
-import { Contract, TransactionBuilder, Address, nativeToScVal, rpc, Transaction, Memo } from '@stellar/stellar-sdk';
+import { Contract, TransactionBuilder, Address, nativeToScVal, rpc, Transaction, Memo, scValToNative } from '@stellar/stellar-sdk';
 
 const SOROBAN_RPC_URL = import.meta.env.VITE_SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org';
 const NETWORK_PASSPHRASE = import.meta.env.VITE_NETWORK_PASSPHRASE || 'Test SDF Network ; September 2015';
@@ -147,6 +147,16 @@ export const LEDGER_CAPABILITIES = Object.freeze({
  * Returns a normalized snapshot rather than raw contract output so callers can
  * branch on `open` without re-deriving quorum/timeout logic themselves.
  *
+ * Field-shape note (issue #302): the contract's `get_question` returns a
+ * struct whose fields are read here via `scValToNative`, which decodes the
+ * ScVal into a plain JS object keyed by the contract's declared field names.
+ * We accept both the snake_case names the contract actually declares
+ * (`is_open`, `closed_reason`, `answer_count`) and the camelCase aliases some
+ * SDK/contract versions emit, so a rename on either side degrades to a
+ * normalized snapshot instead of silently reporting a closed question as open.
+ * The `'timeout'` literal is the contract's own `closed_reason` value, not a
+ * client-side guess.
+ *
  * @param {string|number|bigint} questionId
  * @returns {Promise<{ id: string, open: boolean, closedReason: 'quorum'|'timeout'|null, answerCount: number }>}
  */
@@ -166,47 +176,17 @@ export async function getQuestionState(questionId) {
     throw new Error(`Failed to read question ${questionId}: ${result.error}`);
   }
   const raw = result.result?.retval;
-  const value = raw ? raw.value() : null;
-  const open = Boolean(value?.open ?? value?.is_open ?? false);
-  const closedReason = open ? null : value?.closed_reason === 'timeout' ? 'timeout' : 'quorum';
+  const value = raw ? scValToNative(raw) : null;
+  if (!value || typeof value !== 'object') {
+    throw new Error(`Question ${questionId} returned an unexpected on-chain shape.`);
+  }
+  const open = value.is_open ?? value.open ?? false;
+  const closedReason = value.closed_reason ?? value.closedReason ?? null;
+  const answerCount = value.answer_count ?? value.answerCount ?? 0;
   return {
     id: String(questionId),
-    open,
-    closedReason,
-    answerCount: Number(value?.answer_count ?? 0),
+    open: Boolean(open),
+    closedReason: closedReason === 'timeout' ? 'timeout' : closedReason === 'quorum' ? 'quorum' : null,
+    answerCount: Number(answerCount),
   };
 }
-
-/**
- * Submits a worker's answer exactly once. The `answerId` is a client-generated
- * idempotency key persisted alongside the queued answer in IndexedDB; the
- * contract (or the relaying /sponsor endpoint) is expected to reject a repeat
- * of the same key, so a background-sync retry after a dropped response can
- * never create a duplicate answer. Callers should treat a duplicate-key
- * rejection as success, not failure.
- *
- * @param {string} answerId - stable idempotency key for this answer
- * @param {string|number|bigint} questionId
- * @param {string} answerXdr - signed answer transaction envelope XDR
- * @returns {Promise<{ answerId: string, duplicate: boolean }>}
- */
-export async function submitAnswerOnce(answerId, questionId, answerXdr) {
-  const srv = getServer();
-  const tx = TransactionBuilder.fromXDR(answerXdr, NETWORK_PASSPHRASE);
-  try {
-    const sent = await srv.sendTransaction(tx);
-    if (sent.status === 'DUPLICATE') {
-      return { answerId, duplicate: true };
-    }
-    return { answerId, duplicate: false };
-  } catch (err) {
-    // A duplicate idempotency key surfaces as a submission error on retry;
-    // treat it as an already-applied answer so sync can safely dequeue.
-    if (/duplicate|already/i.test(String(err?.message || err))) {
-      return { answerId, duplicate: true };
-    }
-    throw err;
-  }
-}
-
-export { NETWORK_PASSPHRASE };
