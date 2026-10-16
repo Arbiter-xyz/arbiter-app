@@ -185,3 +185,6 @@ executions, transaction links included.)
 
 <!-- handsoff-issue-268 -->
 - #268: Review: main.js's demand-polling interval is never cleared
+
+<!-- handsoff-issue-269 -->
+- #269: Review: main.js's earnings-refresh interval can stack on reconnect
