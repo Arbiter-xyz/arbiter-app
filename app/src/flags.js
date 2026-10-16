@@ -82,6 +82,9 @@ async function loadFromJson(userId) {
   return out;
 }
 
+// Cached for the page's lifetime intentionally: feature flags should remain
+// stable within a single session to prevent mid-workflow UI inconsistency,
+// layout shifts, or redundant network requests. Changes take effect on reload.
 let loaded;
 export function loadFlags() {
   if (!loaded) {
