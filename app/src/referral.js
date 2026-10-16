@@ -48,6 +48,19 @@ async function authedFetch(path, token, init = {}) {
   return res.json();
 }
 
+// Copies the referral link, falling back to a manual selection when the
+// Clipboard API is unavailable or rejects (e.g. insecure context, denied
+// permission). Exported so the failure path can be unit-tested directly.
+export async function copyReferralLink(input, stats) {
+  try {
+    await navigator.clipboard.writeText(input.value);
+    stats.textContent = 'Link copied to clipboard.';
+  } catch {
+    input.select();
+    stats.textContent = 'Copy failed — link selected, press Ctrl/Cmd+C to copy.';
+  }
+}
+
 // Wires the referral block in the earnings panel. The console dispatches
 // `arbiter:session` ({ address, token }) once ensureSession() succeeds.
 export function initReferralPanel() {
@@ -84,12 +97,7 @@ export function initReferralPanel() {
       const { code } = await authedFetch(`/workers/${session.address}/referral`, session.token, { method: 'POST' });
       input.value = referralLink(code);
       input.classList.remove('hidden');
-      try {
-        await navigator.clipboard.writeText(input.value);
-        stats.textContent = 'Link copied to clipboard.';
-      } catch {
-        input.select();
-      }
+      await copyReferralLink(input, stats);
     } catch (err) {
       stats.textContent = `Could not create referral link: ${err.message}`;
     } finally {
