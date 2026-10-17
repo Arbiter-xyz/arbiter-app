@@ -13,8 +13,12 @@ function getServer() {
 /** Builds a Memo instance from the plain {type, value} shape callers pass
  * around (issue #22) — kept here rather than in anchor.js so anchor.js
  * doesn't need a hard dependency on the Stellar SDK just to shuttle a
- * memo through. `type` matches SEP-24's `withdraw_memo_type` values. */
-function buildMemo(memo) {
+ * memo through. `type` matches SEP-24's `withdraw_memo_type` values.
+ *
+ * Exported (issue #255) so the per-type branches — id/hash/return/text and
+ * the unrecognized-type fallthrough — can be covered by focused unit tests
+ * without exercising the RPC path. */
+export function buildMemo(memo) {
   if (!memo || !memo.value) return null;
   switch (memo.type) {
     case 'id':
@@ -166,47 +170,6 @@ export async function getQuestionState(questionId) {
     throw new Error(`Failed to read question ${questionId}: ${result.error}`);
   }
   const raw = result.result?.retval;
-  const value = raw ? raw.value() : null;
-  const open = Boolean(value?.open ?? value?.is_open ?? false);
-  const closedReason = open ? null : value?.closed_reason === 'timeout' ? 'timeout' : 'quorum';
-  return {
-    id: String(questionId),
-    open,
-    closedReason,
-    answerCount: Number(value?.answer_count ?? 0),
-  };
-}
+  const value = 
 
-/**
- * Submits a worker's answer exactly once. The `answerId` is a client-generated
- * idempotency key persisted alongside the queued answer in IndexedDB; the
- * contract (or the relaying /sponsor endpoint) is expected to reject a repeat
- * of the same key, so a background-sync retry after a dropped response can
- * never create a duplicate answer. Callers should treat a duplicate-key
- * rejection as success, not failure.
- *
- * @param {string} answerId - stable idempotency key for this answer
- * @param {string|number|bigint} questionId
- * @param {string} answerXdr - signed answer transaction envelope XDR
- * @returns {Promise<{ answerId: string, duplicate: boolean }>}
- */
-export async function submitAnswerOnce(answerId, questionId, answerXdr) {
-  const srv = getServer();
-  const tx = TransactionBuilder.fromXDR(answerXdr, NETWORK_PASSPHRASE);
-  try {
-    const sent = await srv.sendTransaction(tx);
-    if (sent.status === 'DUPLICATE') {
-      return { answerId, duplicate: true };
-    }
-    return { answerId, duplicate: false };
-  } catch (err) {
-    // A duplicate idempotency key surfaces as a submission error on retry;
-    // treat it as an already-applied answer so sync can safely dequeue.
-    if (/duplicate|already/i.test(String(err?.message || err))) {
-      return { answerId, duplicate: true };
-    }
-    throw err;
-  }
-}
-
-export { NETWORK_PASSPHRASE };
+/* … truncated 1688 chars — edit only what you need near the top … */
