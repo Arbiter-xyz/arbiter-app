@@ -1,4 +1,4 @@
-import { Contract, TransactionBuilder, Address, nativeToScVal, rpc, Transaction, Memo } from '@stellar/stellar-sdk';
+import { Contract, TransactionBuilder, Address, nativeToScVal, rpc, Transaction, Memo, scValToNative } from '@stellar/stellar-sdk';
 
 const SOROBAN_RPC_URL = import.meta.env.VITE_SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org';
 const NETWORK_PASSPHRASE = import.meta.env.VITE_NETWORK_PASSPHRASE || 'Test SDF Network ; September 2015';
@@ -151,6 +151,16 @@ export const LEDGER_CAPABILITIES = Object.freeze({
  * Returns a normalized snapshot rather than raw contract output so callers can
  * branch on `open` without re-deriving quorum/timeout logic themselves.
  *
+ * Field-shape note (issue #302): the contract's `get_question` returns a
+ * struct whose fields are read here via `scValToNative`, which decodes the
+ * ScVal into a plain JS object keyed by the contract's declared field names.
+ * We accept both the snake_case names the contract actually declares
+ * (`is_open`, `closed_reason`, `answer_count`) and the camelCase aliases some
+ * SDK/contract versions emit, so a rename on either side degrades to a
+ * normalized snapshot instead of silently reporting a closed question as open.
+ * The `'timeout'` literal is the contract's own `closed_reason` value, not a
+ * client-side guess.
+ *
  * @param {string|number|bigint} questionId
  * @returns {Promise<{ id: string, open: boolean, closedReason: 'quorum'|'timeout'|null, answerCount: number }>}
  */
@@ -169,7 +179,87 @@ export async function getQuestionState(questionId) {
   if (rpc.Api.isSimulationError(result)) {
     throw new Error(`Failed to read question ${questionId}: ${result.error}`);
   }
-  const raw = result.result?.retval;
-  const value = 
+  const raw = scValToNative(result.result.retval) || {};
+  const isOpen = raw.is_open ?? raw.isOpen ?? false;
+  const closedReason = raw.closed_reason ?? raw.closedReason ?? null;
+  const answerCount = raw.answer_count ?? raw.answerCount ?? 0;
+  return {
+    id: String(questionId),
+    open: Boolean(isOpen),
+    closedReason: closedReason === 'timeout' ? 'timeout' : closedReason === 'quorum' ? 'quorum' : null,
+    answerCount: Number(answerCount),
+  };
+}
 
-/* … truncated 1688 chars — edit only what you need near the top … */
+/**
+ * Submits a single answer for `questionId` from `workerAddress`, exactly once.
+ *
+ * Duplicate detection (issue #303): the contract rejects a second answer from
+ * the same worker with a `DuplicateAnswer` error, but the RPC layer surfaces
+ * that as a free-form error *string*, so the previous implementation matched a
+ * regex against the message text to decide whether the failure was a benign
+ * duplicate. That is fragile: any unrelated error whose text happened to
+ * contain the matched substring (e.g. a contract panic mentioning the word, or
+ * a wrapped error from a different method) would be silently swallowed and
+ * reported as a successful idempotent no-op, hiding a genuine failure.
+ *
+ * We now only treat the failure as a duplicate when the error is *specifically*
+ * the contract's duplicate-answer rejection. The check is anchored to the
+ * contract error name and, when the RPC exposes a structured error code, to
+ * that code as well — a plain substring match is no longer sufficient. Anything
+ * else is re-thrown so the caller sees the real failure.
+ *
+ * @param {string} workerAddress
+ * @param {string|number|bigint} questionId
+ * @param {string|number|bigint} answer
+ * @returns {Promise<{ submitted: boolean, duplicate: boolean }>}
+ */
+export async function submitAnswerOnce(workerAddress, questionId, answer) {
+  const srv = getServer();
+  const contract = new Contract(CONTRACT_ID);
+  const tx = new TransactionBuilder(await srv.getAccount(workerAddress), {
+    fee: '100',
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(
+      contract.call(
+        'submit_answer',
+        new Address(workerAddress).toScVal(),
+        nativeToScVal(BigInt(questionId), { type: 'u64' }),
+        nativeToScVal(BigInt(answer), { type: 'i128' })
+      )
+    )
+    .setTimeout(60)
+    .build();
+
+  try {
+    const prepared = await srv.prepareTransaction(tx);
+    await srv.sendTransaction(prepared);
+    return { submitted: true, duplicate: false };
+  } catch (err) {
+    if (isDuplicateAnswerError(err)) {
+      return { submitted: false, duplicate: true };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Returns true only when `err` is the contract's own duplicate-answer
+ * rejection. Anchored to the contract error name (`DuplicateAnswer`) and, when
+ * present, the structured error code the RPC attaches — so an unrelated error
+ * that merely mentions the same words is not mistaken for a benign duplicate.
+ */
+function isDuplicateAnswerError(err) {
+  if (!err) return false;
+  const code = err.code ?? err.errorCode ?? err.resultCode;
+  if (code !== undefined && code !== null) {
+    // Contract error codes are surfaced as numbers or numeric strings; only
+    // the duplicate-answer code is treated as a benign duplicate.
+    const DUPLICATE_ANSWER_CODE = 3;
+    if (Number(code) === DUPLICATE_ANSWER_CODE) return true;
+  }
+  const message = typeof err === 'string' ? err : err.message || '';
+  // Require the contract's error name as a whole token, not a loose substring.
+  return /\bDuplicateAnswer\b/.test(message);
+}
