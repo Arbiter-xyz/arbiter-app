@@ -17,6 +17,34 @@ export function usdcFromStroops(stroops) {
   return `${whole}.${frac}`;
 }
 
+/**
+ * Bounds an anchor-supplied withdrawal amount against the amount the user
+ * actually saw and approved in the UI. The auto-relay signs whatever the
+ * configured anchor's SEP-24 response returns, so a compromised or
+ * misconfigured anchor could otherwise get a worker to sign a larger
+ * transfer than was displayed. Returns the validated stroop amount, or
+ * throws if the anchor's value is malformed, non-positive, or exceeds the
+ * approved amount.
+ */
+export function boundAnchorWithdrawalAmount(anchorAmount, approvedAmount) {
+  let anchorStroops;
+  try {
+    anchorStroops = BigInt(anchorAmount);
+  } catch {
+    throw new Error('anchor returned an invalid withdrawal amount');
+  }
+  if (anchorStroops <= 0n) {
+    throw new Error('anchor returned a non-positive withdrawal amount');
+  }
+  const approvedStroops = BigInt(approvedAmount);
+  if (anchorStroops > approvedStroops) {
+    throw new Error(
+      'anchor requested more than the approved withdrawal amount; refusing to sign',
+    );
+  }
+  return anchorStroops;
+}
+
 const DISPLAY_PRECISION_KEY = 'arbiter:usdc-display-precision';
 
 /** Display-only preference; all stroop parsing and contract math stay exact. */

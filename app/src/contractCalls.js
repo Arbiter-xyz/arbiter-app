@@ -13,8 +13,12 @@ function getServer() {
 /** Builds a Memo instance from the plain {type, value} shape callers pass
  * around (issue #22) — kept here rather than in anchor.js so anchor.js
  * doesn't need a hard dependency on the Stellar SDK just to shuttle a
- * memo through. `type` matches SEP-24's `withdraw_memo_type` values. */
-function buildMemo(memo) {
+ * memo through. `type` matches SEP-24's `withdraw_memo_type` values.
+ *
+ * Exported (issue #255) so the per-type branches — id/hash/return/text and
+ * the unrecognized-type fallthrough — can be covered by focused unit tests
+ * without exercising the RPC path. */
+export function buildMemo(memo) {
   if (!memo || !memo.value) return null;
   switch (memo.type) {
     case 'id':

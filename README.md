@@ -180,3 +180,11 @@ executions, transaction links included.)
 - **Live demo feed:** `app/demo.html` polls `GET /admin/transactions` and
   `GET /admin/workers` (admin token required) and shows dispatch, answer and
   settlement events as they happen — no changes to the CLI scripts needed.
+
+## Handsoff notes
+
+<!-- handsoff-issue-268 -->
+- #268: Review: main.js's demand-polling interval is never cleared
+
+<!-- handsoff-issue-269 -->
+- #269: Review: main.js's earnings-refresh interval can stack on reconnect

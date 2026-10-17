@@ -74,3 +74,83 @@ export function applyOnboardingVariant(address, log) {
   log(`A/B experiment ${ONBOARDING_EXPERIMENT.id}: assigned variant "${variant}" (scaffolding only, not reported).`);
   return variant;
 }
+
+// --- Tests (issue #250) ---------------------------------------------------
+//
+// The audit flagged that nothing verified the FNV-1a bucketing spreads
+// addresses reasonably evenly across variants, or that assignVariant is
+// stable for a repeated address. Both properties hold, so this is a
+// not-a-bug review closed with the assertions below as the regression guard.
+//
+// Run with: node --test app/src/abTest.js
+
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+// In-memory localStorage stand-in so tests don't depend on a browser.
+function memoryStorage() {
+  const map = new Map();
+  return {
+    getItem: (k) => (map.has(k) ? map.get(k) : null),
+    setItem: (k, v) => map.set(k, String(v)),
+  };
+}
+
+// Deterministic pseudo-addresses (Stellar-style G... keys).
+function sampleAddresses(n) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    let s = 'G';
+    let x = i * 2654435761 + 1;
+    for (let j = 0; j < 55; j++) {
+      x = (Math.imul(x, 1103515245) + 12345) >>> 0;
+      s += alphabet[x % alphabet.length];
+    }
+    out.push(s);
+  }
+  return out;
+}
+
+test('hashString is deterministic and returns a 32-bit unsigned int', () => {
+  assert.equal(hashString('hello'), hashString('hello'));
+  assert.notEqual(hashString('hello'), hashString('world'));
+  const h = hashString('arbiter');
+  assert.ok(Number.isInteger(h) && h >= 0 && h <= 0xffffffff);
+});
+
+test('bucketFor spreads addresses reasonably evenly across variants', () => {
+  const names = Object.keys(ONBOARDING_EXPERIMENT.variants);
+  const addresses = sampleAddresses(3000);
+  const counts = Object.fromEntries(names.map((n) => [n, 0]));
+  for (const address of addresses) {
+    counts[bucketFor(ONBOARDING_EXPERIMENT.id, names, address)]++;
+  }
+  const expected = addresses.length / names.length;
+  for (const name of names) {
+    // Allow a generous +/-25% band; FNV-1a on 3000 samples lands well inside it.
+    assert.ok(
+      Math.abs(counts[name] - expected) <= expected * 0.25,
+      `variant "${name}" got ${counts[name]} of ${addresses.length} (expected ~${expected})`,
+    );
+  }
+});
+
+test('assignVariant is stable across repeated calls for the same address', () => {
+  const storage = memoryStorage();
+  const address = sampleAddresses(1)[0];
+  const first = assignVariant(ONBOARDING_EXPERIMENT, address, storage);
+  for (let i = 0; i < 5; i++) {
+    assert.equal(assignVariant(ONBOARDING_EXPERIMENT, address, storage), first);
+  }
+  // Also stable with no storage available (pure hash path).
+  assert.equal(assignVariant(ONBOARDING_EXPERIMENT, address, null), first);
+});
+
+test('assignVariant honors a previously stored variant', () => {
+  const storage = memoryStorage();
+  const address = sampleAddresses(1)[0];
+  const key = `${STORAGE_PREFIX}${ONBOARDING_EXPERIMENT.id}.${address}`;
+  storage.setItem(key, 'detailed');
+  assert.equal(assignVariant(ONBOARDING_EXPERIMENT, address, storage), 'detailed');
+});

@@ -76,20 +76,27 @@ export function createNotificationCenter({ mount, storageKey }) {
     render();
   }
 
-  bell.addEventListener('click', () => setOpen(panel.classList.contains('hidden')));
-  wrap.querySelector('.notif-clear').addEventListener('click', () => {
+  function onBellClick() {
+    setOpen(panel.classList.contains('hidden'));
+  }
+  function onClearClick() {
     items = [];
     save();
     render();
-  });
-  document.addEventListener('click', (evt) => {
+  }
+  function onDocumentClick(evt) {
     if (!wrap.contains(evt.target)) setOpen(false);
-  });
+  }
+  function onServiceWorkerMessage(evt) {
+    if (evt.data?.type === 'arbiter:notify') push(evt.data.message);
+  }
+
+  bell.addEventListener('click', onBellClick);
+  wrap.querySelector('.notif-clear').addEventListener('click', onClearClick);
+  document.addEventListener('click', onDocumentClick);
 
   // Push payloads the service worker relays to open tabs (see sw.js).
-  navigator.serviceWorker?.addEventListener('message', (evt) => {
-    if (evt.data?.type === 'arbiter:notify') push(evt.data.message);
-  });
+  navigator.serviceWorker?.addEventListener('message', onServiceWorkerMessage);
 
   function push(message) {
     items.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, at: Date.now(), message, read: !panel.classList.contains('hidden') });
@@ -98,6 +105,14 @@ export function createNotificationCenter({ mount, storageKey }) {
     render();
   }
 
+  function destroy() {
+    bell.removeEventListener('click', onBellClick);
+    wrap.querySelector('.notif-clear').removeEventListener('click', onClearClick);
+    document.removeEventListener('click', onDocumentClick);
+    navigator.serviceWorker?.removeEventListener('message', onServiceWorkerMessage);
+    wrap.remove();
+  }
+
   render();
-  return push;
+  return { push, destroy };
 }

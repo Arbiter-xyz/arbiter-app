@@ -30,6 +30,14 @@
  *      messages) triggers a snapshot resync instead of silently skipping.
  *   3. A tab returning to the foreground, or coming back online, resyncs
  *      from the snapshot and the stream resumes from its cursor.
+ *
+ * In-flight de-duplication (issue #267): `resync()` and `openStream()`
+ * both perform a token fetch + network round trip. Concurrent callers
+ * (e.g. a visibilitychange and an `online` event firing together, or a
+ * gap-triggered resync racing the initial one) must not each kick off a
+ * separate round trip. Both are guarded by a shared in-flight promise so
+ * equivalent concurrent calls coalesce onto a single request, mirroring
+ * the dedup guard already used by `resync()`.
  */
 const RETRY_MIN_MS = 1_000;
 const RETRY_MAX_MS = 30_000;
@@ -43,6 +51,7 @@ export function subscribeQuestionStatus({ backendUrl, address, getToken, onSnaps
   let retryMs = RETRY_MIN_MS;
   let releaseLock = null;
   let resyncing = null;
+  let opening = null;
 
   async function resync() {
     if (resyncing) return resyncing;
@@ -81,32 +90,41 @@ export function subscribeQuestionStatus({ backendUrl, address, getToken, onSnaps
     bc?.postMessage({ type: 'connection', connected });
   }
 
-  async function openStream() {
+  function openStream() {
     if (closed) return;
-    const token = await getToken();
-    const url = `${backendUrl}/payers/${address}/questions/stream?token=${encodeURIComponent(token)}&since=${cursor}`;
-    source = new EventSource(url);
-    source.onopen = () => {
-      retryMs = RETRY_MIN_MS;
-      announce(true);
-    };
-    source.addEventListener('status', (e) => {
-      const seq = Number(e.lastEventId);
-      const payload = JSON.parse(e.data);
-      bc?.postMessage({ type: 'status', seq, payload });
-      deliver(seq, payload);
-    });
-    source.onerror = () => {
-      announce(false);
-      // CONNECTING: the browser is auto-reconnecting with Last-Event-ID.
-      // CLOSED (e.g. 401 after the session token expired): reopen ourselves
-      // with a fresh token and `since=cursor`, with backoff.
-      if (source.readyState === EventSource.CLOSED && !closed) {
-        source = null;
-        setTimeout(openStream, retryMs);
-        retryMs = Math.min(retryMs * 2, RETRY_MAX_MS);
+    if (opening) return opening;
+    opening = (async () => {
+      try {
+        const token = await getToken();
+        if (closed) return;
+        const url = `${backendUrl}/payers/${address}/questions/stream?token=${encodeURIComponent(token)}&since=${cursor}`;
+        source = new EventSource(url);
+        source.onopen = () => {
+          retryMs = RETRY_MIN_MS;
+          announce(true);
+        };
+        source.addEventListener('status', (e) => {
+          const seq = Number(e.lastEventId);
+          const payload = JSON.parse(e.data);
+          bc?.postMessage({ type: 'status', seq, payload });
+          deliver(seq, payload);
+        });
+        source.onerror = () => {
+          announce(false);
+          // CONNECTING: the browser is auto-reconnecting with Last-Event-ID.
+          // CLOSED (e.g. 401 after the session token expired): reopen ourselves
+          // with a fresh token and `since=cursor`, with backoff.
+          if (source.readyState === EventSource.CLOSED && !closed) {
+            source = null;
+            setTimeout(openStream, retryMs);
+            retryMs = Math.min(retryMs * 2, RETRY_MAX_MS);
+          }
+        };
+      } finally {
+        opening = null;
       }
-    };
+    })();
+    return opening;
   }
 
   function becomeLeaderWhenAvailable() {

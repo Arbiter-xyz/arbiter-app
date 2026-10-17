@@ -1,15 +1,10 @@
 // Serializers + download helper for exporting a payer's question history.
 
+import { csvEscape } from './csv.js';
+
 export const CSV_COLUMNS = ['questionId', 'question', 'tier', 'amount', 'status', 'outcome', 'confidence'];
 
-/** Escape one CSV field: neutralize formula injection, then quote if needed. */
-export function csvEscape(value) {
-  let s = value === null || value === undefined ? '' : String(value);
-  // Spreadsheet apps treat leading = + - @ (and tab/CR) as formulas.
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  if (/[",\r\n]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
-  return s;
-}
+export { csvEscape };
 
 export function questionsToCsv(questions) {
   const lines = [CSV_COLUMNS.join(',')];
