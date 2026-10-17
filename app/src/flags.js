@@ -74,8 +74,10 @@ async function loadFromUnleash(userId) {
   u.searchParams.set('appName', UNLEASH_APP_NAME);
   u.searchParams.set('userId', userId);
   const body = await fetchJson(u, { Authorization: UNLEASH_CLIENT_KEY });
-  // The frontend API only returns enabled toggles; known-but-absent flags are off.
-  const out = Object.fromEntries(Object.keys(DEFAULTS).map((k) => [k, false]));
+  // The frontend API only returns enabled toggles, so a known flag that is
+  // absent from the response is off. Only flags the server actually reports
+  // are overridden; anything else falls through to DEFAULTS (fail open).
+  const out = {};
   for (const t of body.toggles || []) out[t.name] = t.enabled !== false;
   return out;
 }
