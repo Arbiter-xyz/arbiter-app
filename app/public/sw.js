@@ -99,10 +99,17 @@ self.addEventListener('notificationclick', (event) => {
 });
 
 // --- Extension worker console bridge (issue #91) -------------------------
-// The Manifest V3 extension background service worker (extension/background.js)
-// ports main.js's core loop — ensureSession() challenge/response auth,
-// goOnline()'s EventSource connection to /app/events, and the answer-submission
-// fetch to /app/answer — so a worker can stay online with the tab closed.
+// SCAFFOLDING ONLY: no `extension/` directory is shipped in this repository
+// yet (tracked under open issue #91). Until the Manifest V3 Chrome extension
+// is built and installed with `externally_connectable` configured for this
+// origin, `forwardPushToExtension` is a safe no-op and the web-push +
+// page-owned `answerQueue.js` flow handles all notifications and syncs.
+//
+// When installed, the Manifest V3 extension background service worker
+// (extension/background.js) ports main.js's core loop — ensureSession()
+// challenge/response auth, goOnline()'s EventSource connection to /app/events,
+// and the answer-submission fetch to /app/answer — so a worker can stay online
+// with the tab closed.
 //
 // This page-side service worker is the bridge between that extension and the
 // existing web-push flow: it forwards push payloads to the extension (which is

@@ -244,7 +244,9 @@ function renderQuestionItem(q) {
     answerEl.className = 'q-answer';
     const answerLabel = document.createElement('strong');
     answerLabel.textContent = 'Answer: ';
-    answerEl.append(answerLabel, q.answer);
+    const answerBody = document.createElement('span');
+    renderMarkdown(answerBody, q.answer);
+    answerEl.append(answerLabel, answerBody);
     left.append(answerEl);
   }
 

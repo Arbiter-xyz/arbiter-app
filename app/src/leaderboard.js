@@ -1,6 +1,11 @@
 import { truncateAddress, formatRatio } from './format.js';
+import { formatUsdc } from './i18n.js';
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+const BACKEND_URL = import.meta.env?.VITE_BACKEND_URL || 'http://localhost:4000';
+
+export function workerProfileUrl(workerId) {
+  return `/worker.html?id=${encodeURIComponent(String(workerId ?? ''))}`;
+}
 
 // Built with createElement/textContent, not innerHTML — workerId is
 // whatever a caller passed as GET /app/events's ?worker= param (no auth
@@ -8,7 +13,7 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 // this table is public and unauthenticated. Interpolating it into HTML
 // would be a stored-XSS hole on the one page anyone can load with no
 // session at all.
-function renderRow(row, rank) {
+export function renderRow(row, rank) {
   const tr = document.createElement('tr');
 
   const rankCell = document.createElement('td');
@@ -67,7 +72,7 @@ async function loadLeaderboard() {
 // or payer address. Rendered with createElement/textContent (not
 // innerHTML) for the same reason as renderRow above: this is a public
 // surface and the payload is caller-influenced.
-function renderActivityItem(event) {
+export function renderActivityItem(event) {
   const li = document.createElement('li');
   li.className = 'activity-item';
 

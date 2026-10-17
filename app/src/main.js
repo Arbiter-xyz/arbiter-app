@@ -17,6 +17,8 @@ import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractC
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
 import { renderFencedCode } from './codeBlocks.js';
+import { applyOnboardingVariant } from './abTest.js';
+import { enqueueOfflineAnswer, registerAnswerQueueSync } from './answerQueue.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
@@ -357,10 +359,13 @@ async function routeAfterConnect() {
       startCategoryDemandPolling();
       refreshEarnings();
       setInterval(refreshEarnings, 20_000);
+    } else {
+      applyOnboardingVariant(state.address, log);
     }
   } catch (err) {
     log(`Trustline check failed (${err.message}) — assuming onboarding is needed`);
     showPanel('onboard');
+    applyOnboardingVariant(state.address, log);
   }
 }
 
@@ -553,10 +558,34 @@ el.answerForm.addEventListener('submit', async (evt) => {
       log(`Answer submitted: "${answer}"`);
     }
   } catch (err) {
-    log(`Answer submission failed: ${err.message}`);
+    await enqueueOfflineAnswer({
+      questionId: q.questionId,
+      workerId: state.address,
+      answer,
+      deadlineAt: q.deadlineAt,
+    });
+    log(`Answer submission failed (${err.message}) — queued for background sync when back online.`);
     el.btnAnswer.disabled = false;
     el.answerInput.disabled = false;
   }
+});
+
+registerAnswerQueueSync({
+  submitAnswer: async (item) => {
+    const token = await ensureSession();
+    const res = await fetch(`${BACKEND_URL}/app/answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        questionId: item.questionId,
+        workerId: item.workerId || state.address,
+        answer: item.answer,
+        token,
+      }),
+    });
+    return res.ok || res.status === 409;
+  },
+  onFlushed: (item) => log(`Synced queued offline answer for question ${item.questionId}.`),
 });
 
 // --- Earnings & staking -------------------------------------------------

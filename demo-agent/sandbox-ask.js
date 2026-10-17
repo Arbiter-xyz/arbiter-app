@@ -89,11 +89,20 @@ async function main() {
   console.log(reply);
 }
 
-if (require.main === module) {
+export { handleAsk, checkRateLimit, askSandbox, formatReply, main };
+
+const isMainModule = (() => {
+  if (!process.argv[1]) return false;
+  try {
+    return new URL(`file://${process.argv[1].replace(/\\/g, "/")}`).href === import.meta.url;
+  } catch {
+    return false;
+  }
+})();
+
+if (isMainModule) {
   main().catch((err) => {
     console.error(err);
     process.exit(1);
   });
 }
-
-module.exports = { handleAsk, checkRateLimit, askSandbox, formatReply };
