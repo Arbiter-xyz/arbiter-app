@@ -5,7 +5,7 @@ import { stroopsFromUsdcInput } from './units.js';
 // already-loaded window (most recent 100 rows), not the full history.
 // Server-side filtering is a backend follow-up.
 
-function parseAmount(value) {
+export function parseAmount(value) {
   if (value === undefined || value === null || String(value).trim() === '') return null;
   try {
     return stroopsFromUsdcInput(value);
@@ -15,12 +15,17 @@ function parseAmount(value) {
 }
 
 // <input type="date"> yields "YYYY-MM-DD"; interpret as a local calendar
-// day so "to" is inclusive of the whole day.
-function parseDay(value, endOfDay) {
+// day so "to" is inclusive of the whole day. Rejects invalid calendar
+// rollovers (e.g. 2026-02-31) rather than silently shifting into next month.
+export function parseDay(value, endOfDay) {
   if (!value) return null;
-  const [y, m, d] = String(value).split('-').map(Number);
+  const trimmed = String(value).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+  const [y, m, d] = trimmed.split('-').map(Number);
   if (!y || !m || !d) return null;
-  return endOfDay ? new Date(y, m - 1, d, 23, 59, 59, 999).getTime() : new Date(y, m - 1, d).getTime();
+  const dt = endOfDay ? new Date(y, m - 1, d, 23, 59, 59, 999) : new Date(y, m - 1, d, 0, 0, 0, 0);
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) return null;
+  return dt.getTime();
 }
 
 /**
