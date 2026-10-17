@@ -1,35 +1,94 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Drop zone demo</title>
-    <link rel="stylesheet" href="/src/style.css" />
-  </head>
-  <body>
-    <!-- Placeholder page for #135: exercises the .drop-zone states. Not linked
-         from any real flow; toggle OS theme to verify dark/light branches. -->
-    <main style="max-width: 480px; margin: 2rem auto; display: grid; gap: 1rem">
-      <label class="drop-zone" data-state="idle">
-        <input type="file" hidden />
-        <span class="drop-zone-title">Drop a file or click to browse</span>
-        <span class="drop-zone-hint">Idle state</span>
-      </label>
-      <label class="drop-zone" data-state="dragover">
-        <span class="drop-zone-title">Release to upload</span>
-        <span class="drop-zone-hint">Dragover state</span>
-      </label>
-      <label class="drop-zone" data-state="error">
-        <span class="drop-zone-title">File too large</span>
-        <span class="drop-zone-hint">Error state</span>
-      </label>
-    </main>
-    <script>
-      const zone = document.querySelector('.drop-zone[data-state="idle"]');
-      ["dragenter", "dragover"].forEach((e) =>
-        zone.addEventListener(e, (ev) => { ev.preventDefault(); zone.dataset.state = "dragover"; }));
-      ["dragleave", "drop"].forEach((e) =>
-        zone.addEventListener(e, (ev) => { ev.preventDefault(); zone.dataset.state = "idle"; }));
-    </script>
-  </body>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dropzone demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; }
+    .drop-zone {
+      border: 2px dashed #888;
+      border-radius: 8px;
+      padding: 2rem;
+      text-align: center;
+      color: #555;
+      transition: border-color 0.15s, background-color 0.15s;
+    }
+    .drop-zone.dragover { border-color: #2b6cb0; background-color: #ebf4ff; }
+    .drop-zone.invalid { border-color: #c53030; background-color: #fff5f5; }
+    .drop-zone.valid { border-color: #2f855a; background-color: #f0fff4; }
+    #status { margin-top: 1rem; }
+    #status.error { color: #c53030; }
+    #status.ok { color: #2f855a; }
+  </style>
+</head>
+<body>
+  <h1>Dropzone demo</h1>
+  <p>Drop an image (png, jpeg, webp, gif; max 2&nbsp;MB) or click to choose one.</p>
+
+  <div id="drop-zone" class="drop-zone" tabindex="0" role="button" aria-label="Upload an image">
+    Drop image here or click to browse
+  </div>
+  <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+  <p id="status" role="status"></p>
+
+  <script type="module">
+    import { validateAttachment, uploadAttachment } from './src/attachments.js';
+
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const status = document.getElementById('status');
+
+    function setStatus(message, kind) {
+      status.textContent = message;
+      status.className = kind || '';
+    }
+
+    function clearState() {
+      dropZone.classList.remove('dragover', 'valid', 'invalid');
+    }
+
+    async function handleFile(file) {
+      if (!file) return;
+      clearState();
+      try {
+        // Reuse the shared validation so the demo matches real upload rules.
+        validateAttachment(file);
+        dropZone.classList.add('valid');
+        setStatus(`Uploading ${file.name}\u2026`, '');
+        const result = await uploadAttachment(file);
+        setStatus(`Uploaded ${file.name} \u2192 ${result.url}`, 'ok');
+      } catch (err) {
+        dropZone.classList.add('invalid');
+        setStatus(err.message, 'error');
+      }
+    }
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        fileInput.click();
+      }
+    });
+
+    fileInput.addEventListener('change', () => {
+      handleFile(fileInput.files[0]);
+      fileInput.value = '';
+    });
+
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('dragover');
+    });
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      handleFile(e.dataTransfer.files[0]);
+    });
+  </script>
+</body>
 </html>
