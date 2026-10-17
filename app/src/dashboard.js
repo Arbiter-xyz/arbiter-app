@@ -113,9 +113,8 @@ async function switchIdentity(address) {
   setConnectButtonsBusy(false);
 }
 
-// Live updates (issue #6): one shared push stream across all dashboard tabs
-// for this address instead of each tab polling. The snapshot is only
-// re-fetched to backfill (reconnect, gap, tab refocus) or on Refresh.
+// Live updates (issue #6): polling via statusChannel.js, which re-fetches the
+// snapshot on an interval, on tab refocus, and on Refresh.
 function startLiveUpdates() {
   state.channel?.close();
   state.channel = subscribeQuestionStatus({
@@ -126,27 +125,11 @@ function startLiveUpdates() {
       render(data);
       log(`Loaded ${t('dash.questions', { n: data.questions.length })} — ${formatNumber(data.totalTracked)} tracked in total.`);
     },
-    onEvent: applyStatusEvent,
     onConnection: (connected) => {
       el.liveStatus.textContent = t(connected ? 'dash.live' : 'dash.reconnecting');
     },
   });
   state.channel.ready.catch((err) => log(`Could not load questions: ${err.message}`));
-}
-
-function applyStatusEvent(q) {
-  const existing = state.items.get(q.questionId);
-  const prev = state.lastData?.questions.find((x) => x.questionId === q.questionId);
-  const merged = { ...prev, ...q };
-  if (prev) Object.assign(prev, q);
-  const li = renderQuestionItem(merged);
-  if (existing) existing.replaceWith(li);
-  else el.questionList.prepend(li);
-  state.items.set(q.questionId, li);
-  log(`${q.questionId}: ${describeStatus(merged).label}`);
-  // Aggregates (spend / success rate) are server-computed; refresh them
-  // once a job reaches its terminal state.
-  if (q.status === 'settled') state.channel?.resync();
 }
 
 el.btnRefresh.addEventListener('click', async () => {
@@ -265,7 +248,7 @@ function renderQuestionItem(q) {
   // countdown and a Cancel button, mirroring the worker console's
   // setInterval-driven timer-bar pattern (main.js's startCountdown()/
   // el.timerBar) rather than inventing a second countdown UI.
-  if (q.status !== 'settled' && Number.isFinite(q.cancelableUntil) && q.cancelableUntil > Date.now()) {
+  if (q.status !== 'settled' && Number.isFinite(q.cancellableUntil) && q.cancellableUntil > Date.now()) {
     li.appendChild(renderCancelControls(q));
   }
 
@@ -273,7 +256,7 @@ function renderQuestionItem(q) {
 }
 
 /** Renders the countdown + Cancel button for a question still inside its
- * undo window (`q.cancelableUntil`, an epoch-ms timestamp assumed to be
+ * undo window (`q.cancellableUntil`, an epoch-ms timestamp assumed to be
  * added to the GET /payers/:address/questions response for an in-progress
  * question — see issue #32). Wired to the assumed
  * POST /payers/:address/questions/:questionId/cancel endpoint, reusing the
@@ -298,11 +281,11 @@ function renderCancelControls(q) {
 
   wrap.append(track, label, btnCancel);
 
-  const total = q.cancelableUntil - Date.now();
+  const total = q.cancellableUntil - Date.now();
   let handle = null;
 
   function tick() {
-    const remainingMs = q.cancelableUntil - Date.now();
+    const remainingMs = q.cancellableUntil - Date.now();
     if (remainingMs <= 0) {
       clearInterval(handle);
       wrap.remove();
