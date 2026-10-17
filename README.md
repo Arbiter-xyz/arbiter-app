@@ -183,5 +183,8 @@ executions, transaction links included.)
 
 ## Handsoff notes
 
-<!-- handsoff-issue-249 -->
-- #249: Review: format.js's null-safety fix has no regression test
+<!-- handsoff-issue-268 -->
+- #268: Review: main.js's demand-polling interval is never cleared
+
+<!-- handsoff-issue-269 -->
+- #269: Review: main.js's earnings-refresh interval can stack on reconnect
