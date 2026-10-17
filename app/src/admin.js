@@ -24,6 +24,17 @@ document.getElementById('density-toggle').addEventListener('click', () => {
 // below can flag them consistently.
 const LOW_BALANCE_USDC = 100;
 const LOW_BALANCE_XLM = 50;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// A balance figure that reads as "this is the number that pages someone"
+// when it's low, and as a routine figure otherwise. Uses the shared token
+// classes from #146 (balance / balance-low) rather than standalone values.
+function balanceFigure(value, { low = false, unit = 'USDC' } = {}) {
+  const el = document.createElement('span');
+  el.className = low ? 'balance balance-low' : 'balance';
+  el.textContent = `${value} ${unit}`;
+  return el;
+}
 
 // Every table below renders data that traces back to caller-controlled
 // input somewhere upstream — a non-address workerId (no auth required,
