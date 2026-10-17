@@ -8,8 +8,18 @@ const DSN = import.meta.env.VITE_SENTRY_DSN;
 // DOM elements whose content/interaction must never reach a report.
 const SENSITIVE_SELECTORS = ['#backup-secret', '#admin-token-input'];
 
+// StrKey-encoded Stellar keys. The base32 payload length varies by type:
+//   G... public account (ed25519)  -> 56 chars total
+//   S... secret seed (ed25519)     -> 56 chars total
+//   C... contract                  -> 56 chars total
+//   M... muxed account             -> 69 chars total
+//   T... pre-auth tx / X... signed payload / P... liquidity pool share
+//   (and any future StrKey variant) are covered by the same 55-68 payload
+//   range, so a single bounded pattern redacts every length variant.
+const STRKEY = /\b[GSCMTXP][A-Z2-7]{55,68}\b/g;
+
 const PATTERNS = [
-  /\b[GSCMT][A-Z2-7]{55,68}\b/g, // Stellar public/secret/contract/muxed keys
+  STRKEY, // Stellar public/secret/contract/muxed/pre-auth/signed-payload keys
   /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, // bearer tokens
   /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, // JWTs
   /\b[0-9a-f]{64}\b/gi, // hex keys / hashes

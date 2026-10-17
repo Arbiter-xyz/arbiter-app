@@ -11,3 +11,14 @@ export const CHANGELOG = [
     ],
   },
 ];
+
+// Returns every changelog entry newer than `sinceVersion`, newest first.
+// whatsNew.js uses this so a user who skipped several releases sees the
+// aggregated "what you missed" items instead of only CHANGELOG[0].
+// If `sinceVersion` is missing or unknown, all entries are returned.
+export function getEntriesSince(sinceVersion) {
+  if (!sinceVersion) return CHANGELOG;
+  const index = CHANGELOG.findIndex((entry) => entry.version === sinceVersion);
+  if (index === -1) return CHANGELOG;
+  return CHANGELOG.slice(0, index);
+}

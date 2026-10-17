@@ -169,6 +169,25 @@ function render(data) {
   }
 }
 
+// Intensity floor for the spend calendar. A flat floor (e.g. 0.12) makes a
+// tiny real spend (say 0.01 USDC against a 1000 USDC max) render almost
+// identically to a much larger one near the floor, so the calendar visually
+// overstates small days. Instead we scale on a log curve so small spends
+// stay distinguishable from each other while still being visible, and only
+// fall back to a small floor for a genuinely zero day.
+const SPEND_INTENSITY_FLOOR = 0.06;
+
+function spendIntensity(amount, max) {
+  if (!Number.isFinite(amount) || amount <= 0) return SPEND_INTENSITY_FLOOR;
+  if (!Number.isFinite(max) || max <= 0) return SPEND_INTENSITY_FLOOR;
+  const ratio = Math.min(amount / max, 1);
+  // log1p keeps small ratios from collapsing onto the floor: 0.001 -> ~0.14,
+  // 0.01 -> ~0.29, 0.1 -> ~0.55, 1 -> 1, so a tiny spend no longer reads the
+  // same as a much larger one near the floor.
+  const scaled = Math.log1p(ratio * 9) / Math.log1p(9);
+  return Math.max(SPEND_INTENSITY_FLOOR, scaled);
+}
+
 function renderSpendCalendar(questions, totalSpend) {
   const daily = new Map();
   for (const question of questions) {
@@ -185,7 +204,7 @@ function renderSpendCalendar(questions, totalSpend) {
   for (const [day, amount] of entries) {
     const cell = document.createElement('div');
     cell.className = 'spend-calendar-cell';
-    cell.style.setProperty('--spend-intensity', String(Math.max(0.12, amount / max)));
+    cell.style.setProperty('--spend-intensity', String(spendIntensity(amount, max)));
     cell.setAttribute('role', 'listitem');
     cell.title = `${day}: ${amount.toFixed(2)} USDC`;
     cell.setAttribute('aria-label', cell.title);

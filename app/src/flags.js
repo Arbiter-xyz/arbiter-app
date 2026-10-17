@@ -46,6 +46,17 @@ export function bucket(flag, id) {
   return (h >>> 0) % 100;
 }
 
+// Whether a flag is enabled for a user at a given 0-100 rollout percentage.
+// rollout <= 0 disables everyone; rollout >= 100 enables everyone; in between
+// the stable per-(flag, user) bucket decides. Exported so the bucketing math
+// can be tested directly.
+export function isInRollout(flag, id, rollout) {
+  if (!Number.isFinite(rollout)) return true;
+  if (rollout <= 0) return false;
+  if (rollout >= 100) return true;
+  return bucket(flag, id) < rollout;
+}
+
 async function fetchJson(url, headers) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
@@ -63,8 +74,10 @@ async function loadFromUnleash(userId) {
   u.searchParams.set('appName', UNLEASH_APP_NAME);
   u.searchParams.set('userId', userId);
   const body = await fetchJson(u, { Authorization: UNLEASH_CLIENT_KEY });
-  // The frontend API only returns enabled toggles; known-but-absent flags are off.
-  const out = Object.fromEntries(Object.keys(DEFAULTS).map((k) => [k, false]));
+  // The frontend API only returns enabled toggles, so a known flag that is
+  // absent from the response is off. Only flags the server actually reports
+  // are overridden; anything else falls through to DEFAULTS (fail open).
+  const out = {};
   for (const t of body.toggles || []) out[t.name] = t.enabled !== false;
   return out;
 }
@@ -76,12 +89,15 @@ async function loadFromJson(userId) {
     if (typeof v === 'boolean') out[name] = v;
     else if (v && typeof v === 'object') {
       const rollout = Number.isFinite(v.rollout) ? v.rollout : 100;
-      out[name] = v.enabled !== false && bucket(name, userId) < rollout;
+      out[name] = v.enabled !== false && isInRollout(name, userId, rollout);
     }
   }
   return out;
 }
 
+// Cached for the page's lifetime intentionally: feature flags should remain
+// stable within a single session to prevent mid-workflow UI inconsistency,
+// layout shifts, or redundant network requests. Changes take effect on reload.
 let loaded;
 export function loadFlags() {
   if (!loaded) {

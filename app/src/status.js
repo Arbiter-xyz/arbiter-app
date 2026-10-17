@@ -63,6 +63,34 @@ async function checkStatus() {
   }
 }
 
+// Polling only while the tab is visible: a hidden tab has no one reading
+// the status, so the interval is paused to avoid pointless network/CPU
+// churn. On return we check immediately so the displayed state is fresh
+// rather than up to POLL_MS stale.
+let pollTimer = null;
+
+function startPolling() {
+  if (pollTimer !== null) return;
+  pollTimer = setInterval(checkStatus, POLL_MS);
+}
+
+function stopPolling() {
+  if (pollTimer === null) return;
+  clearInterval(pollTimer);
+  pollTimer = null;
+}
+
 document.getElementById('btn-refresh').addEventListener('click', checkStatus);
 checkStatus();
-setInterval(checkStatus, POLL_MS);
+if (document.visibilityState === 'visible') {
+  startPolling();
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    checkStatus();
+    startPolling();
+  } else {
+    stopPolling();
+  }
+});

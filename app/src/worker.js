@@ -35,9 +35,9 @@ async function loadProfile() {
 
   if (rep.status === 'fulfilled') {
     const r = rep.value;
-    const ratio = r.matchRatio ?? (r.totalAnswers ? r.matched / r.totalAnswers : null);
-    $('profile-ratio').textContent = `${formatRatio(ratio)} (${r.matched ?? 0}/${r.totalAnswers ?? 0})`;
-    $('profile-answers').textContent = r.totalAnswers ?? 0;
+    const ratio = r.matchRatio ?? (r.total ? r.matched / r.total : null);
+    $('profile-ratio').textContent = `${formatRatio(ratio)} (${r.matched ?? 0}/${r.total ?? 0})`;
+    $('profile-answers').textContent = r.total ?? 0;
   }
   if (stake.status === 'fulfilled') {
     $('profile-stake').textContent = `${stake.value.stake ?? 0} USDC`;

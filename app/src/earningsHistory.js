@@ -1,11 +1,18 @@
 // Frontend-only tax record. This is intentionally browser-local: without a
 // server ledger it cannot claim to reconstruct activity from other devices.
 const STORAGE_KEY = 'arbiter:local-earnings-history:v1';
+// Cap the local record list so a long-running worker session cannot grow
+// localStorage without bound. Oldest records are pruned first; the CSV export
+// and total reflect whatever is currently retained.
+const MAX_RECORDS = 500;
 
 function load() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
 }
 function save(records) { localStorage.setItem(STORAGE_KEY, JSON.stringify(records)); }
+function prune(records) {
+  return records.length > MAX_RECORDS ? records.slice(records.length - MAX_RECORDS) : records;
+}
 function csv(records) {
   const escape = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
   return ['Date,Type,Amount (USDC),Question reference,Transaction reference', ...records.map((record) => [record.date, record.type, record.amount, record.question, record.transaction].map(escape).join(','))].join('\n');
@@ -32,7 +39,7 @@ form?.addEventListener('submit', (event) => {
     type: data.get('type'), amount: amount.toFixed(7),
     question: data.get('question') || '', transaction: data.get('transaction') || '',
   });
-  save(records); form.reset(); renderTotal();
+  save(prune(records)); form.reset(); renderTotal();
 });
 
 exportButton?.addEventListener('click', () => {
