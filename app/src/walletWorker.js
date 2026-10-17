@@ -27,6 +27,15 @@
  *
  * The raw secret, when it exists at all, only ever lives in this worker's
  * heap; the page talks to it through the narrow RPC below.
+ *
+ * Persistence note (issue #259): the non-extractable CryptoKey is persisted
+ * by structured-cloning it into IndexedDB and reloaded by init() on the next
+ * session. Per the WebCrypto spec, structured clone of a CryptoKey preserves
+ * its extractable flag and usages, so the "can't be exported after backup"
+ * guarantee survives a restart. This round-trip is only defined for keys
+ * created with extractable=false in a secure context; if a browser ever
+ * failed to restore the key, init() would surface it as a load error rather
+ * than silently downgrading to an exportable key.
  */
 import { Keypair, StrKey, TransactionBuilder } from '@stellar/stellar-sdk';
 
