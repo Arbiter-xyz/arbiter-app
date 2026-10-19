@@ -37,6 +37,14 @@ const MAX_AUTO_RELAY_AMOUNT = 100000;
 // click.
 const ANCHOR_CONFIG_TTL_MS = 5 * 60 * 1000;
 
+// How many times reportToArbiter retries a failed /anchor/report POST before
+// giving up. A dropped report means admin.js's renderKyc/renderPayouts views
+// silently miss this withdrawal, so a couple of retries with backoff is worth
+// the extra requests — but it stays bounded so a persistently-down backend
+// can't wedge the withdraw flow.
+const REPORT_MAX_ATTEMPTS = 3;
+const REPORT_RETRY_BASE_MS = 500;
+
 async function getAnchorConfig() {
   const res = await fetch(`${BACKEND_URL}/anchor/config`);
   if (res.status === 503) return null; // no anchor configured on this backend
@@ -96,20 +104,40 @@ async function pollTransaction(anchorConfig, jwt, id, onUpdate) {
   throw new Error('timed out waiting for the anchor to reach a payment-ready state');
 }
 
+// Best-effort report to the backend so admin.js's renderKyc/renderPayouts
+// views can show this withdrawal. A dropped report means those views silently
+// miss it, so retry a bounded number of times with backoff before giving up.
+// Returns true on success, false if every attempt failed — callers can use
+// that to surface an out-of-sync indicator instead of failing silently.
 async function reportToArbiter({ address, arbiterSessionToken, transaction }) {
-  await fetch(`${BACKEND_URL}/anchor/report`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      address,
-      token: arbiterSessionToken,
-      kind: 'withdrawal',
-      status: transaction.status,
-      amount: transaction.amount_in || null,
-      assetCode: transaction.amount_in_asset || null,
-      anchorTransactionId: transaction.id,
-    }),
-  }).catch(() => {}); // best-effort — the admin console cache is a convenience, not the source of truth
+  const body = JSON.stringify({
+    address,
+    token: arbiterSessionToken,
+    kind: 'withdrawal',
+    status: transaction.status,
+    amount: transaction.amount_in || null,
+    assetCode: transaction.amount_in_asset || null,
+    anchorTransactionId: transaction.id,
+  });
+
+  for (let attempt = 1; attempt <= REPORT_MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/anchor/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+      if (res.ok) return true;
+      // 4xx (other than 429) won't succeed on retry — bail out early.
+      if (res.status >= 400 && res.status < 500 && res.status !== 429) return false;
+    } catch {
+      // network error — fall through to retry
+    }
+    if (attempt < REPORT_MAX_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, REPORT_RETRY_BASE_MS * attempt));
+    }
+  }
+  return false;
 }
 
 /**
@@ -170,30 +198,6 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
       status.textContent = 'Authenticating with the anchor (one signature)…';
       const jwt = await sep10Auth(anchorConfig, address, wallet, networkPassphrase);
 
-      status.textContent = 'Opening the anchor\'s withdrawal form…';
-      const { url, id } = await startInteractiveWithdraw(anchorConfig, jwt, address, assetCode);
-      window.open(url, 'arbiter-anchor-withdraw', 'width=480,height=720');
+      status.textContent = 'Opening the anchor\'s wi
 
-      status.textContent = 'Waiting for you to finish the anchor\'s form…';
-      const transaction = await pollTransaction(anchorConfig, jwt, id, (t) => {
-        status.textContent = `Anchor status: ${t.status}`;
-      });
-
-      await reportToArbiter({ address, arbiterSessionToken: await getArbiterSessionToken(), transaction });
-
-      if (transaction.status === 'pending_user_transfer_start') {
-        const relayAmount = Number(transaction.amount_in);
-        const canAutoRelay =
-          typeof autoRelayWithdrawal === 'function' &&
-          transaction.withdraw_anchor_account &&
-          transaction.amount_in &&
-          Number.isFinite(relayAmount) &&
-          relayAmount > 0 &&
-          relayAmount <= MAX_AUTO_RELAY_AMOUNT;
-
-        let fallbackPrefix = '';
-        if (canAutoRelay && window.confirm(`Send ${transaction.amount_in} ${assetCode} to the anchor to complete this withdrawal?`)) {
-          try {
-            st
-
-/* … truncated 1355 chars — edit only what you need near the top … */
+/* … truncated 1208 chars — edit only what you need near the top … */
