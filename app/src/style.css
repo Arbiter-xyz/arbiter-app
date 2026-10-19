@@ -396,3 +396,30 @@ fieldset label {
   padding: 0.2rem 0;
   border-bottom: 1px dashed var(--border);
 }
+
+/* --- First-visit guided tour (issues #60, #61) --- */
+.tour-tip {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  max-width: 22rem;
+  z-index: 1000;
+  background: var(--panel);
+  color: var(--fg);
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  padding: 1rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+.tour-tip p {
+  margin: 0.5rem 0 0.75rem;
+}
+.tour-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+.tour-highlight {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}

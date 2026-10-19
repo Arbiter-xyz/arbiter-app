@@ -14,6 +14,8 @@ import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
+import { startTour } from './tour.js';
+import { initSupportChat, setSupportWallet } from './support.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
@@ -188,6 +190,7 @@ el.btnConnect.addEventListener('click', async () => {
         const { address } = await kit.getAddress();
         el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
         await activateWallet(kit, address);
+        setSupportWallet(address);
       },
       onClosed: (err) => {
         setConnectButtonsBusy(false);
@@ -208,6 +211,7 @@ el.btnQuickStart.addEventListener('click', async () => {
     log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
     showBackupPanel();
     await activateWallet(localWallet, address);
+    setSupportWallet(address);
   } catch (err) {
     setConnectButtonsBusy(false);
     log(`Quick start failed: ${err.message}`);
@@ -219,6 +223,14 @@ function showBackupPanel() {
   el.backupSecret.value = '••••••••••••••••••••••••••••••••••••••••••••••••••';
   el.backupSecret.type = 'password';
   el.backupCopyStatus.textContent = '';
+  // Quick-start users only: the one step with irreversible financial risk.
+  startTour('arbiter_tour_backup_seen', [
+    {
+      target: el.backup,
+      title: 'Back up your secret key now',
+      text: 'This key exists only in this browser. If you clear site data or switch devices without a copy, any staked or earned USDC is lost forever. Reveal it and store it in a password manager before staking.',
+    },
+  ]);
 }
 
 el.btnRevealSecret.addEventListener('click', () => {
@@ -249,3 +261,90 @@ el.btnCopySecret.addEventListener('click', async () => {
 // rebuild a u
 
 /* … truncated 599 chars — edit only what you need near the top … */
+
+// --- First-visit onboarding tour (issue #60) ------------------------------
+startTour('arbiter_tour_worker_seen', [
+  {
+    target: el.connect,
+    title: 'Welcome to Arbiter',
+    text: 'You earn USDC by answering short questions. Connect a wallet you already have, or use Quick start to create one in this browser — no extension needed.',
+  },
+  {
+    target: null,
+    title: 'Quick start? Back up your key',
+    text: 'Quick start shows a backup panel next. That key is the only copy — skipping the backup risks losing all your funds. Connect-wallet users can skip this step.',
+  },
+  {
+    target: el.categoryPicker,
+    title: 'Pick categories, then go online',
+    text: 'Choose topics you can answer, then press "Go online". Staking USDC raises your tier and unlocks higher-value questions.',
+  },
+  {
+    target: el.timerBar,
+    title: 'Answer before the timer runs out',
+    text: 'Each question arrives with a countdown bar. Answer before it empties — late or missing answers are not paid.',
+  },
+  {
+    target: el.earnings,
+    title: 'Earnings',
+    text: 'Payouts accrue here. Withdraw any time to your wallet (or another payout address).',
+  },
+]);
+
+// --- Live support chat (issue #62) ----------------------------------------
+initSupportChat('worker');
+
+// --- Push subscription with rich-preview opt-in (issue #63) ---------------
+// Question previews pass through browser-vendor push infrastructure, outside
+// Arbiter's trust boundary, so they are opt-in and can be switched off
+// without disabling push itself.
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+const pushPreviewInput = document.getElementById('push-preview');
+
+function urlBase64ToUint8Array(base64) {
+  const padded = (base64 + '='.repeat((4 - (base64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+}
+
+async function syncPushSubscription() {
+  if (!state.address || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    throw new Error('push is not supported here or no wallet is connected');
+  }
+  const reg = await navigator.serviceWorker.register('/sw.js');
+  const subscription =
+    (await reg.pushManager.getSubscription()) ||
+    (await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: VAPID_PUBLIC_KEY ? urlBase64ToUint8Array(VAPID_PUBLIC_KEY) : undefined,
+    }));
+  const res = await fetch(`${BACKEND_URL}/workers/${state.address}/push-subscribe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      subscription,
+      categories: selectedCategories(),
+      richPreview: !!pushPreviewInput?.checked,
+    }),
+  });
+  if (!res.ok) throw new Error(`push-subscribe failed (${res.status})`);
+}
+
+el.btnEnablePush?.addEventListener('click', async () => {
+  try {
+    await syncPushSubscription();
+    el.pushStatus.textContent = 'On — you\'ll be notified of new questions.';
+  } catch (err) {
+    log(`Push setup failed: ${err.message}`);
+  }
+});
+
+pushPreviewInput?.addEventListener('change', async () => {
+  if (el.pushStatus.textContent.startsWith('On')) {
+    syncPushSubscription().catch((err) => log(`Updating push preference failed: ${err.message}`));
+  }
+});
+
+// Notification click deep-links here as /?question=<id>; once online the
+// matching question is picked up from the live stream.
+const linkedQuestion = new URLSearchParams(location.search).get('question');
+if (linkedQuestion) log(`Opened from a notification for question ${linkedQuestion}.`);

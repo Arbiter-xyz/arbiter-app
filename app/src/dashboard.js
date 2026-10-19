@@ -11,6 +11,8 @@ import {
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet } from './localWallet.js';
 import { renderMarkdown } from './markdown.js';
+import { startTour } from './tour.js';
+import { initSupportChat, setSupportWallet } from './support.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
@@ -117,6 +119,7 @@ async function activate(wallet, address) {
   el.connect.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
   log(`Connected ${address}`);
+  setSupportWallet(address);
   await loadQuestions();
   setConnectButtonsBusy(false);
 }
@@ -194,3 +197,33 @@ function describeStatus(q) {
   if (q.outcome === 'resolved') return { label: 'resolved', cls: 'badge-resolved' };
   return { label: 'refunded', cls: 'badge-refunded' };
 }
+
+// --- First-visit walkthrough (issue #61) ----------------------------------
+// Payers expect a "login"; this page is not one. Explain the read-only,
+// address-keyed model and the status badges once, on first connect.
+const statsRow = el.statSpend.closest('.row, .stats') || el.statSpend.parentElement;
+el.connect.addEventListener(
+  'click',
+  () =>
+    startTour('arbiter_tour_payer_seen', [
+      {
+        target: null,
+        title: 'No account, just your address',
+        text: 'This dashboard is read-only. Everything shown is rebuilt from the backend\'s job records for the connected wallet address — nothing is saved, and no account is created.',
+      },
+      {
+        target: statsRow,
+        title: 'Your totals',
+        text: 'Total spend, number of questions asked, and the share that resolved successfully.',
+      },
+      {
+        target: el.questionList,
+        title: 'Status badges',
+        text: '"in progress": workers are still answering. "resolved": an answer was settled and paid. "refunded": no valid answer was reached, so your payment was returned.',
+      },
+    ]),
+  { once: true },
+);
+
+// --- Live support chat (issue #62) ----------------------------------------
+initSupportChat('payer');
