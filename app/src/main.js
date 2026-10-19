@@ -14,6 +14,12 @@ import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
+import { initI18n, t } from './i18n.js';
+import { initPwa } from './pwa.js';
+import { isNativeShell } from './platform.js';
+
+initI18n();
+initPwa();
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
@@ -138,7 +144,7 @@ function renderCategoryDemand(demand) {
     // Scarcity = demand: fewer online workers means a taller bar.
     const scarcity = 1 - count / max;
     bar.style.width = `${Math.round(scarcity * 100)}%`;
-    bar.title = `${count} worker${count === 1 ? '' : 's'} online now`;
+    bar.title = t('demand.workersOnline', { count });
   }
 }
 
@@ -181,6 +187,9 @@ function setConnectButtonsBusy(busy) {
 
 el.btnConnect.addEventListener('click', async () => {
   setConnectButtonsBusy(true);
+  // Extension/deep-link wallets mostly can't open from a wrapped WebView
+  // (issue #56); steer native-shell users to the local quick-start wallet.
+  if (isNativeShell()) log(t('log.inAppWallet'));
   try {
     await kit.openModal({
       onWalletSelected: async (option) => {
@@ -191,12 +200,12 @@ el.btnConnect.addEventListener('click', async () => {
       },
       onClosed: (err) => {
         setConnectButtonsBusy(false);
-        if (err) log(`Wallet selection closed: ${err.message}`);
+        if (err) log(t('log.walletClosed', { error: err.message }));
       },
     });
   } catch (err) {
     setConnectButtonsBusy(false);
-    log(`Wallet connect failed: ${err.message}`);
+    log(t('log.connectFailed', { error: err.message }));
   }
 });
 
@@ -205,12 +214,12 @@ el.btnQuickStart.addEventListener('click', async () => {
   try {
     const localWallet = createOrLoadLocalWallet();
     const { address } = await localWallet.getAddress();
-    log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
+    log(t('log.quickStartWallet'));
     showBackupPanel();
     await activateWallet(localWallet, address);
   } catch (err) {
     setConnectButtonsBusy(false);
-    log(`Quick start failed: ${err.message}`);
+    log(t('log.quickStartFailed', { error: err.message }));
   }
 });
 
@@ -225,7 +234,7 @@ el.btnRevealSecret.addEventListener('click', () => {
   const revealed = el.backupSecret.type === 'password';
   if (revealed) el.backupSecret.value = getLocalWalletSecret() || '';
   el.backupSecret.type = revealed ? 'text' : 'password';
-  el.btnRevealSecret.textContent = revealed ? 'Hide' : 'Reveal';
+  el.btnRevealSecret.textContent = t(revealed ? 'backup.hide' : 'backup.reveal');
 });
 
 el.btnCopySecret.addEventListener('click', async () => {
@@ -233,9 +242,9 @@ el.btnCopySecret.addEventListener('click', async () => {
   if (!secret) return;
   try {
     await navigator.clipboard.writeText(secret);
-    el.backupCopyStatus.textContent = 'Copied to clipboard — store it somewhere safe, then clear your clipboard.';
+    el.backupCopyStatus.textContent = t('backup.copied');
   } catch (err) {
-    el.backupCopyStatus.textContent = `Could not copy automatically (${err.message}) — reveal and copy it manually.`;
+    el.backupCopyStatus.textContent = t('backup.copyFailed', { error: err.message });
   }
 });
 

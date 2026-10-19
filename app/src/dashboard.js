@@ -11,6 +11,9 @@ import {
 } from '@creit.tech/stellar-wallets-kit';
 import { createOrLoadLocalWallet } from './localWallet.js';
 import { renderMarkdown } from './markdown.js';
+import { initI18n, t } from './i18n.js';
+
+initI18n();
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
@@ -55,7 +58,7 @@ function setConnectButtonsBusy(busy) {
 async function ensureSession() {
   if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) return state.sessionToken;
 
-  log('Proving control of your address (one signature)…');
+  log(t('dash.proving'));
   const challengeRes = await fetch(`${BACKEND_URL}/payers/${state.address}/session/challenge`, { method: 'POST' });
   if (!challengeRes.ok) throw new Error((await challengeRes.json()).error || 'failed to get session challenge');
   const { xdr } = await challengeRes.json();
@@ -74,7 +77,7 @@ async function ensureSession() {
   const { token, expiresAt } = await sessionRes.json();
   state.sessionToken = token;
   state.sessionExpiresAt = expiresAt;
-  log('Session established.');
+  log(t('dash.session'));
   return token;
 }
 
@@ -89,12 +92,12 @@ el.btnConnect.addEventListener('click', async () => {
       },
       onClosed: (err) => {
         setConnectButtonsBusy(false);
-        if (err) log(`Wallet selection closed: ${err.message}`);
+        if (err) log(t('log.walletClosed', { error: err.message }));
       },
     });
   } catch (err) {
     setConnectButtonsBusy(false);
-    log(`Wallet connect failed: ${err.message}`);
+    log(t('log.connectFailed', { error: err.message }));
   }
 });
 
@@ -106,7 +109,7 @@ el.btnQuickStart.addEventListener('click', async () => {
     await activate(localWallet, address);
   } catch (err) {
     setConnectButtonsBusy(false);
-    log(`Quick start failed: ${err.message}`);
+    log(t('log.quickStartFailed', { error: err.message }));
   }
 });
 
@@ -116,7 +119,7 @@ async function activate(wallet, address) {
   el.payerAddress.textContent = address;
   el.connect.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
-  log(`Connected ${address}`);
+  log(t('dash.connectedLog', { address }));
   await loadQuestions();
   setConnectButtonsBusy(false);
 }
@@ -132,9 +135,9 @@ async function loadQuestions() {
     if (!res.ok) throw new Error(`unexpected status ${res.status}`);
     const data = await res.json();
     render(data);
-    log(`Loaded ${data.questions.length} question(s) — this address has asked ${data.totalTracked} total.`);
+    log(t('dash.loaded', { count: data.questions.length, total: data.totalTracked }));
   } catch (err) {
-    log(`Could not load questions: ${err.message}`);
+    log(t('dash.loadFailed', { error: err.message }));
   } finally {
     el.btnRefresh.disabled = false;
   }
@@ -149,7 +152,7 @@ function render(data) {
   if (data.questions.length === 0) {
     const li = document.createElement('li');
     li.className = 'muted small';
-    li.textContent = 'No questions yet.';
+    li.textContent = t('dash.empty');
     el.questionList.appendChild(li);
     return;
   }
@@ -175,7 +178,7 @@ function renderQuestionItem(q) {
   const qMeta = document.createElement('div');
   qMeta.className = 'q-meta';
   const parts = [q.tier, q.amount ? `${q.amount} USDC` : null];
-  if (q.status === 'settled' && q.outcome === 'resolved') parts.push(`confidence ${q.confidence}`);
+  if (q.status === 'settled' && q.outcome === 'resolved') parts.push(t('dash.confidence', { value: q.confidence }));
   qMeta.textContent = parts.filter(Boolean).join(' · ');
   left.append(qText, qMeta);
 
@@ -190,7 +193,7 @@ function renderQuestionItem(q) {
 }
 
 function describeStatus(q) {
-  if (q.status !== 'settled') return { label: 'in progress', cls: 'badge-pending' };
-  if (q.outcome === 'resolved') return { label: 'resolved', cls: 'badge-resolved' };
-  return { label: 'refunded', cls: 'badge-refunded' };
+  if (q.status !== 'settled') return { label: t('status.pending'), cls: 'badge-pending' };
+  if (q.outcome === 'resolved') return { label: t('status.resolved'), cls: 'badge-resolved' };
+  return { label: t('status.refunded'), cls: 'badge-refunded' };
 }

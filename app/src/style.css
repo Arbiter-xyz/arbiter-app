@@ -82,7 +82,7 @@ button.secondary {
   background: transparent;
   color: var(--fg);
   border: 1px solid var(--border);
-  margin-left: 0.5rem;
+  margin-inline-start: 0.5rem;
 }
 
 .small {
@@ -214,7 +214,7 @@ button.secondary {
 .admin-nav {
   width: 220px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
+  border-inline-end: 1px solid var(--border);
   padding: 1.25rem 0.75rem;
   position: sticky;
   top: 0;
@@ -242,7 +242,7 @@ button.secondary {
 .admin-nav-link {
   display: block;
   width: 100%;
-  text-align: left;
+  text-align: start;
   background: none;
   border: none;
   border-radius: 8px;
@@ -299,7 +299,7 @@ button.secondary {
   font-size: 0.9rem;
 }
 .leaderboard-table th {
-  text-align: left;
+  text-align: start;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -348,7 +348,8 @@ fieldset label {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  margin: 0.35rem 0.75rem 0.35rem 0;
+  margin-block: 0.35rem;
+  margin-inline: 0 0.75rem;
   font-size: 0.9rem;
 }
 
@@ -395,4 +396,29 @@ fieldset label {
 #log li {
   padding: 0.2rem 0;
   border-bottom: 1px dashed var(--border);
+}
+
+/* --- Locale picker, install button, offline banner (issues #57-#59) --- */
+.locale-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block-start: 0.5rem;
+}
+
+#btn-install {
+  margin-inline-start: 0;
+  margin-block-start: 0.5rem;
+}
+
+/* RTL: the timer bar shrinks toward the reading-start edge, matching the
+   mirrored layout. Everything else mirrors via logical properties + dir. */
+[dir='rtl'] .timer-track {
+  direction: rtl;
+}
+
+[dir='rtl'] #withdraw-beneficiary-input,
+[dir='rtl'] #backup-secret {
+  direction: ltr; /* Stellar addresses/keys are always LTR */
+  text-align: end;
 }

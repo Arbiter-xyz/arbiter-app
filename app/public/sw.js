@@ -15,12 +15,67 @@
 
 const ANSWER_SYNC_TAG = 'answer-queue';
 
-self.addEventListener('install', () => {
-  self.skipWaiting();
+// --- Offline app shell (issue #57) --------------------------------------
+// Static shell assets are served cache-first so the console opens offline.
+// Navigations go network-first (fresh deploys win) and fall back to the
+// cached page. API calls and the SSE dispatch stream are never cached: live
+// data must fail honestly, and the page shows an offline banner instead.
+const SHELL_CACHE = 'arbiter-shell-v1';
+const SHELL_URLS = ['/', '/index.html', '/dashboard.html', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png'];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches
+      .open(SHELL_CACHE)
+      .then((cache) => cache.addAll(SHELL_URLS))
+      .catch(() => {})
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('arbiter-shell-') && k !== SHELL_CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim()),
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  const url = new URL(request.url);
+  if (request.method !== 'GET' || url.origin !== self.location.origin) return;
+
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
+          return res;
+        })
+        .catch(() => caches.match(request).then((hit) => hit || caches.match('/index.html'))),
+    );
+    return;
+  }
+
+  // Hashed build assets, styles, icons: cache-first, populated on first use.
+  if (/\.(js|css|png|svg|json|woff2?)$/.test(url.pathname)) {
+    event.respondWith(
+      caches.match(request).then(
+        (hit) =>
+          hit ||
+          fetch(request).then((res) => {
+            if (res.ok) {
+              const copy = res.clone();
+              caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
+            }
+            return res;
+          }),
+      ),
+    );
+  }
 });
 
 // Ask all controlled clients to drain the queued answers. Returns a promise

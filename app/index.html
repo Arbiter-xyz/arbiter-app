@@ -1,37 +1,49 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-i18n-doc-title="console.title">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Arbiter — Worker Console</title>
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" href="#5b4cf0" />
+    <meta name="theme-color" content="#5b4cf0" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <main class="app">
       <header>
-        <h1>Arbiter <span class="tag">worker console</span></h1>
+        <h1>Arbiter <span class="tag" data-i18n="console.tag">worker console</span></h1>
         <p class="sub">
-          Answer paid questions, get settled on-chain automatically.
-          <a href="/dashboard.html">Buyer dashboard →</a>
-          <a href="/leaderboard.html">Leaderboard →</a>
-          <a href="/admin.html">Admin →</a>
+          <span data-i18n="console.sub">Answer paid questions, get settled on-chain automatically.</span>
+          <a href="/dashboard.html" data-i18n="nav.dashboard">Buyer dashboard →</a>
+          <a href="/leaderboard.html" data-i18n="nav.leaderboard">Leaderboard →</a>
+          <a href="/admin.html" data-i18n="nav.admin">Admin →</a>
         </p>
+        <button id="btn-install" class="secondary hidden" type="button" data-i18n="pwa.install">Install app</button>
+        <label class="locale-row small"><span data-i18n="lang.label">Language</span>
+          <select id="locale-picker">
+            <option value="en">English</option>
+            <option value="es">Español</option>
+            <option value="ar">العربية</option>
+          </select>
+        </label>
       </header>
 
+      <p id="offline-banner" class="panel warning small hidden" role="status" data-i18n="pwa.offline"></p>
+
       <section id="panel-connect" class="panel">
-        <button id="btn-connect">Connect wallet</button>
-        <button id="btn-quick-start" class="secondary">Quick start (no extension needed)</button>
-        <p class="muted small">
+        <button id="btn-connect" data-i18n="connect.wallet">Connect wallet</button>
+        <button id="btn-quick-start" class="secondary" data-i18n="connect.quick">Quick start (no extension needed)</button>
+        <p class="muted small" data-i18n="connect.note">
           Quick start generates a wallet in this browser — non-custodial (only you hold the key,
           it's just stored locally instead of in an extension), zero setup, zero XLM required.
         </p>
       </section>
 
       <section id="panel-backup" class="panel hidden warning">
-        <h2>⚠ Back up your quick-start key</h2>
-        <p>
+        <h2 data-i18n="backup.heading">⚠ Back up your quick-start key</h2>
+        <p data-i18n-html="backup.body">
           This wallet lives only in this browser. If you clear your browser data, use private
           browsing, or switch devices, <strong>any staked or accrued USDC on this address is
           permanently unrecoverable</strong> — there is no password reset and no support line
@@ -40,122 +52,122 @@
         </p>
         <div class="row">
           <input id="backup-secret" type="password" readonly value="" />
-          <button id="btn-reveal-secret" class="secondary" type="button">Reveal</button>
-          <button id="btn-copy-secret" type="button">Copy</button>
+          <button id="btn-reveal-secret" class="secondary" type="button" data-i18n="backup.reveal">Reveal</button>
+          <button id="btn-copy-secret" type="button" data-i18n="backup.copy">Copy</button>
         </div>
         <p class="muted small" id="backup-copy-status"></p>
       </section>
 
       <section id="panel-onboard" class="panel hidden">
-        <h2>One more step</h2>
-        <p>Your wallet has no USDC trustline yet. Onboarding is sponsored — free, no XLM required.</p>
-        <button id="btn-onboard">Onboard (sponsored, free)</button>
+        <h2 data-i18n="onboard.heading">One more step</h2>
+        <p data-i18n="onboard.body">Your wallet has no USDC trustline yet. Onboarding is sponsored — free, no XLM required.</p>
+        <button id="btn-onboard" data-i18n="onboard.button">Onboard (sponsored, free)</button>
       </section>
 
       <section id="panel-online" class="panel hidden">
         <div class="row">
           <div>
             <strong id="worker-address"></strong>
-            <div class="muted" id="worker-status">offline</div>
+            <div class="muted" id="worker-status" data-i18n="online.offline">offline</div>
           </div>
-          <button id="btn-toggle">Go online</button>
+          <button id="btn-toggle" data-i18n="online.goOnline">Go online</button>
         </div>
 
         <div class="push-row">
           <div>
-            <div class="muted small">Practice mode</div>
-            <p id="practice-status" class="muted small">
+            <div class="muted small" data-i18n="practice.label">Practice mode</div>
+            <p id="practice-status" class="muted small" data-i18n="practice.off">
               Off — questions you answer are real and count toward your reputation.
             </p>
           </div>
-          <button id="btn-practice-toggle" class="secondary" type="button" aria-pressed="false">
+          <button id="btn-practice-toggle" class="secondary" type="button" aria-pressed="false" data-i18n="practice.label">
             Practice mode
           </button>
         </div>
-        <p class="muted small">
+        <p class="muted small" data-i18n="practice.note">
           Practice mode is a client-only preview: it shows a sample question so you can try the
           answer flow without a real payment. Practice answers never touch the chain, your stake,
           or your reputation (matchRatio / totalAnswers).
         </p>
 
         <fieldset id="category-picker">
-          <legend>Topics you'll answer (optional — leave all unchecked to answer everything)</legend>
-          <label><input type="checkbox" value="math" /> Math</label>
-          <label><input type="checkbox" value="coding" /> Coding</label>
-          <label><input type="checkbox" value="history" /> History</label>
-          <label><input type="checkbox" value="general" /> General knowledge</label>
+          <legend data-i18n="categories.legend">Topics you'll answer (optional — leave all unchecked to answer everything)</legend>
+          <label><input type="checkbox" value="math" /> <span data-i18n="cat.math">Math</span></label>
+          <label><input type="checkbox" value="coding" /> <span data-i18n="cat.coding">Coding</span></label>
+          <label><input type="checkbox" value="history" /> <span data-i18n="cat.history">History</span></label>
+          <label><input type="checkbox" value="general" /> <span data-i18n="cat.general">General knowledge</span></label>
         </fieldset>
 
         <div id="category-demand" class="category-demand" aria-live="polite">
-          <div class="muted small">Live demand — categories short on workers right now</div>
+          <div class="muted small" data-i18n="demand.heading">Live demand — categories short on workers right now</div>
           <ul id="category-demand-list" class="category-demand-list"></ul>
           <p id="category-demand-status" class="muted small"></p>
         </div>
 
         <div class="push-row">
           <div>
-            <div class="muted small">Push notifications</div>
-            <p id="push-status" class="muted small">Off — you'll only get questions while this tab is open.</p>
+            <div class="muted small" data-i18n="push.label">Push notifications</div>
+            <p id="push-status" class="muted small" data-i18n="push.off">Off — you'll only get questions while this tab is open.</p>
           </div>
-          <button id="btn-enable-push" class="secondary" type="button">Enable</button>
+          <button id="btn-enable-push" class="secondary" type="button" data-i18n="push.enable">Enable</button>
         </div>
-        <p class="muted small">
+        <p class="muted small" data-i18n="push.note">
           Push only helps for longer-timeout questions (~20s+) — a notification round-trip is too
           slow for the fastest tier. It supplements the tab, it doesn't replace it.
         </p>
       </section>
 
       <section id="panel-earnings" class="panel hidden">
-        <h2>Earnings &amp; stake</h2>
+        <h2 data-i18n="earnings.heading">Earnings &amp; stake</h2>
 
         <div class="row">
           <div>
-            <div class="muted small">Accrued (withdrawable)</div>
+            <div class="muted small" data-i18n="earnings.accrued">Accrued (withdrawable)</div>
             <strong id="owed-amount">0.00 USDC</strong>
           </div>
           <div>
-            <button id="btn-withdraw">Withdraw</button>
-            <button id="btn-withdraw-bank" class="secondary hidden" type="button">Withdraw to bank</button>
+            <button id="btn-withdraw" data-i18n="earnings.withdraw">Withdraw</button>
+            <button id="btn-withdraw-bank" class="secondary hidden" type="button" data-i18n="earnings.withdrawBank">Withdraw to bank</button>
           </div>
         </div>
         <div class="row" id="withdraw-beneficiary-row">
-          <input id="withdraw-beneficiary-input" type="text" placeholder="Payout address (optional — defaults to your own)" />
+          <input id="withdraw-beneficiary-input" type="text" data-i18n-placeholder="earnings.beneficiary" placeholder="Payout address (optional — defaults to your own)" />
         </div>
         <p class="muted small" id="bank-withdraw-status"></p>
 
         <div class="row" style="margin-top: 0.75rem">
           <div>
-            <div class="muted small">Staked bond</div>
+            <div class="muted small" data-i18n="earnings.staked">Staked bond</div>
             <strong id="stake-amount">0.00 USDC</strong>
           </div>
           <form id="stake-form" class="inline-form">
-            <input id="stake-input" type="number" min="0.01" step="0.01" placeholder="Amount" />
-            <button id="btn-stake" type="submit">Stake</button>
+            <input id="stake-input" type="number" min="0.01" step="0.01" data-i18n-placeholder="earnings.amount" placeholder="Amount" />
+            <button id="btn-stake" type="submit" data-i18n="earnings.stake">Stake</button>
           </form>
         </div>
-        <p class="muted small">
+        <p class="muted small" data-i18n="earnings.note">
           Staking is optional — it's a credibility bond. Answers that lose a quorum vote forfeit a
           small slice of stake to the platform; workers who never stake are never slashed.
         </p>
 
         <div class="track-record" id="track-record">
-          <div class="muted small">Your track record</div>
-          <p id="track-record-summary">No answers yet — this fills in once you start answering.</p>
+          <div class="muted small" data-i18n="track.heading">Your track record</div>
+          <p id="track-record-summary" data-i18n="track.empty">No answers yet — this fills in once you start answering.</p>
         </div>
       </section>
 
       <section id="panel-question" class="panel hidden">
-        <h2 id="question-heading">Incoming question</h2>
+        <h2 id="question-heading" data-i18n="question.heading">Incoming question</h2>
         <div class="timer-track"><div class="timer-bar" id="timer-bar"></div></div>
         <p id="question-text"></p>
         <form id="answer-form">
-          <input id="answer-input" type="text" placeholder="Type your answer…" autocomplete="off" />
-          <button id="btn-answer" type="submit">Submit answer</button>
+          <input id="answer-input" type="text" data-i18n-placeholder="question.placeholder" placeholder="Type your answer…" autocomplete="off" />
+          <button id="btn-answer" type="submit" data-i18n="question.submit">Submit answer</button>
         </form>
       </section>
 
       <section class="panel">
-        <h2>Activity log</h2>
+        <h2 data-i18n="log.heading">Activity log</h2>
         <ul id="log"></ul>
       </section>
     </main>
