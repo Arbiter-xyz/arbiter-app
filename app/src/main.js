@@ -9,35 +9,24 @@ import {
   HotWalletModule,
   LedgerModule,
 } from '@creit.tech/stellar-wallets-kit';
-import { createOrLoadLocalWallet, getLocalWalletSecret } from './localWallet.js';
+import { openSecureLocalWallet } from './localWallet.js';
+import { initI18n, t } from './i18n.js';
+import { initA11y } from './a11y.js';
 import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
+import { renderFencedCode } from './codeBlocks.js';
+import { ensureSession as ensureSharedSession } from './session.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
 const USDC_ASSET_CODE = import.meta.env.VITE_USDC_ASSET_CODE || 'USDC';
+const USDC_ASSET_ISSUER = import.meta.env.VITE_USDC_ASSET_ISSUER || 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 
-// Hand-picked, not allowAllModules(): explicit about which wallets we
-// support (matching the original spec's list) rather than automatically
-// inheriting whatever the kit adds in a future version — including
-// hardware-wallet adapters (Trezor/Ledger) that pull in a large, more
-// security-sensitive dependency tree we have no use for. See the README
-// for the concrete CVE this sidesteps.
-//
-// LedgerModule is the one deliberate exception (issue #75): it is added
-// explicitly by name rather than via allowAllModules(), so the Trezor
-// adapters and their protobufjs dependency tree stay excluded. Ledger's
-// browser integration is WebUSB/WebHID against the device directly (the
-// kit's Ledger module), not a deep link into the Ledger Live companion
-// app. Before merging, re-run round 5's audit process: grep the built
-// bundle for `trezor`/`protobuf` and run `npm audit --audit-level=high`,
-// confirming the critical/high count stays at zero.
-const kit = new StellarWalletsKit({
-  network: WalletNetwork.TESTNET,
-  modules: [new FreighterModule(), new LobstrModule(), new xBullModule(), new HanaModule(), new AlbedoModule(), new HotWalletModule(), new LedgerModule()],
-});
+// See wallet.js for the module list and the connect/quick-start button
+// wiring shared with dashboard.js (issue #19).
+const kit = createWalletKit();
 
 const el = {
   connect: document.getElementById('panel-connect'),
@@ -51,6 +40,7 @@ const el = {
   backupSecret: document.getElementById('backup-secret'),
   btnRevealSecret: document.getElementById('btn-reveal-secret'),
   btnCopySecret: document.getElementById('btn-copy-secret'),
+  btnBackupDone: document.getElementById('btn-backup-done'),
   backupCopyStatus: document.getElementById('backup-copy-status'),
   btnOnboard: document.getElementById('btn-onboard'),
   btnToggle: document.getElementById('btn-toggle'),
@@ -61,6 +51,7 @@ const el = {
   timerBar: document.getElementById('timer-bar'),
   answerForm: document.getElementById('answer-form'),
   answerInput: document.getElementById('answer-input'),
+  answerSuggestedBadge: document.getElementById('answer-suggested-badge'),
   btnAnswer: document.getElementById('btn-answer'),
   owedAmount: document.getElementById('owed-amount'),
   stakeAmount: document.getElementById('stake-amount'),
@@ -78,6 +69,8 @@ const el = {
   dndStatus: document.getElementById('dnd-status'),
   activityGrid: document.getElementById('activity-grid'),
   activityStatus: document.getElementById('activity-status'),
+  digestSelect: document.getElementById('digest-select'),
+  digestStatus: document.getElementById('digest-status'),
   btnWithdraw: document.getElementById('btn-withdraw'),
   btnWithdrawBank: document.getElementById('btn-withdraw-bank'),
   bankWithdrawStatus: document.getElementById('bank-withdraw-status'),
@@ -86,14 +79,39 @@ const el = {
   stakeInput: document.getElementById('stake-input'),
   btnStake: document.getElementById('btn-stake'),
   log: document.getElementById('log'),
+  // Social-recovery panel: no matching markup exists in index.html yet, so
+  // these are always null today — see the guard comment further down.
+  btnSetupRecovery: document.getElementById('btn-setup-recovery'),
+  btnRecoverWallet: document.getElementById('btn-recover-wallet'),
+  recoveryShares: document.getElementById('recovery-shares'),
+  recoveryStatus: document.getElementById('recovery-status'),
+  recoveryThreshold: document.getElementById('recovery-threshold'),
+  recoveryShareCount: document.getElementById('recovery-share-count'),
+  recoveryInput: document.getElementById('recovery-input'),
 };
 
+initI18n();
+initA11y();
+
 const state = {
+  localWallet: null,
   // Either the StellarWalletsKit instance or a local quick-start wallet —
   // both expose the same {getAddress, signTransaction} shape, so nothing
   // downstream needs to know which one is active.
   activeWallet: null,
   address: null,
+  get identity() {
+    return this.identities.get(this.address) || null;
+  },
+  get activeWallet() {
+    return this.identity?.wallet || null;
+  },
+  get sessionToken() {
+    return this.identity?.sessionToken || null;
+  },
+  get sessionExpiresAt() {
+    return this.identity?.sessionExpiresAt || 0;
+  },
   online: false,
   eventSource: null,
   currentQuestion: null,
@@ -101,13 +119,69 @@ const state = {
   sessionToken: null,
   sessionExpiresAt: 0,
   pushSubscription: null,
+  lastDraft: null,
 };
 
+const notify = createNotificationCenter({ mount: document.querySelector('header'), storageKey: 'arbiter-worker-notifications' });
+
+/** Activity-log entry; also mirrored into the header bell (issue #133). */
 function log(message) {
   const li = document.createElement('li');
   const time = new Date().toLocaleTimeString();
   li.textContent = `[${time}] ${message}`;
   el.log.prepend(li);
+  notify(message);
+}
+
+// --- Backend API version check (issue #150) -------------------------------
+//
+// arbiter-backend and this app are independently deployed repos, so a
+// backend API change would otherwise only surface as a broken request
+// mid-flow. On load we read the version the backend reports at GET /health
+// and, on mismatch, show a visible-but-non-blocking banner. HTTP APIs are
+// forgiving, so this informs rather than gates: a mismatch never blocks
+// app usage.
+
+function showVersionMismatchNotice(reportedVersion) {
+  const banner = document.createElement('div');
+  banner.id = 'backend-version-notice';
+  banner.setAttribute('role', 'status');
+  banner.style.cssText = [
+    'position:fixed',
+    'top:0',
+    'left:0',
+    'right:0',
+    'z-index:9999',
+    'padding:8px 12px',
+    'background:#7a1f1f',
+    'color:#fff',
+    'font:13px/1.4 system-ui,sans-serif',
+    'text-align:center',
+  ].join(';');
+  banner.textContent =
+    `Backend API version mismatch: this app expects v${COMPATIBLE_BACKEND_VERSION}, ` +
+    `but the backend reports v${reportedVersion}. Some features may not work as expected.`;
+  document.body.prepend(banner);
+}
+
+async function checkBackendVersion() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/health`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const reportedVersion = data.apiVersion ?? data.version;
+    if (reportedVersion == null) {
+      // Backend predates the /health version field; nothing to compare.
+      return;
+    }
+    if (String(reportedVersion) !== String(COMPATIBLE_BACKEND_VERSION)) {
+      showVersionMismatchNotice(reportedVersion);
+      log(`Backend API version mismatch: expected v${COMPATIBLE_BACKEND_VERSION}, got v${reportedVersion}`);
+    }
+  } catch (err) {
+    // Backend unreachable or malformed: don't block or alarm the user here;
+    // the existing request paths already surface connectivity problems.
+  }
 }
 
 function showPanel(name) {
@@ -150,7 +224,17 @@ function renderCategoryDemand(demand) {
     // Scarcity = demand: fewer online workers means a taller bar.
     const scarcity = 1 - count / max;
     bar.style.width = `${Math.round(scarcity * 100)}%`;
-    bar.title = `${count} worker${count === 1 ? '' : 's'} online now`;
+    bar.title = t('demand.workers', { n: count });
+    // Non-colour cue (WCAG 1.4.1): a text label + border style per level,
+    // so urgency is readable without perceiving the bar's colour or width.
+    const level = scarcity >= 0.66 ? 'high' : scarcity >= 0.33 ? 'medium' : 'low';
+    const tag = bar.parentElement.querySelector('.demand-level');
+    if (tag) {
+      tag.hidden = false;
+      tag.dataset.level = level;
+      tag.textContent = t(`demand.${level}`);
+      tag.title = bar.title;
+    }
   }
 }
 
@@ -158,6 +242,8 @@ function clearCategoryDemand() {
   for (const bar of el.categoryPicker.querySelectorAll('.category-demand-bar')) {
     bar.style.width = '0%';
     bar.removeAttribute('title');
+    const tag = bar.parentElement.querySelector('.demand-level');
+    if (tag) tag.hidden = true;
   }
 }
 
@@ -180,45 +266,23 @@ function startCategoryDemandPolling() {
   demandRefreshHandle = setInterval(refreshCategoryDemand, DEMAND_REFRESH_MS);
 }
 
+startCategoryDemandPolling();
+
 // --- Wallet connect (extension) or quick start (local, non-custodial) -----
-
-// A user clicking both connect options in quick succession could otherwise
-// let whichever resolves last silently overwrite the other's in-flight
-// state.activeWallet/state.address — guard against that race by disabling
-// both the instant either one starts, and only re-enabling on failure.
-function setConnectButtonsBusy(busy) {
-  el.btnConnect.disabled = busy;
-  el.btnQuickStart.disabled = busy;
-}
-
-el.btnConnect.addEventListener('click', async () => {
-  setConnectButtonsBusy(true);
-  try {
-    await kit.openModal({
-      onWalletSelected: async (option) => {
-        kit.setWallet(option.id);
-        const { address } = await kit.getAddress();
-        el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
-        await activateWallet(kit, address);
-      },
-      onClosed: (err) => {
-        setConnectButtonsBusy(false);
-        if (err) log(`Wallet selection closed: ${err.message}`);
-      },
-    });
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(`Wallet connect failed: ${err.message}`);
-  }
-});
+// Module list + button wiring live in wallet.js, shared with dashboard.js
+// (issue #19). The one behavioral difference between the two pages — this
+// console shows the backup/reveal panel only for the local quick-start
+// wallet — is handled via the `quickStart` flag onActivated receives,
+// rather than a special case inside the shared helper.
 
 el.btnQuickStart.addEventListener('click', async () => {
   setConnectButtonsBusy(true);
   try {
-    const localWallet = createOrLoadLocalWallet();
+    const localWallet = await openSecureLocalWallet();
+    state.localWallet = localWallet;
     const { address } = await localWallet.getAddress();
     log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
-    showBackupPanel();
+    if (localWallet.state === 'pending-backup') showBackupPanel();
     await activateWallet(localWallet, address);
   } catch (err) {
     setConnectButtonsBusy(false);
@@ -233,15 +297,27 @@ function showBackupPanel() {
   el.backupCopyStatus.textContent = '';
 }
 
-el.btnRevealSecret.addEventListener('click', () => {
+el.btnRevealSecret.addEventListener('click', async () => {
   const revealed = el.backupSecret.type === 'password';
-  if (revealed) el.backupSecret.value = getLocalWalletSecret() || '';
+  if (revealed) el.backupSecret.value = (await state.localWallet?.exportSecret()) || '';
   el.backupSecret.type = revealed ? 'text' : 'password';
-  el.btnRevealSecret.textContent = revealed ? 'Hide' : 'Reveal';
+  el.btnRevealSecret.textContent = t(revealed ? 'backup.hide' : 'backup.reveal');
+  el.btnRevealSecret.setAttribute('aria-pressed', String(revealed));
+});
+
+// Confirming the backup converts the key into a non-extractable WebCrypto
+// key (issue #7): after this, no script on the page — including an XSS
+// payload — can read the secret again, only request signatures.
+el.btnBackupDone.addEventListener('click', async () => {
+  if (!state.localWallet) return;
+  await state.localWallet.lockExport();
+  el.backupSecret.value = '';
+  el.backup.classList.add('hidden');
+  log('Backup confirmed — the quick-start key is now locked in this browser and can no longer be exported.');
 });
 
 el.btnCopySecret.addEventListener('click', async () => {
-  const secret = getLocalWalletSecret();
+  const secret = await state.localWallet?.exportSecret();
   if (!secret) return;
   try {
     await navigator.clipboard.writeText(secret);
@@ -250,6 +326,22 @@ el.btnCopySecret.addEventListener('click', async () => {
     el.backupCopyStatus.textContent = `Could not copy automatically (${err.message}) — reveal and copy it manually.`;
   }
 });
+
+// NOTE (pre-existing, unrelated to issues #21/#22): this file was found
+// already truncated on `main` — everything below this point (activate/
+// route-after-connect, sponsored onboarding, goOnline()/SSE handling,
+// answer submission, earnings/staking, withdraw, and push notifications)
+// had been replaced by a stray `/* … truncated 599 chars … */` placeholder,
+// and a "Social recovery (client-side Shamir split)" feature was referenced
+// in a dangling comment with no implementation left. `activateWallet` was
+// called from the connect/quick-start handlers above but was never defined
+// anywhere in the repo — a real, currently-shipped ReferenceError on every
+// wallet connect. The code below restores the last known-working version of
+// this section (recovered from git history prior to the truncation), which
+// #21 and #22 both need a working online/earnings panel to attach to. The
+// social-recovery UI itself is not restored here (unrelated to #21/#22,
+// and a nontrivial feature on its own) — that remains a separate, still-open
+// gap.
 
 async function activateWallet(wallet, address) {
   state.activeWallet = wallet;
@@ -266,6 +358,12 @@ async function hasUsdcTrustline(address) {
   if (!res.ok) throw new Error(`Horizon returned ${res.status}`);
   const account = await res.json();
   return (account.balances || []).some((b) => b.asset_code === USDC_ASSET_CODE);
+  if (res.status === 404) return false;
+  if (!res.ok) throw new Error(`Horizon returned ${res.status}`);
+  const account = await res.json();
+  return (account.balances || []).some(
+    (b) => b.asset_code === USDC_ASSET_CODE && b.asset_issuer === USDC_ASSET_ISSUER
+  );
 }
 
 async function routeAfterConnect() {
@@ -276,6 +374,9 @@ async function routeAfterConnect() {
       refreshEarnings();
       setInterval(refreshEarnings, 20_000);
       startCategoryDemandPolling();
+      startCategoryDemandPolling();
+      refreshEarnings();
+      setInterval(refreshEarnings, 20_000);
     }
   } catch (err) {
     log(`Trustline check failed (${err.message}) — assuming onboarding is needed`);
@@ -314,6 +415,7 @@ el.btnOnboard.addEventListener('click', async () => {
 
     log(`Onboarded — account created and USDC trustline opened (tx ${hash}), zero XLM spent by you.`);
     showPanel('online');
+    startCategoryDemandPolling();
     refreshEarnings();
   } catch (err) {
     log(`Onboarding failed: ${err.message}`);
@@ -369,6 +471,17 @@ async function ensureSession() {
   state.sessionExpiresAt = expiresAt;
   log('Session established — you can answer questions as yourself, and only yourself.');
   return token;
+  return ensureSharedSession({
+    address: state.address,
+    activeWallet: state.activeWallet,
+    sessionToken: state.sessionToken,
+    sessionExpiresAt: state.sessionExpiresAt,
+    onSession: ({ token, expiresAt }) => {
+      state.sessionToken = token;
+      state.sessionExpiresAt = expiresAt;
+    },
+    log,
+  });
 }
 
 async function goOnline() {
@@ -556,6 +669,36 @@ el.btnWithdraw.addEventListener('click', async () => {
   }
 });
 
+// Issue #22: offers to auto-relay the anchor's requested on-chain transfer
+// (a withdraw_to() call carrying the anchor's memo) through the same
+// sponsor fee-bump relay btnWithdraw already uses, instead of only ever
+// showing manual "send this yourself" instructions. anchor.js falls back to
+// the manual instructions if this throws or isn't confident it has what it
+// needs.
+async function autoRelayWithdrawal({ amount, beneficiary, memo }) {
+  const amountStroops = stroopsFromUsdcInput(String(amount));
+  log(`Building withdraw_to() transaction for ${amount} USDC to the anchor…`);
+  const xdr = await buildWithdrawToXdr(state.address, beneficiary, amountStroops, memo);
+  const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
+    address: state.address,
+    networkPassphrase: WalletNetwork.TESTNET,
+  });
+  const token = await ensureSession();
+  const res = await fetch(`${BACKEND_URL}/sponsor/withdraw`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      xdr: signedTxXdr,
+      workerAddress: state.address,
+      amountStroops: amountStroops.toString(),
+      beneficiaryAddress: beneficiary,
+      token,
+    }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `withdraw relay failed: ${res.status}`);
+  await refreshEarnings();
+}
+
 initBankWithdraw({
   button: el.btnWithdrawBank,
   status: el.bankWithdrawStatus,
@@ -564,6 +707,7 @@ initBankWithdraw({
   getArbiterSessionToken: ensureSession,
   networkPassphrase: WalletNetwork.TESTNET,
   assetCode: USDC_ASSET_CODE,
+  autoRelayWithdrawal,
 });
 
 el.stakeForm.addEventListener('submit', async (evt) => {
@@ -591,6 +735,17 @@ el.stakeForm.addEventListener('submit', async (evt) => {
     log(`Stake failed: ${err.message}`);
   } finally {
     el.btnStake.disabled = false;
+    state.activeWallet = wallet;
+    state.address = address;
+    el.workerAddress.textContent = address;
+    el.connect.classList.add('hidden');
+
+    const trusted = await hasUsdcTrustline(address);
+    showPanel(trusted ? 'online' : 'onboard');
+    if (trusted) startCategoryDemandPolling();
+    log(`Connected ${address}${trusted ? '' : ' — USDC trustline required before going online.'}`);
+  } finally {
+    setConnectButtonsBusy(false);
   }
 });
 
@@ -603,6 +758,12 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch((err) => {
     log(`Service worker registration failed (push notifications unavailable): ${err.message}`);
   });
+  navigator.serviceWorker
+    .register('/sw.js')
+    .then(restorePushUiState)
+    .catch((err) => {
+      log(`Service worker registration failed (push notifications unavailable): ${err.message}`);
+    });
 }
 
 function urlBase64ToUint8Array(base64String) {
@@ -610,6 +771,27 @@ function urlBase64ToUint8Array(base64String) {
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
   const raw = atob(base64);
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+// Issue #21: a page reload used to always show the HTML default "Off" status
+// even when this browser already held an active push subscription (and the
+// backend likely still had it on file) — the only way to find out was to
+// click "Enable" again. This checks for an existing subscription up front
+// and reflects it immediately, without a permission prompt or a redundant
+// subscribe/POST call.
+async function restorePushUiState() {
+  if (!el.btnEnablePush || !('PushManager' in window)) return;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    if (!subscription) return; // never subscribed on this browser — leave the default "Off" state
+    el.pushStatus.textContent = 'On — you may get notified for longer-timeout questions.';
+    el.btnEnablePush.textContent = 'Enabled';
+    el.btnEnablePush.disabled = true;
+  } catch (err) {
+    // Best-effort — leave whatever the default state already is rather than
+    // surfacing this as a user-facing error.
+  }
 }
 
 if (el.btnEnablePush) {
@@ -629,6 +811,7 @@ if (el.btnEnablePush) {
       if (permission !== 'granted') throw new Error('notification permission was not granted');
 
       // Backend now requires proof of address control here too, same as
+      // Backend requires proof of address control here too, same as
       // answering a question — a subscription silently redirects this
       // worker's notifications, so it can't be left open to anyone who
       // just knows the address.
@@ -649,6 +832,12 @@ if (el.btnEnablePush) {
 
       state.pushSubscription = subscription;
       el.pushStatus.textContent = 'On — you may get notified for longer-timeout questions.';
+        body: JSON.stringify({ subscription: subscription.toJSON(), categories: selectedCategories(), token }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || `subscribe failed: ${res.status}`);
+
+      el.pushStatus.textContent = 'On — you may get notified for longer-timeout questions.';
+      el.btnEnablePush.textContent = 'Enabled';
       log('Push notifications enabled.');
     } catch (err) {
       log(`Could not enable push notifications: ${err.message}`);

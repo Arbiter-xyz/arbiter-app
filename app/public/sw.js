@@ -73,11 +73,17 @@ self.addEventListener('push', (event) => {
   }
 
   event.waitUntil(
-    self.registration.showNotification(payload.title, {
-      body: payload.body,
-      tag: payload.questionId ? `question-${payload.questionId}` : undefined,
-      data: { questionId: payload.questionId },
-    }),
+    Promise.all([
+      self.registration.showNotification(payload.title, {
+        body: payload.body,
+        tag: payload.questionId ? `question-${payload.questionId}` : undefined,
+        data: { questionId: payload.questionId },
+      }),
+      // Also feed any open tab's in-app notification center (issue #133).
+      self.clients
+        .matchAll({ type: 'window', includeUncontrolled: true })
+        .then((clients) => clients.forEach((c) => c.postMessage({ type: 'arbiter:notify', message: `${payload.title}: ${payload.body}` }))),
+    ]),
   );
 });
 

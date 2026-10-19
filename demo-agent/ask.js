@@ -1,10 +1,26 @@
 import 'dotenv/config';
+import { readFile } from 'node:fs/promises';
+import { basename, extname } from 'node:path';
 import { Keypair } from '@stellar/stellar-sdk';
-import { env, submitPaymentDirect, explorerTxLink, sleep } from './lib/stellar.js';
+import { env, submitPaymentDirect, explorerTxLink, pollJob } from './lib/stellar.js';
 
 const question = process.argv.slice(2).join(' ') || 'What is the capital of France?';
 const tier = process.env.TIER || 'standard';
 const category = process.env.CATEGORY || undefined;
+// Optional image attachment (issue #94): IMAGE=./screenshot.png
+const imagePath = process.env.IMAGE || undefined;
+const IMAGE_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' };
+
+// Uploads via the separate multipart path, not POST /oracle's JSON body.
+async function uploadImage(path) {
+  const type = IMAGE_TYPES[extname(path).toLowerCase()];
+  if (!type) throw new Error(`unsupported image type: ${path}`);
+  const form = new FormData();
+  form.append('image', new Blob([await readFile(path)], { type }), basename(path));
+  const res = await fetch(`${env.backendUrl}/attachments`, { method: 'POST', body: form });
+  if (!res.ok) throw new Error(`image upload failed: ${res.status}`);
+  return (await res.json()).attachmentId;
+}
 
 async function postOracle(body, headers = {}) {
   const res = await fetch(`${env.backendUrl}/oracle`, {
@@ -13,18 +29,6 @@ async function postOracle(body, headers = {}) {
     body: JSON.stringify(body),
   });
   return { status: res.status, body: await res.json() };
-}
-
-async function pollJob(jobId, { intervalMs = 2000, timeoutMs = 120_000 } = {}) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const res = await fetch(`${env.backendUrl}/oracle/${jobId}`);
-    const job = await res.json();
-    if (job.status === 'settled') return job;
-    process.stdout.write(`  … job ${jobId} status=${job.status} (${job.totalAnswers ?? 0} answers so far)\r`);
-    await sleep(intervalMs);
-  }
-  throw new Error(`job ${jobId} did not settle within ${timeoutMs}ms`);
 }
 
 async function main() {
@@ -36,7 +40,9 @@ async function main() {
   console.log(`Payer: ${payer.publicKey()}`);
 
   // Step 1 — expect a 402 with no payment proof supplied.
-  const challenge = await postOracle({ question, tier, category });
+  const attachmentId = imagePath ? await uploadImage(imagePath) : undefined;
+  if (attachmentId) console.log(`✓ Image attached: ${attachmentId}`);
+  const challenge = await postOracle({ question, tier, category, attachmentId });
   if (challenge.status !== 402) {
     throw new Error(`expected 402 on first call, got ${challenge.status}: ${JSON.stringify(challenge.body)}`);
   }
@@ -54,7 +60,7 @@ async function main() {
   // Step 3 — retry with payment proof headers. This now returns 202
   // immediately rather than blocking for up to the quorum timeout.
   const fulfil = await postOracle(
-    { question },
+    { question, attachmentId },
     { 'X-Payment-Tx': paymentTxHash, 'X-Question-Id': challenge.body.questionId },
   );
   if (fulfil.status !== 202) {
@@ -63,7 +69,9 @@ async function main() {
   console.log(`✓ Payment verified, job dispatched: ${fulfil.body.jobId} (poll ${fulfil.body.statusUrl})`);
 
   // Step 4 — poll for the async result.
-  const job = await pollJob(fulfil.body.jobId);
+  const job = await pollJob(env.backendUrl, fulfil.body.jobId, {
+    onTick: (j) => process.stdout.write(`  … job ${fulfil.body.jobId} status=${j.status} (${j.totalAnswers ?? 0} answers so far)\r`),
+  });
   console.log(); // clear the \r progress line
 
   if (job.outcome === 'resolved') {
