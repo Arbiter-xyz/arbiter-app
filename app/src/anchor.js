@@ -37,9 +37,15 @@ const MAX_AUTO_RELAY_AMOUNT = 100000;
 // click.
 const ANCHOR_CONFIG_TTL_MS = 5 * 60 * 1000;
 
+// Sentinel returned by getAnchorConfig() when the backend explicitly reports
+// that no anchor is configured (503). Distinct from a thrown error so callers
+// can tell "definitively unconfigured" apart from "couldn't reach the backend
+// right now" — the latter must not be cached as if it were the former.
+const NO_ANCHOR = Symbol('no-anchor-configured');
+
 async function getAnchorConfig() {
   const res = await fetch(`${BACKEND_URL}/anchor/config`);
-  if (res.status === 503) return null; // no anchor configured on this backend
+  if (res.status === 503) return NO_ANCHOR; // no anchor configured on this backend
   if (!res.ok) throw new Error(`failed to load anchor config (${res.status})`);
   return res.json();
 }
@@ -137,6 +143,11 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
   // ANCHOR_CONFIG_TTL_MS, so a long-lived tab can't keep opening the
   // withdrawal popup against a stale endpoint after the backend's anchor
   // config has changed. Concurrent callers share the in-flight promise.
+  //
+  // Only a definitive "no anchor configured" (NO_ANCHOR) is cached for the
+  // full TTL. A transient failure (500, network error) is NOT cached — the
+  // promise is cleared so the next call retries, rather than pinning the
+  // session into a permanent "unconfigured" state.
   async function ensureAnchorConfig() {
     const isStale = !anchorConfigPromise || Date.now() - anchorConfigFetchedAt > ANCHOR_CONFIG_TTL_MS;
     if (isStale) {
@@ -153,7 +164,7 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
 
   ensureAnchorConfig()
     .then((cfg) => {
-      if (cfg) button.classList.remove('hidden');
+      if (cfg && cfg !== NO_ANCHOR) button.classList.remove('hidden');
     })
     .catch(() => {}); // no anchor configured, or unreachable — button stays hidden either way
 
@@ -162,7 +173,7 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
     status.textContent = '';
     try {
       const anchorConfig = await ensureAnchorConfig();
-      if (!anchorConfig) throw new Error('no fiat anchor is configured on this backend');
+      if (!anchorConfig || anchorConfig === NO_ANCHOR) throw new Error('no fiat anchor is configured on this backend');
 
       const address = getAddress();
       const wallet = getWallet();
@@ -170,30 +181,6 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
       status.textContent = 'Authenticating with the anchor (one signature)…';
       const jwt = await sep10Auth(anchorConfig, address, wallet, networkPassphrase);
 
-      status.textContent = 'Opening the anchor\'s withdrawal form…';
-      const { url, id } = await startInteractiveWithdraw(anchorConfig, jwt, address, assetCode);
-      window.open(url, 'arbiter-anchor-withdraw', 'width=480,height=720');
+      status.textContent = 'Opening the anchor\'s wi
 
-      status.textContent = 'Waiting for you to finish the anchor\'s form…';
-      const transaction = await pollTransaction(anchorConfig, jwt, id, (t) => {
-        status.textContent = `Anchor status: ${t.status}`;
-      });
-
-      await reportToArbiter({ address, arbiterSessionToken: await getArbiterSessionToken(), transaction });
-
-      if (transaction.status === 'pending_user_transfer_start') {
-        const relayAmount = Number(transaction.amount_in);
-        const canAutoRelay =
-          typeof autoRelayWithdrawal === 'function' &&
-          transaction.withdraw_anchor_account &&
-          transaction.amount_in &&
-          Number.isFinite(relayAmount) &&
-          relayAmount > 0 &&
-          relayAmount <= MAX_AUTO_RELAY_AMOUNT;
-
-        let fallbackPrefix = '';
-        if (canAutoRelay && window.confirm(`Send ${transaction.amount_in} ${assetCode} to the anchor to complete this withdrawal?`)) {
-          try {
-            st
-
-/* … truncated 1355 chars — edit only what you need near the top … */
+/* … truncated 1208 chars — edit only what you need near the top … */
