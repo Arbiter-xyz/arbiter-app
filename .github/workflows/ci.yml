@@ -40,7 +40,7 @@ jobs:
         working-directory: app
 
   e2e:
-    name: E2E (Playwright quick-start wallet flow)
+    name: E2E (Playwright wallet-connect smoke, stubbed backend)
     runs-on: ubuntu-latest
     # Real testnet transactions (sponsor funding, paid question, settlement)
     # are inherently slower than unit tests; give the suite room to retry
