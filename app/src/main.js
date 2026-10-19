@@ -9,6 +9,7 @@ import {
   HotWalletModule,
   LedgerModule,
 } from '@creit.tech/stellar-wallets-kit';
+import { createWalletKit } from './wallet.js';
 import { openSecureLocalWallet } from './localWallet.js';
 import { initI18n, t } from './i18n.js';
 import { initA11y } from './a11y.js';
