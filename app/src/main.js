@@ -1,14 +1,4 @@
-import {
-  StellarWalletsKit,
-  WalletNetwork,
-  FreighterModule,
-  LobstrModule,
-  xBullModule,
-  HanaModule,
-  AlbedoModule,
-  HotWalletModule,
-  LedgerModule,
-} from '@creit.tech/stellar-wallets-kit';
+import { Networks } from '@creit.tech/stellar-wallets-kit';
 import { openSecureLocalWallet } from './localWallet.js';
 import { initI18n, t } from './i18n.js';
 import { initA11y } from './a11y.js';
@@ -382,7 +372,7 @@ el.btnOnboard.addEventListener('click', async () => {
     log('Signing onboarding transaction with your wallet…');
     const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
       address: state.address,
-      networkPassphrase: WalletNetwork.TESTNET,
+      networkPassphrase: Networks.TESTNET,
     });
 
     log('Submitting sponsored onboarding transaction…');
@@ -602,7 +592,7 @@ el.btnWithdraw.addEventListener('click', async () => {
       : await buildWithdrawXdr(state.address, owedStroops);
     const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
       address: state.address,
-      networkPassphrase: WalletNetwork.TESTNET,
+      networkPassphrase: Networks.TESTNET,
     });
     const res = await fetch(`${BACKEND_URL}/sponsor/withdraw`, {
       method: 'POST',
@@ -637,7 +627,7 @@ async function autoRelayWithdrawal({ amount, beneficiary, memo }) {
   const xdr = await buildWithdrawToXdr(state.address, beneficiary, amountStroops, memo);
   const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
     address: state.address,
-    networkPassphrase: WalletNetwork.TESTNET,
+    networkPassphrase: Networks.TESTNET,
   });
   const token = await ensureSession();
   const res = await fetch(`${BACKEND_URL}/sponsor/withdraw`, {
@@ -661,7 +651,7 @@ initBankWithdraw({
   getAddress: () => state.address,
   getWallet: () => state.activeWallet,
   getArbiterSessionToken: ensureSession,
-  networkPassphrase: WalletNetwork.TESTNET,
+  networkPassphrase: Networks.TESTNET,
   assetCode: USDC_ASSET_CODE,
   autoRelayWithdrawal,
 });
