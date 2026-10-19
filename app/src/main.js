@@ -49,6 +49,7 @@ const el = {
   categoryPicker: document.getElementById('category-picker'),
   questionText: document.getElementById('question-text'),
   timerBar: document.getElementById('timer-bar'),
+  timerAnnounce: document.getElementById('timer-announce'),
   answerForm: document.getElementById('answer-form'),
   answerInput: document.getElementById('answer-input'),
   answerSuggestedBadge: document.getElementById('answer-suggested-badge'),
@@ -498,10 +499,17 @@ function onQuestionReceived({ questionId, question, expiresInMs }) {
 function startCountdown(totalMs) {
   stopCountdown();
   const start = Date.now();
+  let lastAnnounced = null;
   state.countdownHandle = setInterval(() => {
     const elapsed = Date.now() - start;
     const remaining = Math.max(0, 1 - elapsed / totalMs);
     el.timerBar.style.width = `${remaining * 100}%`;
+    // Screen-reader announcement (#54): every 10s, then each of the last 5s.
+    const secs = Math.ceil((totalMs - elapsed) / 1000);
+    if (el.timerAnnounce && secs !== lastAnnounced && secs >= 0 && (secs % 10 === 0 || secs <= 5)) {
+      lastAnnounced = secs;
+      el.timerAnnounce.textContent = secs > 0 ? `${secs} seconds remaining` : 'Time is up';
+    }
     if (remaining <= 0) {
       stopCountdown();
       el.answerInput.disabled = true;

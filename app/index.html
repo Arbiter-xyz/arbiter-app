@@ -7,6 +7,7 @@
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#5b4cf0" />
     <link rel="stylesheet" href="/src/style.css" />
+    <script src="/src/theme.js"></script>
   </head>
   <body>
     <a class="skip-link" href="#main" data-i18n="skip">Skip to main content</a>
@@ -45,7 +46,9 @@
         </p>
 
         <form id="apikey-checkout-form" class="inline-form">
+          <label for="apikey-email" class="sr-only">Email</label>
           <input id="apikey-email" type="email" placeholder="you@example.com" autocomplete="email" required />
+          <label for="apikey-amount" class="sr-only">Top-up amount (USDC)</label>
           <input id="apikey-amount" type="number" min="1" step="1" placeholder="Top-up (USDC)" required />
           <button id="btn-apikey-checkout" type="submit">Continue to checkout</button>
         </form>
@@ -59,7 +62,7 @@
             "show key again" and no key reset in this version.
           </p>
           <div class="row">
-            <input id="apikey-reveal-input" type="text" readonly value="" />
+            <input id="apikey-reveal-input" type="text" readonly value="" aria-label="API key" />
             <button id="btn-copy-apikey" class="secondary" type="button">Copy</button>
           </div>
           <p class="muted small" id="apikey-copy-status"></p>
@@ -89,7 +92,7 @@
         </p>
         <div class="row">
           <label for="backup-secret" class="sr-only" data-i18n="backup.secretLabel">Quick-start secret key</label>
-          <input id="backup-secret" type="password" readonly value="" />
+          <input id="backup-secret" type="password" readonly value="" aria-label="Wallet secret key" />
           <button id="btn-reveal-secret" class="secondary" type="button" aria-controls="backup-secret" data-i18n="backup.reveal">Reveal</button>
           <button id="btn-copy-secret" type="button" data-i18n="backup.copy">Copy</button>
           <button id="btn-backup-done" class="secondary" type="button" data-i18n="backup.done">I've saved it — lock export</button>
@@ -191,6 +194,7 @@
             <strong id="stake-amount">0.00 USDC</strong>
           </div>
           <form id="stake-form" class="inline-form">
+            <label for="stake-input" class="sr-only">Stake amount (USDC)</label>
             <input id="stake-input" type="number" min="0.01" step="0.0000001" placeholder="Amount" />
             <button id="btn-stake" type="submit">Stake</button>
           </form>
@@ -208,7 +212,7 @@
         <div class="referral" id="referral">
           <div class="muted small">Invite other workers</div>
           <button id="btn-referral" class="secondary" type="button" disabled>Get referral link</button>
-          <input id="referral-link" class="hidden" type="text" readonly />
+          <input id="referral-link" class="hidden" type="text" readonly aria-label="Referral link" />
           <p class="muted small" id="referral-stats"></p>
         </div>
       </section>
@@ -216,6 +220,7 @@
       <section id="panel-question" class="panel hidden" aria-labelledby="question-heading">
         <h2 id="question-heading" tabindex="-1" data-i18n="question.title">Incoming question</h2>
         <div class="timer-track" role="progressbar" id="timer-track" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-label="Time remaining to answer" data-i18n-attr="aria-label:question.timer"><div class="timer-bar" id="timer-bar"></div></div>
+        <p id="timer-announce" class="sr-only" aria-live="polite" aria-atomic="true"></p>
         <p id="question-text"></p>
         <p id="answer-suggested-badge" class="muted small hidden">Suggested — edit or replace before submitting</p>
         <form id="answer-form">
