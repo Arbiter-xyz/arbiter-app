@@ -25,6 +25,18 @@ document.getElementById('density-toggle').addEventListener('click', () => {
 const LOW_BALANCE_USDC = 100;
 const LOW_BALANCE_XLM = 50;
 
+// Fraud-flag match-ratio cutoff. This used to be a hardcoded constant with
+// no admin-facing config surface; it's now backed by localStorage (same
+// pattern as DENSITY_KEY above) so an operator can tune it per-browser
+// without a redeploy, while still defaulting to the original 0.5 policy.
+const FRAUD_THRESHOLD_KEY = 'arbiter-admin-fraud-threshold';
+const DEFAULT_FRAUD_THRESHOLD = 0.5;
+
+function getFraudThreshold() {
+  const raw = Number(localStorage.getItem(FRAUD_THRESHOLD_KEY));
+  return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : DEFAULT_FRAUD_THRESHOLD;
+}
+
 // Every table below renders data that traces back to caller-controlled
 // input somewhere upstream — a non-address workerId (no auth required,
 // see workerAuth.js::requiresAuth), or the fully self-reported fields
@@ -378,10 +390,20 @@ function renderMatchRatioChart(container, ratios, flagBelow = 0.5) {
 
 async function renderFraud() {
   const tbody = document.getElementById('fraud-body');
+  const thresholdInput = document.getElementById('fraud-threshold');
+  thresholdInput.value = getFraudThreshold();
+  thresholdInput.onchange = () => {
+    const v = Number(thresholdInput.value);
+    if (Number.isFinite(v) && v >= 0 && v <= 1) {
+      localStorage.setItem(FRAUD_THRESHOLD_KEY, String(v));
+      renderFraud();
+    }
+  };
   const { workers } = await fetchAdmin('/admin/workers');
   renderMatchRatioChart(
     document.getElementById('fraud-chart'),
     workers.filter((w) => w.established && w.matchRatio !== null).map((w) => w.matchRatio),
+    getFraudThreshold(),
   );
   const flagged = workers
     .filter((w) => w.established && w.matchRatio !== null)
