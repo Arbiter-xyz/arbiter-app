@@ -671,17 +671,29 @@ el.stakeForm.addEventListener('submit', async (evt) => {
   evt.preventDefault();
   el.btnStake.disabled = true;
   try {
-    state.activeWallet = wallet;
-    state.address = address;
-    el.workerAddress.textContent = address;
-    el.connect.classList.add('hidden');
-
-    const trusted = await hasUsdcTrustline(address);
-    showPanel(trusted ? 'online' : 'onboard');
-    if (trusted) startCategoryDemandPolling();
-    log(`Connected ${address}${trusted ? '' : ' — USDC trustline required before going online.'}`);
+    const amountStroops = stroopsFromUsdcInput(el.stakeInput.value);
+    log(`Building stake transaction for ${el.stakeInput.value} USDC…`);
+    const xdr = await buildStakeXdr(state.address, amountStroops);
+    const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
+      address: state.address,
+      networkPassphrase: WalletNetwork.TESTNET,
+    });
+    const res = await fetch(`${BACKEND_URL}/sponsor/stake`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        xdr: signedTxXdr,
+        workerAddress: state.address,
+        amountStroops: amountStroops.toString(),
+      }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `stake failed: ${res.status}`);
+    const { hash } = await res.json();
+    log(`Staked ${el.stakeInput.value} USDC (tx ${hash})`);
+  } catch (err) {
+    log(`Stake failed: ${err.message}`);
   } finally {
-    setConnectButtonsBusy(false);
+    el.btnStake.disabled = false;
   }
 });
 
