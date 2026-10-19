@@ -29,7 +29,7 @@ const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_AUTO_RELAY_AMOUNT = 100000;
 
 // How long a cached anchor config is trusted before we re-fetch it. The
-// config pins the anchor's webAuthEndpoint and transferServerSep24, so a
+// config pins the anchor's webAuthEndpoint and transferServer, so a
 // long-lived tab that cached it once could otherwise keep opening the
 // withdrawal popup against an endpoint the backend has since changed
 // (e.g. an anchor migration or a rotated/compromised endpoint). Re-fetching
@@ -64,7 +64,7 @@ async function sep10Auth(anchorConfig, address, wallet, networkPassphrase) {
 }
 
 async function startInteractiveWithdraw(anchorConfig, jwt, address, assetCode) {
-  const res = await fetch(`${anchorConfig.transferServerSep24}/transactions/withdraw/interactive`, {
+  const res = await fetch(`${anchorConfig.transferServer}/transactions/withdraw/interactive`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ asset_code: assetCode, account: address }),
@@ -78,7 +78,7 @@ async function pollTransaction(anchorConfig, jwt, id, onUpdate) {
   let lastStatus = null;
 
   while (Date.now() < deadline) {
-    const url = new URL(`${anchorConfig.transferServerSep24}/transaction`);
+    const url = new URL(`${anchorConfig.transferServer}/transaction`);
     url.searchParams.set('id', id);
     const res = await fetch(url, { headers: { Authorization: `Bearer ${jwt}` } });
     if (res.ok) {
@@ -170,30 +170,6 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
       status.textContent = 'Authenticating with the anchor (one signature)…';
       const jwt = await sep10Auth(anchorConfig, address, wallet, networkPassphrase);
 
-      status.textContent = 'Opening the anchor\'s withdrawal form…';
-      const { url, id } = await startInteractiveWithdraw(anchorConfig, jwt, address, assetCode);
-      window.open(url, 'arbiter-anchor-withdraw', 'width=480,height=720');
+      status.textContent = 'Opening the anchor\'s wi
 
-      status.textContent = 'Waiting for you to finish the anchor\'s form…';
-      const transaction = await pollTransaction(anchorConfig, jwt, id, (t) => {
-        status.textContent = `Anchor status: ${t.status}`;
-      });
-
-      await reportToArbiter({ address, arbiterSessionToken: await getArbiterSessionToken(), transaction });
-
-      if (transaction.status === 'pending_user_transfer_start') {
-        const relayAmount = Number(transaction.amount_in);
-        const canAutoRelay =
-          typeof autoRelayWithdrawal === 'function' &&
-          transaction.withdraw_anchor_account &&
-          transaction.amount_in &&
-          Number.isFinite(relayAmount) &&
-          relayAmount > 0 &&
-          relayAmount <= MAX_AUTO_RELAY_AMOUNT;
-
-        let fallbackPrefix = '';
-        if (canAutoRelay && window.confirm(`Send ${transaction.amount_in} ${assetCode} to the anchor to complete this withdrawal?`)) {
-          try {
-            st
-
-/* … truncated 1355 chars — edit only what you need near the top … */
+/* … truncated 1208 chars — edit only what you need near the top … */
