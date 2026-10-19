@@ -73,7 +73,7 @@ code { font-family: var(--font-mono); }
 .skip-link {
   position: absolute;
   top: -100%;
-  left: var(--space-3);
+  inset-inline-start: var(--space-3);
   background: var(--accent-btn);
   color: #fff;
   padding: var(--space-2) var(--space-4);
@@ -412,7 +412,7 @@ pre:focus-visible {
 .dot-yellow { background: #ffbd2e; }
 .dot-green { background: #27c93f; }
 .terminal-title {
-  margin-left: var(--space-2);
+  margin-inline-start: var(--space-2);
   color: var(--text-muted);
   font-size: 0.8rem;
   font-family: var(--font-mono);
@@ -426,7 +426,7 @@ pre:focus-visible {
   flex: 1 1 auto;
 }
 .copy-btn {
-  margin-left: auto;
+  margin-inline-start: auto;
   flex-shrink: 0;
   font-size: 0.75rem;
   font-weight: 600;
@@ -623,13 +623,13 @@ pre:focus-visible {
 }
 .dev-list li {
   position: relative;
-  padding-left: var(--space-4);
+  padding-inline-start: var(--space-4);
   color: var(--text-muted);
 }
 .dev-list li::before {
   content: "";
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0.55em;
   width: 6px;
   height: 6px;
@@ -693,13 +693,13 @@ pre:focus-visible {
 .price-card li {
   color: var(--text-muted);
   font-size: 0.9rem;
-  padding-left: var(--space-4);
+  padding-inline-start: var(--space-4);
   position: relative;
 }
 .price-card li::before {
   content: "";
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: 0.5em;
   width: 6px;
   height: 6px;
@@ -889,3 +889,19 @@ pre:focus-visible {
   .btn { width: 100%; }
   .hero-actions { flex-direction: column; }
 }
+
+/* Live widgets (live.js) */
+.tier-picker { margin-top: .5rem; font-size: .85rem; opacity: .85; }
+.tier-summary { margin: 0 0 .25rem; }
+.tier-advanced summary { cursor: pointer; }
+.tier-advanced select { margin-top: .4rem; max-width: 100%; }
+.live-ticker { margin-top: 1rem; font-size: .9rem; display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+.live-dot { width: .5rem; height: .5rem; border-radius: 50%; background: #22c55e; animation: live-pulse 2s infinite; }
+.ticker-note { flex-basis: 100%; font-size: .75rem; opacity: .7; }
+@keyframes live-pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+.surge-live { margin-top: 1.5rem; max-width: 40rem; }
+.surge-head { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; font-size: .9rem; }
+.surge-status { opacity: .7; }
+#surge-canvas { display: block; width: 100%; height: 140px; color: currentColor; }
+.surge-note { font-size: .75rem; opacity: .7; }

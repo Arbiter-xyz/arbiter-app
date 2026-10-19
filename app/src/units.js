@@ -16,3 +16,46 @@ export function usdcFromStroops(stroops) {
   const frac = (s % 10_000_000n).toString().padStart(7, '0');
   return `${whole}.${frac}`;
 }
+
+/**
+ * Bounds an anchor-supplied withdrawal amount against the amount the user
+ * actually saw and approved in the UI. The auto-relay signs whatever the
+ * configured anchor's SEP-24 response returns, so a compromised or
+ * misconfigured anchor could otherwise get a worker to sign a larger
+ * transfer than was displayed. Returns the validated stroop amount, or
+ * throws if the anchor's value is malformed, non-positive, or exceeds the
+ * approved amount.
+ */
+export function boundAnchorWithdrawalAmount(anchorAmount, approvedAmount) {
+  let anchorStroops;
+  try {
+    anchorStroops = BigInt(anchorAmount);
+  } catch {
+    throw new Error('anchor returned an invalid withdrawal amount');
+  }
+  if (anchorStroops <= 0n) {
+    throw new Error('anchor returned a non-positive withdrawal amount');
+  }
+  const approvedStroops = BigInt(approvedAmount);
+  if (anchorStroops > approvedStroops) {
+    throw new Error(
+      'anchor requested more than the approved withdrawal amount; refusing to sign',
+    );
+  }
+  return anchorStroops;
+}
+
+const DISPLAY_PRECISION_KEY = 'arbiter:usdc-display-precision';
+
+/** Display-only preference; all stroop parsing and contract math stay exact. */
+export function formatUsdc(value) {
+  const precision = localStorage.getItem(DISPLAY_PRECISION_KEY) === '7' ? 7 : 2;
+  const amount = Number(value);
+  return `${Number.isFinite(amount) ? amount.toFixed(precision) : '—'} USDC`;
+}
+
+export function toggleUsdcDisplayPrecision() {
+  const next = localStorage.getItem(DISPLAY_PRECISION_KEY) === '7' ? '2' : '7';
+  localStorage.setItem(DISPLAY_PRECISION_KEY, next);
+  return next;
+}

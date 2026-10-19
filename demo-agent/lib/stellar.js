@@ -159,3 +159,22 @@ export async function getLatestLedgerSequence() {
 export function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+/** Polls `GET ${backendUrl}${statusPath(jobId)}` (default `/oracle/:jobId`)
+ * until the job settles, sleeping `intervalMs` between attempts and
+ * throwing once `timeoutMs` elapses. Previously copy-pasted with small
+ * variations into ask.js, sandbox-ask.js, and sponsored-demo.js (issue
+ * #16) — each caller keeps its own interval/timeout defaults and progress
+ * output by passing `onTick(job)`, called on every non-settled poll. */
+export async function pollJob(backendUrl, jobId, { intervalMs = 2000, timeoutMs = 120_000, statusPath, onTick } = {}) {
+  const path = statusPath ? statusPath(jobId) : `/oracle/${jobId}`;
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const res = await fetch(`${backendUrl}${path}`);
+    const job = await res.json();
+    if (job.status === 'settled') return job;
+    if (onTick) onTick(job);
+    await sleep(intervalMs);
+  }
+  throw new Error(`job ${jobId} did not settle within ${timeoutMs}ms`);
+}

@@ -21,6 +21,22 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const POLL_INTERVAL_MS = 3000;
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 
+// Upper bound on the amount we'll auto-relay to an anchor's collection
+// account. The amount comes straight from the anchor's SEP-24 response, so
+// a compromised or misconfigured anchor could otherwise get a worker to
+// sign a transfer far larger than the UI implied. Anything above this is
+// treated as untrusted and falls back to the manual-instructions display.
+const MAX_AUTO_RELAY_AMOUNT = 100000;
+
+// How long a cached anchor config is trusted before we re-fetch it. The
+// config pins the anchor's webAuthEndpoint and transferServerSep24, so a
+// long-lived tab that cached it once could otherwise keep opening the
+// withdrawal popup against an endpoint the backend has since changed
+// (e.g. an anchor migration or a rotated/compromised endpoint). Re-fetching
+// bounds that staleness window without re-hitting the backend on every
+// click.
+const ANCHOR_CONFIG_TTL_MS = 5 * 60 * 1000;
+
 async function getAnchorConfig() {
   const res = await fetch(`${BACKEND_URL}/anchor/config`);
   if (res.status === 503) return null; // no anchor configured on this backend
@@ -103,12 +119,35 @@ async function reportToArbiter({ address, arbiterSessionToken, transaction }) {
  * on-chain withdraw button), getArbiterSessionToken() (from ensureSession()
  * — reused here purely to authenticate the /anchor/report call, not the
  * anchor itself), networkPassphrase, and assetCode.
+ *
+ * `autoRelayWithdrawal` (issue #22, optional): `({ amount, beneficiary, memo }) =>
+ * Promise<void>` — when provided, builds/signs/relays the on-chain
+ * withdraw_to() transfer to the anchor's collection account automatically
+ * (through the existing sponsor fee-bump relay) once the worker explicitly
+ * confirms, instead of only ever showing static "send this yourself"
+ * instructions. If it's omitted, or throws, or the anchor's response is
+ * missing/malformed data this can't confidently act on, this falls back to
+ * the manual-instructions display — the safer default.
  */
-export function initBankWithdraw({ button, status, getAddress, getWallet, getArbiterSessionToken, networkPassphrase, assetCode }) {
+export function initBankWithdraw({ button, status, getAddress, getWallet, getArbiterSessionToken, networkPassphrase, assetCode, autoRelayWithdrawal }) {
   let anchorConfigPromise = null;
+  let anchorConfigFetchedAt = 0;
 
+  // Re-fetch the anchor config once the cached copy is older than
+  // ANCHOR_CONFIG_TTL_MS, so a long-lived tab can't keep opening the
+  // withdrawal popup against a stale endpoint after the backend's anchor
+  // config has changed. Concurrent callers share the in-flight promise.
   async function ensureAnchorConfig() {
-    if (!anchorConfigPromise) anchorConfigPromise = getAnchorConfig();
+    const isStale = !anchorConfigPromise || Date.now() - anchorConfigFetchedAt > ANCHOR_CONFIG_TTL_MS;
+    if (isStale) {
+      anchorConfigFetchedAt = Date.now();
+      anchorConfigPromise = getAnchorConfig().catch((err) => {
+        // Don't cache a failed fetch — let the next call retry.
+        anchorConfigPromise = null;
+        anchorConfigFetchedAt = 0;
+        throw err;
+      });
+    }
     return anchorConfigPromise;
   }
 
@@ -143,34 +182,18 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
       await reportToArbiter({ address, arbiterSessionToken: await getArbiterSessionToken(), transaction });
 
       if (transaction.status === 'pending_user_transfer_start') {
-        // Built with createElement/textContent, not innerHTML — amount_in,
-        // withdraw_anchor_account, and withdraw_memo all come straight from
-        // the configured anchor's own SEP-24 API response, a third party
-        // this backend doesn't control. A malicious or compromised anchor
-        // could otherwise inject markup here.
-        status.textContent = '';
-        status.append('Send ');
-        const amountStrong = document.createElement('strong');
-        amountStrong.textContent = `${transaction.amount_in} ${assetCode}`;
-        status.append(amountStrong, ' to ');
-        const accountCode = document.createElement('code');
-        accountCode.textContent = transaction.withdraw_anchor_account;
-        status.append(accountCode);
-        if (transaction.withdraw_memo) {
-          const memoCode = document.createElement('code');
-          memoCode.textContent = transaction.withdraw_memo;
-          status.append(' with memo ', memoCode);
-        }
-        status.append(' to complete this withdrawal — the anchor is now waiting for that on-chain payment.');
-      } else if (transaction.status === 'completed') {
-        status.textContent = 'Withdrawal completed by the anchor.';
-      } else {
-        status.textContent = `Anchor reported: ${transaction.status}`;
-      }
-    } catch (err) {
-      status.textContent = `Bank withdrawal failed: ${err.message}`;
-    } finally {
-      button.disabled = false;
-    }
-  });
-}
+        const relayAmount = Number(transaction.amount_in);
+        const canAutoRelay =
+          typeof autoRelayWithdrawal === 'function' &&
+          transaction.withdraw_anchor_account &&
+          transaction.amount_in &&
+          Number.isFinite(relayAmount) &&
+          relayAmount > 0 &&
+          relayAmount <= MAX_AUTO_RELAY_AMOUNT;
+
+        let fallbackPrefix = '';
+        if (canAutoRelay && window.confirm(`Send ${transaction.amount_in} ${assetCode} to the anchor to complete this withdrawal?`)) {
+          try {
+            st
+
+/* … truncated 1355 chars — edit only what you need near the top … */
