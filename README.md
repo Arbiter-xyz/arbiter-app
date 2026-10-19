@@ -150,6 +150,8 @@ Sandbox-only (`/oracle/sandbox` + poll `/oracle/:jobId`) — no payment, no chai
 ```sh
 cd app && npm install && npm run dev      # or: npm run build
 cd landing && python3 -m http.server 8123 # static, no build step
+# point landing/ at a local backend (defaults to production if absent):
+cp landing/config.example.js landing/config.js  # then edit ARBITER_API_BASE
 
 cd demo-agent && npm install
 cp .env.example .env

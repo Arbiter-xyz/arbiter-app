@@ -35,9 +35,24 @@ jobs:
       - name: Enforce bundle-size budget
         run: node scripts/check-bundle-budget.mjs
         working-directory: app
+      - name: Unit tests (vitest)
+        run: npm test
+        working-directory: app
       - name: Dependency audit (fails only on high/critical)
         run: npm audit --omit=dev --audit-level=high
         working-directory: app
+      # The step above uses --omit=dev, so devDependency findings (vite,
+      # vitest, storybook) can never surface there — yet vite actually runs
+      # (`vite dev`, `vite build`). This step audits the dev tree explicitly
+      # (issue #43). Documented exception: vite is pinned to the latest 5.x
+      # (^5.4.21); the remaining high-severity vite/esbuild advisories are only
+      # fixed in vite 6+/vitest 3+, a major upgrade tracked separately. Until
+      # then this step reports but doesn't block; drop continue-on-error once
+      # that upgrade lands.
+      - name: Dependency audit — devDependencies (vite et al.)
+        run: npm audit --omit=prod --audit-level=high
+        working-directory: app
+        continue-on-error: true
 
   a11y:
     name: Accessibility (axe-core, WCAG 2.1 AA, LTR + RTL)

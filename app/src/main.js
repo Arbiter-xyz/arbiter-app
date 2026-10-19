@@ -452,6 +452,7 @@ async function goOnline() {
   state.eventSource = es;
 
   es.addEventListener('connected', () => {
+    clearDispatchGrace();
     state.online = true;
     el.workerStatus.textContent = categories.length ? `online — ${categories.join(', ')}` : 'online — all topics';
     el.btnToggle.textContent = 'Go offline';
@@ -459,17 +460,44 @@ async function goOnline() {
   });
 
   es.addEventListener('question', (evt) => {
+    clearDispatchGrace();
     const data = JSON.parse(evt.data);
     onQuestionReceived(data);
   });
 
+  // EventSource reconnects on its own after transient drops (issue #41), so a
+  // single error isn't fatal. Only go offline if the browser gave up
+  // (readyState CLOSED, e.g. expired token -> non-200) or no `connected`/
+  // `question` event arrives within the grace window. goOffline() closes the
+  // stream, so a permanently unreachable backend can't retry forever.
   es.onerror = () => {
-    log('Dispatch channel error/disconnected');
-    goOffline();
+    if (es.readyState === EventSource.CLOSED) {
+      log('Dispatch channel closed');
+      goOffline();
+      return;
+    }
+    log('Dispatch channel error — reconnecting…');
+    if (!state.dispatchGraceTimer) {
+      state.dispatchGraceTimer = setTimeout(() => {
+        state.dispatchGraceTimer = null;
+        log('Dispatch channel did not recover');
+        goOffline();
+      }, DISPATCH_GRACE_MS);
+    }
   };
 }
 
+const DISPATCH_GRACE_MS = 15_000;
+
+function clearDispatchGrace() {
+  if (state.dispatchGraceTimer) {
+    clearTimeout(state.dispatchGraceTimer);
+    state.dispatchGraceTimer = null;
+  }
+}
+
 function goOffline() {
+  clearDispatchGrace();
   if (state.eventSource) {
     state.eventSource.close();
     state.eventSource = null;
