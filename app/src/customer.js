@@ -21,6 +21,10 @@
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const KEY_STORAGE = 'arbiter-customer-api-key';
+// #283: a hung backend connection previously left buttons disabled forever
+// with no escape path. Mirror status.js's AbortController timeout so every
+// billing fetch fails fast and the loading state resets.
+const REQUEST_TIMEOUT_MS = 15000;
 
 const el = {
   login: document.getElementById('panel-login'),
@@ -59,10 +63,21 @@ function showAccount() {
 
 async function fetchCustomer(path, options = {}) {
   const key = localStorage.getItem(KEY_STORAGE);
-  const res = await fetch(`${BACKEND_URL}${path}`, {
-    ...options,
-    headers: { 'X-Api-Key': key, ...(options.headers || {}) },
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(`${BACKEND_URL}${path}`, {
+      ...options,
+      headers: { 'X-Api-Key': key, ...(options.headers || {}) },
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('request timed out');
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (res.status === 401) {
     localStorage.removeItem(KEY_STORAGE);
     showLogin('That API key was rejected — try again.');
