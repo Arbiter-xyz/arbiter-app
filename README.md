@@ -191,3 +191,6 @@ executions, transaction links included.)
 
 <!-- handsoff-issue-211 -->
 - #211: admin.js's Overview tab — the default view — throws on every load: canView is referenced but defined nowhere
+
+<!-- handsoff-issue-227 -->
+- #227: admin.js's renderMatchRatioChart uses undefined SVG_NS
