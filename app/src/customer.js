@@ -18,6 +18,10 @@
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const KEY_STORAGE = 'arbiter-customer-api-key';
+// #283: a hung backend connection previously left buttons disabled forever
+// with no escape path. Mirror status.js's AbortController timeout so every
+// billing fetch fails fast and the loading state resets.
+const REQUEST_TIMEOUT_MS = 15000;
 
 const el = {
   login: document.getElementById('panel-login'),

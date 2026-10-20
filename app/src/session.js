@@ -13,6 +13,10 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 export async function ensureSession({ address, activeWallet, sessionToken, sessionExpiresAt, onSession, log }) {
   if (sessionToken && Date.now() < sessionExpiresAt - 60_000) return sessionToken;
 
+  if (!activeWallet) {
+    throw new Error('No wallet connected — connect a wallet before establishing a session.');
+  }
+
   log('Proving control of your address (one signature)…');
   const challengeRes = await fetch(`${BACKEND_URL}/workers/${address}/session/challenge`, { method: 'POST' });
   if (!challengeRes.ok) throw new Error((await challengeRes.json()).error || 'failed to get session challenge');
