@@ -107,9 +107,12 @@ el.btnQuickStart.addEventListener('click', async () => {
   }
 });
 
-async function switchIdentity(address) {
+async function switchIdentity(address, wallet = null) {
   state.address = address;
-  if (state.identity.walletId) kit.setWallet(state.identity.walletId);
+  // Populate activeWallet so ensureSession()'s wallet-signed session-proof
+  // flow has a signer (issue #213). Fall back to the kit's currently
+  // selected wallet when no explicit wallet is passed in.
+  state.activeWallet = wallet || state.activeWallet || kit;
   el.payerAddress.textContent = address;
   el.connect.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
