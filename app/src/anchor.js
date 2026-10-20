@@ -47,7 +47,7 @@ const REPORT_RETRY_BASE_MS = 500;
 
 async function getAnchorConfig() {
   const res = await fetch(`${BACKEND_URL}/anchor/config`);
-  if (res.status === 503) return null; // no anchor configured on this backend
+  if (res.status === 503) return NO_ANCHOR; // no anchor configured on this backend
   if (!res.ok) throw new Error(`failed to load anchor config (${res.status})`);
   return res.json();
 }
@@ -165,6 +165,11 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
   // ANCHOR_CONFIG_TTL_MS, so a long-lived tab can't keep opening the
   // withdrawal popup against a stale endpoint after the backend's anchor
   // config has changed. Concurrent callers share the in-flight promise.
+  //
+  // Only a definitive "no anchor configured" (NO_ANCHOR) is cached for the
+  // full TTL. A transient failure (500, network error) is NOT cached — the
+  // promise is cleared so the next call retries, rather than pinning the
+  // session into a permanent "unconfigured" state.
   async function ensureAnchorConfig() {
     const isStale = !anchorConfigPromise || Date.now() - anchorConfigFetchedAt > ANCHOR_CONFIG_TTL_MS;
     if (isStale) {
@@ -181,7 +186,7 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
 
   ensureAnchorConfig()
     .then((cfg) => {
-      if (cfg) button.classList.remove('hidden');
+      if (cfg && cfg !== NO_ANCHOR) button.classList.remove('hidden');
     })
     .catch(() => {}); // no anchor configured, or unreachable — button stays hidden either way
 
@@ -190,7 +195,7 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
     status.textContent = '';
     try {
       const anchorConfig = await ensureAnchorConfig();
-      if (!anchorConfig) throw new Error('no fiat anchor is configured on this backend');
+      if (!anchorConfig || anchorConfig === NO_ANCHOR) throw new Error('no fiat anchor is configured on this backend');
 
       const address = getAddress();
       const wallet = getWallet();
