@@ -37,11 +37,13 @@ const MAX_AUTO_RELAY_AMOUNT = 100000;
 // click.
 const ANCHOR_CONFIG_TTL_MS = 5 * 60 * 1000;
 
-// Sentinel returned by getAnchorConfig() when the backend explicitly reports
-// that no anchor is configured (503). Distinct from a thrown error so callers
-// can tell "definitively unconfigured" apart from "couldn't reach the backend
-// right now" — the latter must not be cached as if it were the former.
-const NO_ANCHOR = Symbol('no-anchor-configured');
+// How many times reportToArbiter retries a failed /anchor/report POST before
+// giving up. A dropped report means admin.js's renderKyc/renderPayouts views
+// silently miss this withdrawal, so a couple of retries with backoff is worth
+// the extra requests — but it stays bounded so a persistently-down backend
+// can't wedge the withdraw flow.
+const REPORT_MAX_ATTEMPTS = 3;
+const REPORT_RETRY_BASE_MS = 500;
 
 async function getAnchorConfig() {
   const res = await fetch(`${BACKEND_URL}/anchor/config`);
@@ -102,20 +104,40 @@ async function pollTransaction(anchorConfig, jwt, id, onUpdate) {
   throw new Error('timed out waiting for the anchor to reach a payment-ready state');
 }
 
+// Best-effort report to the backend so admin.js's renderKyc/renderPayouts
+// views can show this withdrawal. A dropped report means those views silently
+// miss it, so retry a bounded number of times with backoff before giving up.
+// Returns true on success, false if every attempt failed — callers can use
+// that to surface an out-of-sync indicator instead of failing silently.
 async function reportToArbiter({ address, arbiterSessionToken, transaction }) {
-  await fetch(`${BACKEND_URL}/anchor/report`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      address,
-      token: arbiterSessionToken,
-      kind: 'withdrawal',
-      status: transaction.status,
-      amount: transaction.amount_in || null,
-      assetCode: transaction.amount_in_asset || null,
-      anchorTransactionId: transaction.id,
-    }),
-  }).catch(() => {}); // best-effort — the admin console cache is a convenience, not the source of truth
+  const body = JSON.stringify({
+    address,
+    token: arbiterSessionToken,
+    kind: 'withdrawal',
+    status: transaction.status,
+    amount: transaction.amount_in || null,
+    assetCode: transaction.amount_in_asset || null,
+    anchorTransactionId: transaction.id,
+  });
+
+  for (let attempt = 1; attempt <= REPORT_MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/anchor/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+      if (res.ok) return true;
+      // 4xx (other than 429) won't succeed on retry — bail out early.
+      if (res.status >= 400 && res.status < 500 && res.status !== 429) return false;
+    } catch {
+      // network error — fall through to retry
+    }
+    if (attempt < REPORT_MAX_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, REPORT_RETRY_BASE_MS * attempt));
+    }
+  }
+  return false;
 }
 
 /**
