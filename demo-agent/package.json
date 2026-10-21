@@ -11,12 +11,16 @@
     "worker": "node worker-sim.js",
     "sponsored-demo": "node sponsored-demo.js",
     "sandbox-demo": "node sandbox-demo.js",
-    "test": "node --test",
-    "check": "node --check ask.js sandbox-ask.js bot.js worker-sim.js sponsored-demo.js sandbox-demo.js lib/stellar.js lib/sse-dispatcher.js"
+    "check": "node --check ask.js sandbox-ask.js bot.js worker-sim.js sponsored-demo.js sandbox-demo.js lib/stellar.js",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^16.2.0",
     "dotenv": "^16.4.5",
     "undici": "^8.10.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.13.0",
+    "globals": "^15.11.0"
   }
 }

@@ -189,7 +189,9 @@
           <h2>Fraud &amp; Trust</h2>
           <div class="panel">
             <p class="muted small">Match-ratio distribution across established workers.</p>
-            <div id="fraud-chart" class="admin-chart" role="img" aria-label="Match-ratio distribution chart"></div>
+            <label class="small" for="fraud-threshold">Flag below (match ratio)</label>
+            <input type="number" id="fraud-threshold" min="0" max="1" step="0.01" />
+            <div id="fraud-chart" class="admin-chart"></div>
           </div>
           <div class="panel">
             <p class="muted small">Workers below the minimum match ratio once established — candidates for review.</p>
