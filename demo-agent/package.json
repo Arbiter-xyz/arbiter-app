@@ -11,7 +11,8 @@
     "worker": "node worker-sim.js",
     "sponsored-demo": "node sponsored-demo.js",
     "sandbox-demo": "node sandbox-demo.js",
-    "check": "node --check ask.js sandbox-ask.js bot.js worker-sim.js sponsored-demo.js sandbox-demo.js lib/stellar.js"
+    "test": "node --test",
+    "check": "node --check ask.js sandbox-ask.js bot.js worker-sim.js sponsored-demo.js sandbox-demo.js lib/stellar.js lib/sse-dispatcher.js"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^16.2.0",

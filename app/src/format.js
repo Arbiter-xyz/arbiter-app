@@ -13,3 +13,11 @@ export function truncateAddress(id) {
 export function formatRatio(ratio) {
   return ratio === null || ratio === undefined ? '—' : `${(ratio * 100).toFixed(1)}%`;
 }
+
+// og:image URL for a worker profile page (issue #229). The backend has no
+// per-worker image route, so this returns the same /og/leaderboard.png that
+// worker.html's static placeholder already uses; `address` is accepted so a
+// per-worker route can be added here without touching callers.
+export function workerOgImageUrl(backendUrl, address) { // eslint-disable-line no-unused-vars
+  return `${String(backendUrl || '').replace(/\/+$/, '')}/og/leaderboard.png`;
+}
