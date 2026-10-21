@@ -1,17 +1,12 @@
 // Serializers + download helper for exporting a payer's question history.
 
-import { csvEscape } from './csv.js';
+import { toCsv } from './csv.js';
 
 export const CSV_COLUMNS = ['questionId', 'question', 'tier', 'amount', 'status', 'outcome', 'confidence'];
 
-export { csvEscape };
-
 export function questionsToCsv(questions) {
-  const lines = [CSV_COLUMNS.join(',')];
-  for (const q of questions) {
-    lines.push(CSV_COLUMNS.map((c) => csvEscape(q[c])).join(','));
-  }
-  return lines.join('\r\n') + '\r\n';
+  const rows = questions.map((q) => CSV_COLUMNS.map((c) => q[c]));
+  return toCsv(CSV_COLUMNS, rows) + '\r\n';
 }
 
 export function questionsToJson(questions) {
