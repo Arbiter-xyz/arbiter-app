@@ -2,8 +2,9 @@ import { openSecureLocalWallet } from './localWallet.js';
 import { subscribeQuestionStatus } from './statusChannel.js';
 import { initI18n, onLocaleChange, t, formatUsdc, formatNumber } from './i18n.js';
 import { renderMarkdown } from './markdown.js';
-import { startTour } from './tour.js';
-import { initSupportChat, setSupportWallet } from './support.js';
+import { initI18n, t } from './i18n.js';
+
+initI18n();
 import { ensureSession as ensureSharedSession } from './session.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
@@ -63,6 +64,14 @@ function log(message) {
  * console's ensureSession() — these questions/balance are only readable
  * with a valid session now, not by anyone who just knows the address. */
 async function ensureSession() {
+  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) return state.sessionToken;
+
+  log(t('dash.proving'));
+  const challengeRes = await fetch(`${BACKEND_URL}/payers/${state.address}/session/challenge`, { method: 'POST' });
+  if (!challengeRes.ok) throw new Error((await challengeRes.json()).error || 'failed to get session challenge');
+  const { xdr } = await challengeRes.json();
+
+  const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
   return ensureSharedSession({
     address: state.address,
     activeWallet: state.activeWallet,
@@ -74,6 +83,32 @@ async function ensureSession() {
     },
     log,
   });
+  if (!sessionRes.ok) throw new Error((await sessionRes.json()).error || 'failed to establish session');
+  const { token, expiresAt } = await sessionRes.json();
+  state.sessionToken = token;
+  state.sessionExpiresAt = expiresAt;
+  log(t('dash.session'));
+  return token;
+}
+
+el.btnConnect.addEventListener('click', async () => {
+  setConnectButtonsBusy(true);
+  try {
+    await kit.openModal({
+      onWalletSelected: async (option) => {
+        kit.setWallet(option.id);
+        const { address } = await kit.getAddress();
+        await activate(kit, address);
+      },
+      onClosed: (err) => {
+        setConnectButtonsBusy(false);
+        if (err) log(t('log.walletClosed', { error: err.message }));
+      },
+    });
+  } catch (err) {
+    setConnectButtonsBusy(false);
+    log(t('log.connectFailed', { error: err.message }));
+  }
 }
 
 // Module list + button wiring live in wallet.js, shared with main.js
@@ -94,7 +129,7 @@ el.btnQuickStart.addEventListener('click', async () => {
     await activate(localWallet, address);
   } catch (err) {
     setConnectButtonsBusy(false);
-    log(`Quick start failed: ${err.message}`);
+    log(t('log.quickStartFailed', { error: err.message }));
   }
 });
 
@@ -107,6 +142,8 @@ async function switchIdentity(address, wallet = null) {
   el.payerAddress.textContent = address;
   el.connect.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
+  log(t('dash.connectedLog', { address }));
+  await loadQuestions();
   log(`Connected ${address}`);
   setSupportWallet(address);
   await loadQuestions();
@@ -137,9 +174,15 @@ el.btnRefresh.addEventListener('click', async () => {
   if (!state.channel) return;
   el.btnRefresh.disabled = true;
   try {
+    const token = await ensureSession();
+    const res = await fetch(`${BACKEND_URL}/payers/${state.address}/questions?token=${encodeURIComponent(token)}`);
+    if (!res.ok) throw new Error(`unexpected status ${res.status}`);
+    const data = await res.json();
+    render(data);
+    log(t('dash.loaded', { count: data.questions.length, total: data.totalTracked }));
     await state.channel.resync();
   } catch (err) {
-    log(`Could not load questions: ${err.message}`);
+    log(t('dash.loadFailed', { error: err.message }));
   } finally {
     el.btnRefresh.disabled = false;
   }
@@ -166,6 +209,7 @@ function render(data) {
   if (data.questions.length === 0) {
     const li = document.createElement('li');
     li.className = 'muted small';
+    li.textContent = t('dash.empty');
     li.textContent = t('dash.none');
     el.questionList.appendChild(li);
     return;
@@ -221,7 +265,55 @@ function renderSpendCalendar(questions, totalSpend) {
     el.spendCalendarGrid.append(cell);
   }
   if (!entries.length) el.spendCalendarGrid.textContent = 'No dated question records are available yet.';
-  el.spendCalendarTotal.textContent = `${Numbe
+  el.spendCalendarTotal.textContent = `${Number(totalSpend || 0).toFixed(2)} USDC total`;
+}
+
+function renderQuestionItem(q) {
+  const li = document.createElement('li');
+  li.className = 'question-item';
+
+  const row = document.createElement('div');
+  row.className = 'row';
+
+  const left = document.createElement('div');
+  const qText = document.createElement('p');
+  qText.className = 'q-text';
+  // This renderer only creates DOM nodes and assigns textContent to untrusted
+  // text. Fenced code is tokenised into isolated safe spans; raw HTML is never
+  // interpreted.
+  renderFencedCode(qText, q.question || q.questionId);
+  const qMeta = document.createElement('div');
+  qMeta.className = 'q-meta';
+  const parts = [q.tier, q.amount ? `${q.amount} USDC` : null];
+  if (q.status === 'settled' && q.outcome === 'resolved') parts.push(t('dash.confidence', { value: q.confidence }));
+  const parts = [q.tier, q.amount ? formatUsdc(q.amount) : null];
+  if (q.status === 'settled' && q.outcome === 'resolved') parts.push(`confidence ${formatNumber(q.confidence)}`);
+  qMeta.textContent = parts.filter(Boolean).join(' · ');
+  left.append(qText, qMeta);
+
+  // Issue #20: show the actual answer a resolved question paid for, not just
+  // its metadata. Own element (not folded into qMeta) so it reads as "here's
+  // your answer," not another metadata fragment. Defensive against a
+  // resolved-but-no-answer-field response, which shouldn't happen per the
+  // backend but must not break rendering if it does.
+  if (q.status === 'settled' && q.outcome === 'resolved' && q.answer) {
+    const answerEl = document.createElement('p');
+    answerEl.className = 'q-answer';
+    const answerLabel = document.createElement('strong');
+    answerLabel.textContent = 'Answer: ';
+    answerEl.append(answerLabel, q.answer);
+    left.append(answerEl);
+  }
+
+  const badge = document.createElement('span');
+  const { label, cls } = describeStatus(q);
+  badge.className = `badge ${cls}`;
+  badge.textContent = label;
+
+  // Unstarring while "Starred only" is on should drop the row immediately.
+  const star = createStarButton(state.address, q.questionId, () => {
+    if (state.starredOnly) renderQuestionList();
+  });
 
   row.append(star, left, badge);
   li.appendChild(row);
@@ -315,6 +407,7 @@ function renderCancelControls(q) {
 }
 
 function describeStatus(q) {
+  if (q.status !== 'settled') return { label: t('status.pending'), cls: 'badge-pending' };
   if (q.status !== 'settled') {
     const key = q.status === 'awaiting_workers' || q.status === 'reconciling' ? q.status : 'pending';
     return { label: t(`status.${key}`), cls: 'badge-pending' };

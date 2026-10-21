@@ -482,7 +482,8 @@ fieldset label {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  margin: 0.35rem 0.75rem 0.35rem 0;
+  margin-block: 0.35rem;
+  margin-inline: 0 0.75rem;
   font-size: 0.9rem;
 }
 
@@ -538,31 +539,29 @@ fieldset label {
   border-bottom: 1px dashed var(--border);
 }
 
-/* --- First-visit guided tour (issues #60, #61) --- */
-.tour-tip {
-  position: fixed;
-  right: 1rem;
-  bottom: 1rem;
-  max-width: 22rem;
-  z-index: 1000;
-  background: var(--panel);
-  color: var(--fg);
-  border: 2px solid var(--accent);
-  border-radius: 10px;
-  padding: 1rem;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-}
-.tour-tip p {
-  margin: 0.5rem 0 0.75rem;
-}
-.tour-actions {
-  display: flex;
+/* --- Locale picker, install button, offline banner (issues #57-#59) --- */
+.locale-row {
+  display: inline-flex;
+  align-items: center;
   gap: 0.5rem;
-  justify-content: flex-end;
+  margin-block-start: 0.5rem;
 }
-.tour-highlight {
-  outline: 3px solid var(--accent);
-  outline-offset: 3px;
+
+#btn-install {
+  margin-inline-start: 0;
+  margin-block-start: 0.5rem;
+}
+
+/* RTL: the timer bar shrinks toward the reading-start edge, matching the
+   mirrored layout. Everything else mirrors via logical properties + dir. */
+[dir='rtl'] .timer-track {
+  direction: rtl;
+}
+
+[dir='rtl'] #withdraw-beneficiary-input,
+[dir='rtl'] #backup-secret {
+  direction: ltr; /* Stellar addresses/keys are always LTR */
+  text-align: end;
 /* Drop zone (#135) — reusable, currently unused. Markup pattern:
    <label class="drop-zone" data-state="idle|dragover|error">
      <input type="file" hidden />

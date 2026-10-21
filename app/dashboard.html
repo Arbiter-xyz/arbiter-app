@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-i18n-doc-title="dash.title">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -13,6 +13,18 @@
       <header>
         <h1>Arbiter <span class="tag" data-i18n="dash.tag">buyer dashboard</span></h1>
         <p class="sub">
+          <span data-i18n="dash.sub">See every question you've paid for — read-only, keyed by your own wallet address. No
+          account, no signup: connect the same way you would to answer questions.</span>
+          <a href="/index.html" data-i18n="nav.console">Worker console →</a>
+          <a href="/leaderboard.html" data-i18n="nav.leaderboard">Leaderboard →</a>
+        </p>
+        <label class="locale-row small"><span data-i18n="lang.label">Language</span>
+          <select id="locale-picker">
+            <option value="en">English</option>
+            <option value="es">Español</option>
+            <option value="ar">العربية</option>
+          </select>
+        </label>
           See every question you've paid for — read-only, keyed by your own wallet address. No
           account, no signup: connect the same way you would to answer questions.
           <a href="/index.html">Worker console →</a>
@@ -34,6 +46,7 @@
         <div class="row">
           <div>
             <strong id="payer-address"></strong>
+            <div class="muted small" data-i18n="dash.connected">connected</div>
             <div class="muted small" id="live-status" role="status" aria-live="polite" data-i18n="dash.connected">connected</div>
           </div>
           <button id="btn-refresh" class="secondary" data-i18n="dash.refresh">Refresh</button>
@@ -45,6 +58,7 @@
             <strong id="stat-spend">0.00 USDC</strong>
           </div>
           <div>
+            <div class="muted small" data-i18n="dash.count">Questions tracked</div>
             <div class="muted small" data-i18n="dash.tracked">Questions tracked</div>
             <strong id="stat-count">0</strong>
           </div>
@@ -61,12 +75,16 @@
           <code>refund_timeout()</code> to return your payment, even if Arbiter's backend goes down.
         </p>
 
+        <ul id="question-list" class="question-list">
+          <li class="muted small" id="question-list-empty" data-i18n="dash.empty">No questions yet.</li>
         <ul id="question-list" class="question-list" aria-live="polite" aria-relevant="additions text">
           <li class="muted small" id="question-list-empty">No questions yet.</li>
         </ul>
       </section>
 
       <section class="panel">
+        <h2 data-i18n="log.heading">Activity log</h2>
+        <ul id="log"></ul>
         <h2 id="log-heading" data-i18n="log.title">Activity log</h2>
         <ul id="log" role="log" aria-live="polite" aria-labelledby="log-heading"></ul>
       </section>

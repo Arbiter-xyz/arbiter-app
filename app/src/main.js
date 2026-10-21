@@ -17,8 +17,12 @@ import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
-import { startTour } from './tour.js';
-import { initSupportChat, setSupportWallet } from './support.js';
+import { initI18n, t } from './i18n.js';
+import { initPwa } from './pwa.js';
+import { isNativeShell } from './platform.js';
+
+initI18n();
+initPwa();
 import { renderFencedCode } from './codeBlocks.js';
 import { ensureSession as ensureSharedSession } from './session.js';
 
@@ -228,6 +232,7 @@ function renderCategoryDemand(demand) {
     // Scarcity = demand: fewer online workers means a taller bar.
     const scarcity = 1 - count / max;
     bar.style.width = `${Math.round(scarcity * 100)}%`;
+    bar.title = t('demand.workersOnline', { count });
     bar.title = t('demand.workers', { n: count });
     // Non-colour cue (WCAG 1.4.1): a text label + border style per level,
     // so urgency is readable without perceiving the bar's colour or width.
@@ -283,6 +288,9 @@ function setConnectButtonsBusy(busy) {
 
 el.btnConnect.addEventListener('click', async () => {
   setConnectButtonsBusy(true);
+  // Extension/deep-link wallets mostly can't open from a wrapped WebView
+  // (issue #56); steer native-shell users to the local quick-start wallet.
+  if (isNativeShell()) log(t('log.inAppWallet'));
   try {
     await kit.openModal({
       onWalletSelected: async (option) => {
@@ -290,16 +298,15 @@ el.btnConnect.addEventListener('click', async () => {
         const { address } = await kit.getAddress();
         el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
         await activateWallet(kit, address);
-        setSupportWallet(address);
       },
       onClosed: (err) => {
         setConnectButtonsBusy(false);
-        if (err) log(`Wallet selection closed: ${err.message}`);
+        if (err) log(t('log.walletClosed', { error: err.message }));
       },
     });
   } catch (err) {
     setConnectButtonsBusy(false);
-    log(`Wallet connect failed: ${err.message}`);
+    log(t('log.connectFailed', { error: err.message }));
   }
 });
 // --- Wallet connect (extension) or quick start (local, non-custodial) -----
@@ -315,13 +322,15 @@ el.btnQuickStart.addEventListener('click', async () => {
     const localWallet = await openSecureLocalWallet();
     state.localWallet = localWallet;
     const { address } = await localWallet.getAddress();
+    log(t('log.quickStartWallet'));
+    showBackupPanel();
     log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
     if (localWallet.state === 'pending-backup') showBackupPanel();
     await activateWallet(localWallet, address);
     setSupportWallet(address);
   } catch (err) {
     setConnectButtonsBusy(false);
-    log(`Quick start failed: ${err.message}`);
+    log(t('log.quickStartFailed', { error: err.message }));
   }
 });
 
@@ -364,9 +373,9 @@ el.btnCopySecret.addEventListener('click', async () => {
   if (!secret) return;
   try {
     await navigator.clipboard.writeText(secret);
-    el.backupCopyStatus.textContent = 'Copied to clipboard — store it somewhere safe, then clear your clipboard.';
+    el.backupCopyStatus.textContent = t('backup.copied');
   } catch (err) {
-    el.backupCopyStatus.textContent = `Could not copy automatically (${err.message}) — reveal and copy it manually.`;
+    el.backupCopyStatus.textContent = t('backup.copyFailed', { error: err.message });
   }
 });
 
