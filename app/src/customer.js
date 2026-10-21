@@ -7,17 +7,14 @@
 // token-in-localStorage pattern, plus the account-balance view and a "top
 // up" affordance against the existing POST /billing/checkout endpoint.
 //
-// #37 (this account's assigned issue) is the webhook registration/management
-// section below. Assumed backend endpoints, documented here since they
-// don't exist in this frontend-only repo:
-//   GET    /billing/account/webhook  -> { url: string | null }
-//   POST   /billing/account/webhook  { url }  -> { url }
-//   DELETE /billing/account/webhook          -> { ok: true }
-// Assumed auth header: unlike the admin console's `Authorization: Bearer
-// <adminToken>`, an API-key customer is assumed to authenticate with
-// `X-Api-Key: <key>` (backend/src/apiKeyAuth.js's resolveApiKey() isn't in
-// this repo to confirm against — flagging this as the one guess this page
-// makes, easy to swap for whatever header the backend actually expects).
+// #37 is the webhook registration/management section below. Wired against
+// arbiter-backend's real contracts (issue #201):
+//   GET    /webhooks                       -> { webhooks: [{ id, url, ... }] }
+//   POST   /webhooks { url, description }  -> 201 { id, url, secret, ... }
+//   DELETE /webhooks/:id
+//   POST   /billing/checkout { successUrl, cancelUrl } -> { checkoutUrl }
+// Auth: `Authorization: Bearer ak_live_…` (the API key itself), same scheme
+// as the admin console's bearer token.
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const KEY_STORAGE = 'arbiter-customer-api-key';
@@ -63,21 +60,10 @@ function showAccount() {
 
 async function fetchCustomer(path, options = {}) {
   const key = localStorage.getItem(KEY_STORAGE);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  let res;
-  try {
-    res = await fetch(`${BACKEND_URL}${path}`, {
-      ...options,
-      headers: { 'X-Api-Key': key, ...(options.headers || {}) },
-      signal: controller.signal,
-    });
-  } catch (err) {
-    if (err.name === 'AbortError') throw new Error('request timed out');
-    throw err;
-  } finally {
-    clearTimeout(timeout);
-  }
+  const res = await fetch(`${BACKEND_URL}${path}`, {
+    ...options,
+    headers: { Authorization: `Bearer ${key}`, ...(options.headers || {}) },
+  });
   if (res.status === 401) {
     localStorage.removeItem(KEY_STORAGE);
     showLogin('That API key was rejected — try again.');
@@ -100,9 +86,16 @@ async function loadAccount() {
   }
 }
 
+// The backend keeps a list of webhooks per account; this page manages the
+// most recent one, so remember its id for DELETE /webhooks/:id.
+let currentWebhookId = null;
+
 async function loadWebhook() {
   try {
-    const { url } = await fetchCustomer('/billing/account/webhook');
+    const { webhooks = [] } = await fetchCustomer('/webhooks');
+    const current = webhooks[webhooks.length - 1];
+    currentWebhookId = current?.id ?? null;
+    const url = current?.url;
     el.webhookInput.value = url || '';
     el.webhookStatus.textContent = url ? `Currently registered: ${url}` : 'No webhook registered yet.';
   } catch (err) {
@@ -140,9 +133,14 @@ el.btnLogout.addEventListener('click', () => {
 el.btnTopUp.addEventListener('click', async () => {
   el.btnTopUp.disabled = true;
   try {
-    const { url } = await fetchCustomer('/billing/checkout', { method: 'POST' });
-    if (!url) throw new Error('checkout session had no redirect url');
-    window.location.href = url;
+    const here = window.location.href.split(/[?#]/)[0];
+    const { checkoutUrl } = await fetchCustomer('/billing/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ successUrl: `${here}?checkout=success`, cancelUrl: `${here}?checkout=cancel` }),
+    });
+    if (!checkoutUrl) throw new Error('checkout session had no redirect url');
+    window.location.href = checkoutUrl;
   } catch (err) {
     if (err.message !== 'unauthorized') log(`Could not start checkout: ${err.message}`);
   } finally {
@@ -158,12 +156,18 @@ el.btnWebhookSave.addEventListener('click', async () => {
   }
   el.btnWebhookSave.disabled = true;
   try {
-    await fetchCustomer('/billing/account/webhook', {
+    const previousId = currentWebhookId;
+    const created = await fetchCustomer('/webhooks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url, description: 'Settlement webhook (customer page)' }),
     });
-    el.webhookStatus.textContent = `Saved — Arbiter will call ${url} on settlement.`;
+    currentWebhookId = created.id;
+    // Replace rather than accumulate: drop the one this page was showing.
+    if (previousId) await fetchCustomer(`/webhooks/${encodeURIComponent(previousId)}`, { method: 'DELETE' });
+    el.webhookStatus.textContent = created.secret
+      ? `Saved — Arbiter will call ${url} on settlement. Signing secret (shown once): ${created.secret}`
+      : `Saved — Arbiter will call ${url} on settlement.`;
     log('Webhook saved.');
   } catch (err) {
     if (err.message !== 'unauthorized') el.webhookStatus.textContent = `Could not save webhook: ${err.message}`;
@@ -173,9 +177,14 @@ el.btnWebhookSave.addEventListener('click', async () => {
 });
 
 el.btnWebhookDelete.addEventListener('click', async () => {
+  if (!currentWebhookId) {
+    el.webhookStatus.textContent = 'No webhook registered yet.';
+    return;
+  }
   el.btnWebhookDelete.disabled = true;
   try {
-    await fetchCustomer('/billing/account/webhook', { method: 'DELETE' });
+    await fetchCustomer(`/webhooks/${encodeURIComponent(currentWebhookId)}`, { method: 'DELETE' });
+    currentWebhookId = null;
     el.webhookInput.value = '';
     el.webhookStatus.textContent = 'Webhook removed.';
     log('Webhook removed.');

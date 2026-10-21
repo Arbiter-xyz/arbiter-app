@@ -1,14 +1,3 @@
-import {
-  StellarWalletsKit,
-  WalletNetwork,
-  FreighterModule,
-  LobstrModule,
-  xBullModule,
-  HanaModule,
-  AlbedoModule,
-  HotWalletModule,
-  LedgerModule,
-} from '@creit.tech/stellar-wallets-kit';
 import { openSecureLocalWallet } from './localWallet.js';
 import { subscribeQuestionStatus } from './statusChannel.js';
 import { initI18n, onLocaleChange, t, formatUsdc, formatNumber } from './i18n.js';

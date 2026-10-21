@@ -1,4 +1,4 @@
-import { WalletNetwork } from '@creit.tech/stellar-wallets-kit';
+import { Networks } from '@creit.tech/stellar-wallets-kit';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
@@ -24,7 +24,7 @@ export async function ensureSession({ address, activeWallet, sessionToken, sessi
 
   const { signedTxXdr } = await activeWallet.signTransaction(xdr, {
     address,
-    networkPassphrase: WalletNetwork.TESTNET,
+    networkPassphrase: Networks.TESTNET,
   });
 
   const sessionRes = await fetch(`${BACKEND_URL}/workers/${address}/session`, {

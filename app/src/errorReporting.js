@@ -2,11 +2,12 @@
 // VITE_SENTRY_DSN is set; @sentry/browser is loaded via dynamic import so the
 // default bundle does not carry it. Existing log()/console.error calls are left
 // untouched; this only adds aggregation alongside them.
+import { SENSITIVE_FIELD_IDS } from './sensitiveFields.js';
 
 const DSN = import.meta.env.VITE_SENTRY_DSN;
 
 // DOM elements whose content/interaction must never reach a report.
-const SENSITIVE_SELECTORS = ['#backup-secret', '#admin-token-input'];
+const SENSITIVE_SELECTORS = SENSITIVE_FIELD_IDS.map((id) => `#${id}`);
 
 // StrKey-encoded Stellar keys. The base32 payload length varies by type:
 //   G... public account (ed25519)  -> 56 chars total
