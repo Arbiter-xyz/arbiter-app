@@ -14,10 +14,22 @@ export function formatRatio(ratio) {
   return ratio === null || ratio === undefined ? '—' : `${(ratio * 100).toFixed(1)}%`;
 }
 
-// og:image URL for a worker profile page (issue #229). The backend has no
-// per-worker image route, so this returns the same /og/leaderboard.png that
-// worker.html's static placeholder already uses; `address` is accepted so a
-// per-worker route can be added here without touching callers.
-export function workerOgImageUrl(backendUrl, address) { // eslint-disable-line no-unused-vars
-  return `${String(backendUrl || '').replace(/\/+$/, '')}/og/leaderboard.png`;
+// Formats a USDC amount (in whole units) for display, e.g. 1234.5 -> "1,234.50".
+// Null/undefined-safe so balance lines render even when a value is missing.
+export function formatUsdc(amount) {
+  if (amount === null || amount === undefined || Number.isNaN(Number(amount))) {
+    return '—';
+  }
+  return Number(amount).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+// Renders a labeled balance figure for the admin Treasury tab. Wraps
+// formatUsdc with an optional label so each balance line (platform, fiat
+// pool, etc.) shows a formatted amount instead of throwing.
+export function balanceFigure(amount, label) {
+  const figure = formatUsdc(amount);
+  return label ? `${label}: ${figure}` : figure;
 }

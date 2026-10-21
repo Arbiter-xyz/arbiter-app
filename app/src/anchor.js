@@ -29,7 +29,7 @@ const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_AUTO_RELAY_AMOUNT = 100000;
 
 // How long a cached anchor config is trusted before we re-fetch it. The
-// config pins the anchor's webAuthEndpoint and transferServerSep24, so a
+// config pins the anchor's webAuthEndpoint and transferServer, so a
 // long-lived tab that cached it once could otherwise keep opening the
 // withdrawal popup against an endpoint the backend has since changed
 // (e.g. an anchor migration or a rotated/compromised endpoint). Re-fetching
@@ -72,7 +72,7 @@ async function sep10Auth(anchorConfig, address, wallet, networkPassphrase) {
 }
 
 async function startInteractiveWithdraw(anchorConfig, jwt, address, assetCode) {
-  const res = await fetch(`${anchorConfig.transferServerSep24}/transactions/withdraw/interactive`, {
+  const res = await fetch(`${anchorConfig.transferServer}/transactions/withdraw/interactive`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ asset_code: assetCode, account: address }),
@@ -86,7 +86,7 @@ async function pollTransaction(anchorConfig, jwt, id, onUpdate) {
   let lastStatus = null;
 
   while (Date.now() < deadline) {
-    const url = new URL(`${anchorConfig.transferServerSep24}/transaction`);
+    const url = new URL(`${anchorConfig.transferServer}/transaction`);
     url.searchParams.set('id', id);
     const res = await fetch(url, { headers: { Authorization: `Bearer ${jwt}` } });
     if (res.ok) {
