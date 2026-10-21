@@ -29,6 +29,19 @@ function renderStats(stats) {
   document.getElementById('status-stats').hidden = false;
 }
 
+// statusChannel.js falls back to a per-tab EventSource when navigator.locks
+// is unavailable, which means push updates can go stale across tabs. Surface
+// that mode so "shared push" and "per-tab" are visibly distinguishable.
+function renderChannelMode() {
+  const el = document.getElementById('status-channel');
+  if (!el) return;
+  const shared = typeof navigator !== 'undefined' && 'locks' in navigator;
+  el.textContent = shared
+    ? 'Live updates: shared across tabs.'
+    : 'Live updates: per-tab only (cross-tab updates may lag).';
+  el.dataset.mode = shared ? 'shared' : 'per-tab';
+}
+
 // State is derived only from this live check, the same honest way
 // landing/script.js's trustLive does it: on failure we say so, and hide
 // the numbers rather than leaving stale ones looking current.
@@ -81,6 +94,7 @@ function stopPolling() {
 }
 
 document.getElementById('btn-refresh').addEventListener('click', checkStatus);
+renderChannelMode();
 checkStatus();
 if (document.visibilityState === 'visible') {
   startPolling();
