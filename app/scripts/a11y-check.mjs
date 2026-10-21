@@ -11,6 +11,10 @@ const pages = [
   `${base}/dashboard.html`,
   `${base}/leaderboard.html`,
   `${base}/admin.html`,
+  `${base}/worker.html`,
+  `${base}/customer.html`,
+  `${base}/status.html`,
+  `${base}/demo.html`,
   `${landing}/index.html`,
 ];
 
