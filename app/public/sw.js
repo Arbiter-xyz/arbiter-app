@@ -119,6 +119,11 @@ self.addEventListener('message', (event) => {
   }
 });
 
+// Rich previews (issue #63): the backend includes `preview` (truncated
+// question text) and `tier` only for workers who opted in on subscribe. We
+// truncate again here as a defence in depth.
+const PREVIEW_MAX = 120;
+
 self.addEventListener('push', (event) => {
   let payload = { title: 'Arbiter', body: 'New question available' };
   try {
@@ -127,7 +132,23 @@ self.addEventListener('push', (event) => {
     // non-JSON push payload — fall back to the default text above
   }
 
+  let body = payload.body;
+  if (payload.preview) {
+    const text = String(payload.preview);
+    body = text.length > PREVIEW_MAX ? `${text.slice(0, PREVIEW_MAX - 1)}…` : text;
+  }
+  const title = payload.tier ? `${payload.title} · ${payload.tier}` : payload.title;
+
   event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: payload.icon,
+      badge: payload.badge,
+      tag: payload.questionId ? `question-${payload.questionId}` : undefined,
+      renotify: !!payload.questionId,
+      actions: payload.questionId ? [{ action: 'open', title: 'Answer now' }] : [],
+      data: { questionId: payload.questionId },
+    }),
     Promise.all([
       self.registration.showNotification(payload.title, {
         body: payload.body,
@@ -144,11 +165,16 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const questionId = event.notification.data && event.notification.data.questionId;
+  const target = questionId ? `/?question=${encodeURIComponent(questionId)}` : '/';
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       const existing = clients.find((c) => 'focus' in c);
-      if (existing) return existing.focus();
-      return self.clients.openWindow('/');
+      if (existing) {
+        if (questionId && 'navigate' in existing) return existing.navigate(target).then((c) => (c || existing).focus());
+        return existing.focus();
+      }
+      return self.clients.openWindow(target);
     }),
   );
 });

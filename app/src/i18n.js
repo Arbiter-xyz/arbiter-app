@@ -95,6 +95,12 @@ import en from './i18n/en.js';
 import ar from './i18n/ar.js';
 
 const CATALOGS = { en, ar };
+// RTL is intentionally broader than CATALOGS: he/fa/ur are forward-looking
+// entries (so isRtl() is already correct the day a catalog for one of them
+// ships) rather than a claim that those locales are currently supported.
+// detectLocale() below can only ever resolve to a key present in CATALOGS,
+// so he/fa/ur are unreachable as the *active* locale today; see
+// i18n.test.js for a regression lock on this behavior.
 const RTL = new Set(['ar', 'he', 'fa', 'ur']);
 const STORAGE_KEY = 'arbiter_locale';
 

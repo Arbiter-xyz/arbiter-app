@@ -149,6 +149,10 @@ Sandbox-only (`/oracle/sandbox` + poll `/oracle/:jobId`) — no payment, no chai
 
 ```sh
 cd app && npm install && npm run dev      # or: npm run build
+# `npm run check` only syntax-checks src/main.js (`node --check src/main.js`) —
+# it does not cover the other app/src/*.js files (dashboard.js, admin.js,
+# customer.js, worker.js, leaderboard.js, status.js, demo.js, etc.). It's a
+# narrow smoke check, not a project-wide syntax gate.
 cd landing && python3 -m http.server 8123 # static, no build step
 
 cd demo-agent && npm install

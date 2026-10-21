@@ -1,14 +1,3 @@
-import {
-  StellarWalletsKit,
-  WalletNetwork,
-  FreighterModule,
-  LobstrModule,
-  xBullModule,
-  HanaModule,
-  AlbedoModule,
-  HotWalletModule,
-  LedgerModule,
-} from '@creit.tech/stellar-wallets-kit';
 import { openSecureLocalWallet } from './localWallet.js';
 import { subscribeQuestionStatus } from './statusChannel.js';
 import { initI18n, onLocaleChange, t, formatUsdc, formatNumber } from './i18n.js';
@@ -57,6 +46,11 @@ const state = {
   lastData: null,
   // questionId -> <li>, so a pushed status change patches one row in place.
   items: new Map(),
+  // questionId -> setInterval handle for that row's cancel countdown. Kept
+  // here (not on the <li>) so render() can clear every live countdown before
+  // it replaces the list — otherwise a detached row's interval keeps ticking
+  // forever (issue #282).
+  countdowns: new Map(),
 };
 
 function log(message) {
@@ -139,15 +133,20 @@ el.btnQuickStart.addEventListener('click', async () => {
   }
 });
 
-async function switchIdentity(address) {
+async function switchIdentity(address, wallet = null) {
   state.address = address;
-  if (state.identity.walletId) kit.setWallet(state.identity.walletId);
+  // Populate activeWallet so ensureSession()'s wallet-signed session-proof
+  // flow has a signer (issue #213). Fall back to the kit's currently
+  // selected wallet when no explicit wallet is passed in.
+  state.activeWallet = wallet || state.activeWallet || kit;
   el.payerAddress.textContent = address;
   el.connect.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
   log(t('dash.connectedLog', { address }));
   await loadQuestions();
   log(`Connected ${address}`);
+  setSupportWallet(address);
+  await loadQuestions();
   startLiveUpdates();
   setConnectButtonsBusy(false);
 }
@@ -191,12 +190,20 @@ el.btnRefresh.addEventListener('click', async () => {
 
 onLocaleChange(() => state.lastData && render(state.lastData));
 
+// Clears every live cancel countdown. Called before render() replaces the
+// question list so a detached row's setInterval can't keep ticking (#282).
+function clearCountdowns() {
+  for (const handle of state.countdowns.values()) clearInterval(handle);
+  state.countdowns.clear();
+}
+
 function render(data) {
   state.lastData = data;
   el.statSpend.textContent = formatUsdc(data.totalSpend);
   el.statCount.textContent = formatNumber(data.totalTracked);
   el.statSuccess.textContent = data.successRate === null ? '—' : formatNumber(data.successRate, { style: 'percent' });
 
+  clearCountdowns();
   el.questionList.innerHTML = '';
   state.items.clear();
   if (data.questions.length === 0) {
@@ -408,3 +415,33 @@ function describeStatus(q) {
   if (q.outcome === 'resolved') return { label: t('status.resolved'), cls: 'badge-resolved' };
   return { label: t('status.refunded'), cls: 'badge-refunded' };
 }
+
+// --- First-visit walkthrough (issue #61) ----------------------------------
+// Payers expect a "login"; this page is not one. Explain the read-only,
+// address-keyed model and the status badges once, on first connect.
+const statsRow = el.statSpend.closest('.row, .stats') || el.statSpend.parentElement;
+el.connect.addEventListener(
+  'click',
+  () =>
+    startTour('arbiter_tour_payer_seen', [
+      {
+        target: null,
+        title: 'No account, just your address',
+        text: 'This dashboard is read-only. Everything shown is rebuilt from the backend\'s job records for the connected wallet address — nothing is saved, and no account is created.',
+      },
+      {
+        target: statsRow,
+        title: 'Your totals',
+        text: 'Total spend, number of questions asked, and the share that resolved successfully.',
+      },
+      {
+        target: el.questionList,
+        title: 'Status badges',
+        text: '"in progress": workers are still answering. "resolved": an answer was settled and paid. "refunded": no valid answer was reached, so your payment was returned.',
+      },
+    ]),
+  { once: true },
+);
+
+// --- Live support chat (issue #62) ----------------------------------------
+initSupportChat('payer');
