@@ -26,8 +26,28 @@ if (!name || !names.includes(name)) {
 
 const scenario = await import(new URL(`${name}.js`, dir));
 console.log(`▶ ${name}: ${scenario.description}\n`);
+
+// Issue #285: if a scenario's run() never settles (a hung fetch, a worker
+// that never comes online, etc.) this script used to just hang forever
+// with no feedback — bad for a CI-adjacent script. SCENARIO_TIMEOUT_MS
+// lets that be overridden per-run; 0 disables the timeout entirely.
+const timeoutMs = Number(process.env.SCENARIO_TIMEOUT_MS ?? 5 * 60_000);
+
+async function runWithTimeout() {
+  if (!timeoutMs) return scenario.run();
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`scenario "${name}" timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+  try {
+    return await Promise.race([scenario.run(), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 try {
-  await scenario.run();
+  await runWithTimeout();
   process.exit(0);
 } catch (err) {
   console.error(`\nscenario "${name}" failed:`, err.message);

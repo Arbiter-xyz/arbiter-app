@@ -66,21 +66,31 @@ function parseFrame(rawFrame) {
   return { event, data: dataLines.join('\n') };
 }
 
+const RECONNECT_BASE_DELAY_MS = 2000;
+const RECONNECT_MAX_DELAY_MS = 30_000;
+
 /** Minimal in-process worker (plain test-string id, no session auth).
  * Resolves once the dispatch channel is live; call stop() to disconnect.
- * Each worker gets its own Agent for the same reason worker-sim.js does. */
+ * Each worker gets its own Agent for the same reason worker-sim.js does.
+ *
+ * Issue #284: previously a single SSE error just logged and went quiet —
+ * no reconnect, unlike worker-sim.js's dedicated reconnect loop. This now
+ * mirrors that same connect/consume-then-reconnect-with-backoff shape so an
+ * in-process scenario worker survives a transient disconnect instead of
+ * silently stopping. */
 export async function startWorker({ workerId, answer = '42', categories = [] }) {
   const controller = new AbortController();
   const dispatcher = new Agent();
   const qs = new URLSearchParams({ worker: workerId });
   if (categories.length) qs.set('categories', categories.join(','));
 
-  const response = await fetch(`${env.backendUrl}/app/events?${qs}`, { dispatcher, signal: controller.signal });
-  if (!response.ok) throw new Error(`[${workerId}] SSE connect failed: ${response.status}`);
-
   let resolveLive;
   const live = new Promise((r) => (resolveLive = r));
-  (async () => {
+
+  async function connectAndConsumeOnce() {
+    const response = await fetch(`${env.backendUrl}/app/events?${qs}`, { dispatcher, signal: controller.signal });
+    if (!response.ok) throw new Error(`[${workerId}] SSE connect failed: ${response.status}`);
+
     for await (const frame of sseFrames(response)) {
       if (frame.event === 'connected') {
         console.log(`  [${workerId}] online`);
@@ -95,9 +105,26 @@ export async function startWorker({ workerId, answer = '42', categories = [] }) 
         console.log(`  [${workerId}] answered "${answer}" for ${questionId} (${res.status})`);
       }
     }
-  })().catch((err) => {
-    if (err.name !== 'AbortError') console.error(`  [${workerId}] worker error:`, err.message);
-  });
+  }
+
+  (async () => {
+    let attempt = 0;
+    for (;;) {
+      try {
+        await connectAndConsumeOnce();
+        attempt = 0; // clean end (server closed the stream) — reconnect rather than going quiet
+      } catch (err) {
+        if (err.name === 'AbortError' || controller.signal.aborted) return; // stop() was called
+        console.error(`  [${workerId}] worker error:`, err.message);
+      }
+
+      if (controller.signal.aborted) return;
+      const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** attempt, RECONNECT_MAX_DELAY_MS);
+      attempt += 1;
+      console.log(`  [${workerId}] reconnecting in ${Math.round(delay / 1000)}s…`);
+      await sleep(delay);
+    }
+  })();
 
   await live;
   return {
