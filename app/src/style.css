@@ -10,7 +10,8 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
     --fg: #eaeaf5;
     --bg: #14141f;
     --panel: #1e1e2e;
@@ -22,6 +23,60 @@
     --chart-label: #b4b4cc;
   }
 }
+
+/* Explicit theme choice from the header toggle (#53) wins over the system. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --fg: #eaeaf5;
+  --bg: #14141f;
+  --panel: #1e1e2e;
+  --border: #33334a;
+  --muted: #9494ac;
+  --chart-bar: #8f84ff;
+  --chart-flag: #ff6b75;
+  --chart-grid: #3a3a55;
+  --chart-label: #b4b4cc;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --warn: #b45309;
+}
+
+:root {
+  --warn: #d97706;
+  --success: #16a34a;
+  --on-accent: #ffffff;
+}
+
+.theme-toggle { margin: 0.5rem 0; }
+.admin-nav .theme-toggle { margin: 0 0.5rem 1rem; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  inset-inline-start: 0.5rem;
+  top: -3rem;
+  z-index: 100;
+  padding: 0.5rem 0.75rem;
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: 6px;
+}
+.skip-link:focus { top: 0.5rem; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 * {
   box-sizing: border-box;
@@ -112,13 +167,13 @@ button.secondary {
 }
 
 .panel.warning {
-  border-color: #d97706;
-  background: color-mix(in srgb, #d97706 8%, var(--panel));
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 8%, var(--panel));
 }
 
 .panel.warning h2 {
   margin-top: 0;
-  color: #d97706;
+  color: var(--warn);
 }
 
 #withdraw-beneficiary-row {
@@ -233,9 +288,9 @@ button.secondary {
   font-weight: 700;
   white-space: nowrap;
 }
-.badge-resolved { background: #16a34a33; color: #16a34a; }
-.badge-refunded { background: #d9770633; color: #d97706; }
-.badge-pending { background: #5b4cf033; color: #5b4cf0; }
+.badge-resolved { background: color-mix(in srgb, var(--success) 20%, transparent); color: var(--success); }
+.badge-refunded { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+.badge-pending { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
 .answer-feedback { display: flex; align-items: center; gap: 0.4rem; margin-top: 0.4rem; }
 .answer-feedback-btn { padding: 0.15rem 0.5rem; font-size: 0.85rem; }
 .answer-feedback-btn[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
@@ -329,7 +384,7 @@ button.secondary {
 
 .admin-nav-link.active {
   background: var(--accent);
-  color: white;
+  color: var(--on-accent);
 }
 
 .admin-content {
@@ -483,40 +538,31 @@ fieldset label {
   border-bottom: 1px dashed var(--border);
 }
 
-.alert-prefs {
+/* --- First-visit guided tour (issues #60, #61) --- */
+.tour-tip {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  max-width: 22rem;
+  z-index: 1000;
+  background: var(--panel);
+  color: var(--fg);
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  padding: 1rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+.tour-tip p {
+  margin: 0.5rem 0 0.75rem;
+}
+.tour-actions {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 1rem;
-  margin-top: 1rem;
+  gap: 0.5rem;
+  justify-content: flex-end;
 }
-.alert-prefs p {
-  flex-basis: 100%;
-  margin: 0;
-}
-
-.activity-heatmap {
-  margin-top: 1rem;
-  padding-top: 0.85rem;
-  border-top: 1px dashed var(--border);
-}
-.activity-grid {
-  display: grid;
-  grid-template-rows: repeat(7, 10px);
-  grid-auto-flow: column;
-  grid-auto-columns: 10px;
-  gap: 2px;
-  margin-top: 0.4rem;
-  overflow-x: auto;
-}
-.activity-cell {
-  border-radius: 2px;
-  background: var(--border);
-}
-.activity-cell[data-level='1'] { background: color-mix(in srgb, var(--accent) 30%, transparent); }
-.activity-cell[data-level='2'] { background: color-mix(in srgb, var(--accent) 55%, transparent); }
-.activity-cell[data-level='3'] { background: color-mix(in srgb, var(--accent) 80%, transparent); }
-.activity-cell[data-level='4'] { background: var(--accent); }
+.tour-highlight {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
 /* Drop zone (#135) — reusable, currently unused. Markup pattern:
    <label class="drop-zone" data-state="idle|dragover|error">
      <input type="file" hidden />

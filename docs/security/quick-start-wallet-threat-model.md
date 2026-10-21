@@ -36,6 +36,26 @@ password, no XLM.
    weaker against live XSS (the attacker could use the AES key via the same origin) and is
    documented as such.
 
+## Scope note: Ledger is a different trust model, not covered above
+This document is scoped to the **quick-start wallet** (`localWallet.js` / `walletWorker.js`),
+where the app origin generates and briefly holds key material in the browser. The Ledger
+adapter (`LedgerModule`, wired in `app/src/wallet.js`, issue #75) is architecturally unrelated:
+the Ed25519 secret never exists in the browser or the page's JS heap at all — it lives on the
+hardware device, which signs after the holder reviews the transaction on its own screen.
+
+| Adversary | Quick-start wallet | Ledger |
+|---|---|---|
+| XSS on the app origin | Can request a signature while running (see above) | Can request a signature, but the device shows the transaction details and requires a physical confirmation before signing — XSS alone cannot complete a transfer |
+| Stolen storage / malware reading the profile | Mitigated as described above (non-extractable key, AES-GCM at rest) | No secret material exists on the host to steal; irrelevant |
+| Malicious dependency in the page bundle | Same as XSS | Same as XSS row above — bounded by the device's on-screen confirmation |
+| Physical access to an unlocked device | Full control | Attacker also needs the physical Ledger device (and its PIN) — out of scope here, covered by Ledger's own device security model |
+
+Net effect: Ledger removes the browser-held-secret attack surface entirely but shifts trust to
+the physical device and the user actually reading what it displays before approving. This repo
+does not implement any Ledger-specific code beyond wiring the adapter from
+`@creit.tech/stellar-wallets-kit`, so there is no additional app-side mitigation to document
+here beyond "the transaction review UX must match what the Ledger screen shows."
+
 ## Residual risk (honest limits)
 - A live XSS can still *use* the key (sign) — as it could with any extension wallet's page
   bridge. Mitigate with CSP and transaction review UX; hardware wallets remain recommended for

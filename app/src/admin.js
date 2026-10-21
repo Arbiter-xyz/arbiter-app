@@ -80,7 +80,7 @@ async function fetchAdmin(path, options = {}) {
     headers: { Authorization: `Bearer ${token}`, ...(options.headers || {}) },
   });
   if (res.status === 401) {
-    localStorage.removeItem(TOKEN_KEY);
+    try { localStorage.removeItem(TOKEN_KEY); } catch { /* storage blocked — nothing stored to clear */ }
     showLogin('That token was rejected — try again.');
     throw new Error('unauthorized');
   }
@@ -483,9 +483,17 @@ const VIEWS = {
   fraud: renderFraud,
 };
 
-async function selectView(name) {
-  document.querySelectorAll('.admin-nav-link[data-view]').forEach((el) => el.classList.toggle('active', el.dataset.view === name));
+// `moveFocus` is true only for user-initiated switches (#55), so the initial
+// overview render after login doesn't yank focus away from the page start.
+async function selectView(name, moveFocus = false) {
+  document.querySelectorAll('.admin-nav-link[data-view]').forEach((el) => {
+    const active = el.dataset.view === name;
+    el.classList.toggle('active', active);
+    el.setAttribute('aria-selected', String(active));
+    el.tabIndex = active ? 0 : -1;
+  });
   document.querySelectorAll('.admin-view').forEach((el) => el.classList.toggle('active', el.id === `view-${name}`));
+  if (moveFocus) document.querySelector(`#view-${name} h2`)?.focus();
 
   if (!loaded.has(name)) {
     loaded.add(name);
@@ -498,14 +506,35 @@ async function selectView(name) {
   }
 }
 
-document.querySelectorAll('.admin-nav-link[data-view]').forEach((el) => {
-  el.addEventListener('click', () => selectView(el.dataset.view));
+// Tab semantics (#54) with a roving tabindex (#55): Tab enters the tablist
+// once, arrow keys / Home / End move between views, Enter/Space activates.
+const navTabs = [...document.querySelectorAll('.admin-nav-link[data-view]')];
+navTabs.forEach((el, i) => {
+  el.setAttribute('role', 'tab');
+  el.setAttribute('aria-controls', `view-${el.dataset.view}`);
+  document.getElementById(`view-${el.dataset.view}`)?.setAttribute('role', 'tabpanel');
+  el.addEventListener('click', () => selectView(el.dataset.view, true));
+  el.addEventListener('keydown', (e) => {
+    const next = { ArrowDown: i + 1, ArrowRight: i + 1, ArrowUp: i - 1, ArrowLeft: i - 1, Home: 0, End: navTabs.length - 1 }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    const target = navTabs[(next + navTabs.length) % navTabs.length];
+    navTabs.forEach((t) => (t.tabIndex = t === target ? 0 : -1));
+    target.focus();
+  });
 });
+document.querySelectorAll('.admin-view h2').forEach((h) => (h.tabIndex = -1));
 
-document.getElementById('btn-admin-login').addEventListener('click', () => {
+document.getElementById('admin-login-form').addEventListener('submit', (e) => {
+  e.preventDefault();
   const token = document.getElementById('admin-token-input').value.trim();
   if (!token) return;
-  localStorage.setItem(TOKEN_KEY, token);
+  try {
+    localStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    showLogin("Couldn't save the token — browser storage is blocked or full. Allow site data and try again.");
+    return;
+  }
   showShell();
   selectView('overview');
 });
@@ -513,7 +542,7 @@ document.getElementById('btn-admin-login').addEventListener('click', () => {
 // Issue #17: this console holds a real, privileged bearer token — give it
 // an in-app way to end that session, instead of the token persisting in
 // localStorage forever with no way to clear it short of devtools.
-document.getElementById('btn-admin-logout').addEventListener('click', () => {
+document.getElementById('btn-admin-logout')?.addEventListener('click', () => {
   localStorage.removeItem(TOKEN_KEY);
   loaded.clear(); // so a previously-loaded view is refetched, not shown stale, next login
   showLogin();

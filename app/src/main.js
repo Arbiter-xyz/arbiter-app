@@ -17,6 +17,8 @@ import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
+import { startTour } from './tour.js';
+import { initSupportChat, setSupportWallet } from './support.js';
 import { renderFencedCode } from './codeBlocks.js';
 import { ensureSession as ensureSharedSession } from './session.js';
 
@@ -50,6 +52,7 @@ const el = {
   categoryPicker: document.getElementById('category-picker'),
   questionText: document.getElementById('question-text'),
   timerBar: document.getElementById('timer-bar'),
+  timerAnnounce: document.getElementById('timer-announce'),
   answerForm: document.getElementById('answer-form'),
   answerInput: document.getElementById('answer-input'),
   answerSuggestedBadge: document.getElementById('answer-suggested-badge'),
@@ -269,6 +272,36 @@ function startCategoryDemandPolling() {
 
 startCategoryDemandPolling();
 
+// A user clicking both connect options in quick succession could otherwise
+// let whichever resolves last silently overwrite the other's in-flight
+// state.activeWallet/state.address — guard against that race by disabling
+// both the instant either one starts, and only re-enabling on failure.
+function setConnectButtonsBusy(busy) {
+  el.btnConnect.disabled = busy;
+  el.btnQuickStart.disabled = busy;
+}
+
+el.btnConnect.addEventListener('click', async () => {
+  setConnectButtonsBusy(true);
+  try {
+    await kit.openModal({
+      onWalletSelected: async (option) => {
+        kit.setWallet(option.id);
+        const { address } = await kit.getAddress();
+        el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
+        await activateWallet(kit, address);
+        setSupportWallet(address);
+      },
+      onClosed: (err) => {
+        setConnectButtonsBusy(false);
+        if (err) log(`Wallet selection closed: ${err.message}`);
+      },
+    });
+  } catch (err) {
+    setConnectButtonsBusy(false);
+    log(`Wallet connect failed: ${err.message}`);
+  }
+});
 // --- Wallet connect (extension) or quick start (local, non-custodial) -----
 // Module list + button wiring live in wallet.js, shared with dashboard.js
 // (issue #19). The one behavioral difference between the two pages — this
@@ -285,6 +318,7 @@ el.btnQuickStart.addEventListener('click', async () => {
     log('Using a local, browser-held quick-start wallet (non-custodial — the key never leaves this browser).');
     if (localWallet.state === 'pending-backup') showBackupPanel();
     await activateWallet(localWallet, address);
+    setSupportWallet(address);
   } catch (err) {
     setConnectButtonsBusy(false);
     log(`Quick start failed: ${err.message}`);
@@ -296,6 +330,14 @@ function showBackupPanel() {
   el.backupSecret.value = '••••••••••••••••••••••••••••••••••••••••••••••••••';
   el.backupSecret.type = 'password';
   el.backupCopyStatus.textContent = '';
+  // Quick-start users only: the one step with irreversible financial risk.
+  startTour('arbiter_tour_backup_seen', [
+    {
+      target: el.backup,
+      title: 'Back up your secret key now',
+      text: 'This key exists only in this browser. If you clear site data or switch devices without a copy, any staked or earned USDC is lost forever. Reveal it and store it in a password manager before staking.',
+    },
+  ]);
 }
 
 el.btnRevealSecret.addEventListener('click', async () => {
@@ -328,6 +370,103 @@ el.btnCopySecret.addEventListener('click', async () => {
   }
 });
 
+// --- Social recovery (client-side Shamir split, no backend involvement) ---
+//
+// The quick-start secret is split into N shares entirely in this browser.
+// Arbiter's backend never sees the secret or any share: distribution is the
+// user's own (contacts, a second device, a password manager). Reconstructing
+// from any k shares reproduces the original Keypair/address, so the README's
+// non-custodial framing is unchanged — there is no server-side capability to
+// rebuild a u
+
+/* … truncated 599 chars — edit only what you need near the top … */
+
+// --- First-visit onboarding tour (issue #60) ------------------------------
+startTour('arbiter_tour_worker_seen', [
+  {
+    target: el.connect,
+    title: 'Welcome to Arbiter',
+    text: 'You earn USDC by answering short questions. Connect a wallet you already have, or use Quick start to create one in this browser — no extension needed.',
+  },
+  {
+    target: null,
+    title: 'Quick start? Back up your key',
+    text: 'Quick start shows a backup panel next. That key is the only copy — skipping the backup risks losing all your funds. Connect-wallet users can skip this step.',
+  },
+  {
+    target: el.categoryPicker,
+    title: 'Pick categories, then go online',
+    text: 'Choose topics you can answer, then press "Go online". Staking USDC raises your tier and unlocks higher-value questions.',
+  },
+  {
+    target: el.timerBar,
+    title: 'Answer before the timer runs out',
+    text: 'Each question arrives with a countdown bar. Answer before it empties — late or missing answers are not paid.',
+  },
+  {
+    target: el.earnings,
+    title: 'Earnings',
+    text: 'Payouts accrue here. Withdraw any time to your wallet (or another payout address).',
+  },
+]);
+
+// --- Live support chat (issue #62) ----------------------------------------
+initSupportChat('worker');
+
+// --- Push subscription with rich-preview opt-in (issue #63) ---------------
+// Question previews pass through browser-vendor push infrastructure, outside
+// Arbiter's trust boundary, so they are opt-in and can be switched off
+// without disabling push itself.
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+const pushPreviewInput = document.getElementById('push-preview');
+
+function urlBase64ToUint8Array(base64) {
+  const padded = (base64 + '='.repeat((4 - (base64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+}
+
+async function syncPushSubscription() {
+  if (!state.address || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    throw new Error('push is not supported here or no wallet is connected');
+  }
+  const reg = await navigator.serviceWorker.register('/sw.js');
+  const subscription =
+    (await reg.pushManager.getSubscription()) ||
+    (await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: VAPID_PUBLIC_KEY ? urlBase64ToUint8Array(VAPID_PUBLIC_KEY) : undefined,
+    }));
+  const res = await fetch(`${BACKEND_URL}/workers/${state.address}/push-subscribe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      subscription,
+      categories: selectedCategories(),
+      richPreview: !!pushPreviewInput?.checked,
+    }),
+  });
+  if (!res.ok) throw new Error(`push-subscribe failed (${res.status})`);
+}
+
+el.btnEnablePush?.addEventListener('click', async () => {
+  try {
+    await syncPushSubscription();
+    el.pushStatus.textContent = 'On — you\'ll be notified of new questions.';
+  } catch (err) {
+    log(`Push setup failed: ${err.message}`);
+  }
+});
+
+pushPreviewInput?.addEventListener('change', async () => {
+  if (el.pushStatus.textContent.startsWith('On')) {
+    syncPushSubscription().catch((err) => log(`Updating push preference failed: ${err.message}`));
+  }
+});
+
+// Notification click deep-links here as /?question=<id>; once online the
+// matching question is picked up from the live stream.
+const linkedQuestion = new URLSearchParams(location.search).get('question');
+if (linkedQuestion) log(`Opened from a notification for question ${linkedQuestion}.`);
 // NOTE (pre-existing, unrelated to issues #21/#22): this file was found
 // already truncated on `main` — everything below this point (activate/
 // route-after-connect, sponsored onboarding, goOnline()/SSE handling,
@@ -542,10 +681,17 @@ function onQuestionReceived({ questionId, question, expiresInMs }) {
 function startCountdown(totalMs) {
   stopCountdown();
   const start = Date.now();
+  let lastAnnounced = null;
   state.countdownHandle = setInterval(() => {
     const elapsed = Date.now() - start;
     const remaining = Math.max(0, 1 - elapsed / totalMs);
     el.timerBar.style.width = `${remaining * 100}%`;
+    // Screen-reader announcement (#54): every 10s, then each of the last 5s.
+    const secs = Math.ceil((totalMs - elapsed) / 1000);
+    if (el.timerAnnounce && secs !== lastAnnounced && secs >= 0 && (secs % 10 === 0 || secs <= 5)) {
+      lastAnnounced = secs;
+      el.timerAnnounce.textContent = secs > 0 ? `${secs} seconds remaining` : 'Time is up';
+    }
     if (remaining <= 0) {
       stopCountdown();
       el.answerInput.disabled = true;
