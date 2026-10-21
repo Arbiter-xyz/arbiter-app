@@ -73,12 +73,4 @@ export default {
     many: '{n} سؤالًا',
     other: '{n} سؤال',
   },
-  'plural.test': {
-    zero: 'صفر عناصر',
-    one: 'عنصر واحد',
-    two: 'عنصران',
-    few: '{n} عناصر',
-    many: '{n} عنصرًا',
-    other: '{n} عنصر',
-  },
 };
