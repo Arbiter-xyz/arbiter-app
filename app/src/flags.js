@@ -15,6 +15,14 @@
 // Any failure (unconfigured, unreachable, timeout, bad JSON, unknown flag)
 // fails open to DEFAULTS, i.e. the app's current behavior.
 
+// NOTE: these are fail-open fallback values, used only when the remote
+// source (Unleash or flags.json) is unreachable/invalid — they are NOT a
+// second copy of the rollout config. A value here matching the current
+// flags.json rollout for the same flag (e.g. pushNotifications) is expected
+// and intentional, not duplication to keep in sync: DEFAULTS should stay
+// pinned to "the app's current behavior if flags can't be fetched", while
+// flags.json's rollout percentage is free to change independently as the
+// gradual rollout progresses.
 export const DEFAULTS = Object.freeze({
   pushNotifications: true,
 });
