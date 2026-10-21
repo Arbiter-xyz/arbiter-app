@@ -2,6 +2,8 @@ import { openSecureLocalWallet } from './localWallet.js';
 import { subscribeQuestionStatus } from './statusChannel.js';
 import { initI18n, onLocaleChange, t, formatUsdc, formatNumber } from './i18n.js';
 import { renderMarkdown } from './markdown.js';
+import { startTour } from './tour.js';
+import { initSupportChat, setSupportWallet } from './support.js';
 import { ensureSession as ensureSharedSession } from './session.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
@@ -106,6 +108,8 @@ async function switchIdentity(address, wallet = null) {
   el.connect.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
   log(`Connected ${address}`);
+  setSupportWallet(address);
+  await loadQuestions();
   startLiveUpdates();
   setConnectButtonsBusy(false);
 }
@@ -219,4 +223,132 @@ function renderSpendCalendar(questions, totalSpend) {
   if (!entries.length) el.spendCalendarGrid.textContent = 'No dated question records are available yet.';
   el.spendCalendarTotal.textContent = `${Numbe
 
-/* … truncated 5423 chars — edit only what you need near the top … */
+  row.append(star, left, badge);
+  li.appendChild(row);
+
+  // Issue #32: a question still inside its undo window gets a live
+  // countdown and a Cancel button, mirroring the worker console's
+  // setInterval-driven timer-bar pattern (main.js's startCountdown()/
+  // el.timerBar) rather than inventing a second countdown UI.
+  if (q.status !== 'settled' && Number.isFinite(q.cancellableUntil) && q.cancellableUntil > Date.now()) {
+    li.appendChild(renderCancelControls(q));
+  }
+
+  return li;
+}
+
+/** Renders the countdown + Cancel button for a question still inside its
+ * undo window (`q.cancellableUntil`, an epoch-ms timestamp assumed to be
+ * added to the GET /payers/:address/questions response for an in-progress
+ * question — see issue #32). Wired to the assumed
+ * POST /payers/:address/questions/:questionId/cancel endpoint, reusing the
+ * existing payer session token from ensureSession(). */
+function renderCancelControls(q) {
+  const wrap = document.createElement('div');
+  wrap.className = 'cancel-controls';
+
+  const track = document.createElement('div');
+  track.className = 'timer-track';
+  const bar = document.createElement('div');
+  bar.className = 'timer-bar';
+  track.appendChild(bar);
+
+  const label = document.createElement('p');
+  label.className = 'muted small';
+
+  const btnCancel = document.createElement('button');
+  btnCancel.type = 'button';
+  btnCancel.className = 'secondary';
+  btnCancel.textContent = 'Cancel';
+
+  wrap.append(track, label, btnCancel);
+
+  const total = q.cancellableUntil - Date.now();
+  let handle = null;
+
+  function tick() {
+    const remainingMs = q.cancellableUntil - Date.now();
+    if (remainingMs <= 0) {
+      clearInterval(handle);
+      wrap.remove();
+      return;
+    }
+    const pct = Math.max(0, Math.min(100, (remainingMs / total) * 100));
+    bar.style.width = `${pct}%`;
+    label.textContent = `You can cancel this for ${Math.ceil(remainingMs / 1000)}s`;
+  }
+  tick();
+  handle = setInterval(tick, 250);
+
+  btnCancel.addEventListener('click', async () => {
+    btnCancel.disabled = true;
+    try {
+      const token = await ensureSession();
+      const res = await fetch(
+        `${BACKEND_URL}/payers/${state.address}/questions/${encodeURIComponent(q.questionId)}/cancel`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        }
+      );
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `unexpected status ${res.status}`);
+      clearInterval(handle);
+      wrap.remove();
+      const li = wrap.closest('.question-item');
+      if (li) {
+        const badge = li.querySelector('.badge');
+        if (badge) {
+          badge.className = 'badge badge-refunded';
+          badge.textContent = 'cancelled';
+        }
+      }
+      log(`Cancelled question ${q.questionId}.`);
+    } catch (err) {
+      clearInterval(handle);
+      btnCancel.disabled = false;
+      log(`Could not cancel question ${q.questionId}: ${err.message}`);
+    }
+  });
+
+  return wrap;
+}
+
+function describeStatus(q) {
+  if (q.status !== 'settled') {
+    const key = q.status === 'awaiting_workers' || q.status === 'reconciling' ? q.status : 'pending';
+    return { label: t(`status.${key}`), cls: 'badge-pending' };
+  }
+  if (q.outcome === 'resolved') return { label: t('status.resolved'), cls: 'badge-resolved' };
+  return { label: t('status.refunded'), cls: 'badge-refunded' };
+}
+
+// --- First-visit walkthrough (issue #61) ----------------------------------
+// Payers expect a "login"; this page is not one. Explain the read-only,
+// address-keyed model and the status badges once, on first connect.
+const statsRow = el.statSpend.closest('.row, .stats') || el.statSpend.parentElement;
+el.connect.addEventListener(
+  'click',
+  () =>
+    startTour('arbiter_tour_payer_seen', [
+      {
+        target: null,
+        title: 'No account, just your address',
+        text: 'This dashboard is read-only. Everything shown is rebuilt from the backend\'s job records for the connected wallet address — nothing is saved, and no account is created.',
+      },
+      {
+        target: statsRow,
+        title: 'Your totals',
+        text: 'Total spend, number of questions asked, and the share that resolved successfully.',
+      },
+      {
+        target: el.questionList,
+        title: 'Status badges',
+        text: '"in progress": workers are still answering. "resolved": an answer was settled and paid. "refunded": no valid answer was reached, so your payment was returned.',
+      },
+    ]),
+  { once: true },
+);
+
+// --- Live support chat (issue #62) ----------------------------------------
+initSupportChat('payer');
