@@ -6,35 +6,38 @@
     <title>Arbiter — Admin Console</title>
     <link rel="stylesheet" href="/shared/tokens.css" />
     <link rel="stylesheet" href="/src/style.css" />
+    <script src="/src/theme.js"></script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to main content</a>
-    <section id="panel-login" class="panel" style="max-width: 420px; margin: 3rem auto">
-      <h2>Admin console</h2>
+    <section id="panel-login" class="panel" aria-labelledby="admin-login-heading" style="max-width: 420px; margin: 3rem auto">
+      <h2 id="admin-login-heading">Admin console</h2>
       <p class="muted small">Paste the operator token (ADMIN_TOKEN on the backend) to continue.</p>
-      <div class="row">
-        <input id="admin-token-input" class="admin-token-input" type="password" placeholder="Admin token" />
-        <button id="btn-admin-login">Enter</button>
-      </div>
-      <p id="admin-login-status" class="muted small"></p>
+      <form class="row" id="admin-login-form">
+        <label for="admin-token-input" class="sr-only">Admin token</label>
+        <input id="admin-token-input" class="admin-token-input" type="password" placeholder="Admin token" autocomplete="off" />
+        <button id="btn-admin-login" type="submit">Enter</button>
+      </form>
+      <p id="admin-login-status" class="muted small" role="status" aria-live="polite"></p>
     </section>
 
     <div id="admin-shell" class="admin-shell hidden">
-      <nav class="admin-nav">
+      <nav class="admin-nav" aria-label="Admin console">
+        <a class="skip-link" href="#main">Skip to view content</a>
         <h1>Arbiter <span class="tag">admin</span></h1>
         <p id="admin-role" class="muted small admin-role hidden"></p>
         <button id="btn-admin-customize" class="admin-nav-customize" type="button" aria-expanded="false">Customize</button>
         <div id="admin-customize-panel" class="admin-customize-panel hidden"></div>
 
-        <div class="admin-nav-group">
-          <h3>Platform</h3>
+        <div class="admin-nav-group" role="tablist" aria-orientation="vertical" aria-labelledby="nav-platform">
+          <h3 id="nav-platform">Platform</h3>
           <button class="admin-nav-link" data-view="overview">Overview</button>
           <button class="admin-nav-link" data-view="workers">Workers</button>
           <button class="admin-nav-link" data-view="payers">Payers</button>
         </div>
 
-        <div class="admin-nav-group">
-          <h3>Finance</h3>
+        <div class="admin-nav-group" role="tablist" aria-orientation="vertical" aria-labelledby="nav-finance">
+          <h3 id="nav-finance">Finance</h3>
           <button class="admin-nav-link" data-view="transactions">Transactions</button>
           <button class="admin-nav-link" data-view="fees">Fee Revenue</button>
           <button class="admin-nav-link" data-view="treasury">Treasury</button>
@@ -42,20 +45,20 @@
           <button class="admin-nav-link" data-view="payouts">Bank Payouts</button>
         </div>
 
-        <div class="admin-nav-group">
-          <h3>Infrastructure</h3>
+        <div class="admin-nav-group" role="tablist" aria-orientation="vertical" aria-labelledby="nav-infrastructure">
+          <h3 id="nav-infrastructure">Infrastructure</h3>
           <button class="admin-nav-link" data-view="blockchain">Blockchain</button>
           <button class="admin-nav-link" data-view="fraud">Fraud &amp; Trust</button>
           <button class="admin-nav-link" data-view="audit">Audit Log</button>
         </div>
 
-        <div class="admin-nav-group">
-          <h3>Growth</h3>
+        <div class="admin-nav-group" role="group" aria-labelledby="nav-growth">
+          <h3 id="nav-growth">Growth</h3>
           <a class="admin-nav-link" href="/leaderboard.html">Leaderboard →</a>
         </div>
 
-        <div class="admin-nav-group">
-          <h3>App</h3>
+        <div class="admin-nav-group" role="group" aria-labelledby="nav-app">
+          <h3 id="nav-app">App</h3>
           <a class="admin-nav-link" href="/index.html">Worker console →</a>
           <a class="admin-nav-link" href="/dashboard.html">Buyer dashboard →</a>
         </div>
@@ -186,7 +189,7 @@
           <h2>Fraud &amp; Trust</h2>
           <div class="panel">
             <p class="muted small">Match-ratio distribution across established workers.</p>
-            <div id="fraud-chart" class="admin-chart"></div>
+            <div id="fraud-chart" class="admin-chart" role="img" aria-label="Match-ratio distribution chart"></div>
           </div>
           <div class="panel">
             <p class="muted small">Workers below the minimum match ratio once established — candidates for review.</p>
@@ -205,7 +208,7 @@
             <p class="muted small">Admin actions recorded by the backend (GET /admin/audit), newest first.</p>
             <table class="leaderboard-table">
               <thead>
-                <tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th></tr>
+                <tr><th scope="col">Time</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Detail</th></tr>
               </thead>
               <tbody id="audit-body"><tr><td colspan="5" class="muted small">Loading…</td></tr></tbody>
             </table>

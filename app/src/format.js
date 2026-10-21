@@ -13,3 +13,23 @@ export function truncateAddress(id) {
 export function formatRatio(ratio) {
   return ratio === null || ratio === undefined ? '—' : `${(ratio * 100).toFixed(1)}%`;
 }
+
+// Formats a USDC amount (in whole units) for display, e.g. 1234.5 -> "1,234.50".
+// Null/undefined-safe so balance lines render even when a value is missing.
+export function formatUsdc(amount) {
+  if (amount === null || amount === undefined || Number.isNaN(Number(amount))) {
+    return '—';
+  }
+  return Number(amount).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+// Renders a labeled balance figure for the admin Treasury tab. Wraps
+// formatUsdc with an optional label so each balance line (platform, fiat
+// pool, etc.) shows a formatted amount instead of throwing.
+export function balanceFigure(amount, label) {
+  const figure = formatUsdc(amount);
+  return label ? `${label}: ${figure}` : figure;
+}

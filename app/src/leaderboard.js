@@ -1,4 +1,5 @@
 import { truncateAddress, formatRatio } from './format.js';
+import { formatUsdc } from './i18n.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 

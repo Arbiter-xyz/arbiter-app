@@ -1,8 +1,8 @@
 import 'dotenv/config';
-import { Agent } from 'undici';
 import { Keypair, Transaction } from '@stellar/stellar-sdk';
 import { env, buildSignedStakeXdr, buildSignedWithdrawXdr, sleep } from './lib/stellar.js';
 import { sseFrames } from './lib/demo.js';
+import { fetchSse } from './lib/sse-dispatcher.js';
 
 /**
  * The SSE connection (`GET /app/events`) is deliberately never fully
@@ -19,8 +19,6 @@ import { sseFrames } from './lib/demo.js';
  * never be blocked behind it, regardless of how the origin's proxy
  * layer handles long-lived streams.
  */
-const sseAgent = new Agent();
-
 // If WORKER_SECRET is set, this worker signs with a real Stellar keypair
 // (its address becomes the workerId), which unlocks the optional
 // staking/auto-withdraw demonstration below. Without it, workerId is just
@@ -155,7 +153,7 @@ async function connectAndConsumeOnce(token) {
   if (token) qs.set('token', token);
 
   console.log(`[${workerId}] connecting to ${env.backendUrl}/app/events?${qs} …`);
-  const response = await fetch(`${env.backendUrl}/app/events?${qs.toString()}`, { dispatcher: sseAgent });
+  const response = await fetchSse(`${env.backendUrl}/app/events?${qs.toString()}`);
   if (!response.ok) throw new Error(`SSE connect failed: ${response.status}`);
 
   for await (const frame of sseFrames(response)) {

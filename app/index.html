@@ -1,3 +1,5 @@
+<!doctype html>
+<html lang="en" data-i18n-doc-title="console.title">
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -6,7 +8,10 @@
     <title>Arbiter — Worker Console</title>
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#5b4cf0" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <link rel="stylesheet" href="/src/style.css" />
+    <script src="/src/theme.js"></script>
   </head>
   <body>
     <a class="skip-link" href="#main" data-i18n="skip">Skip to main content</a>
@@ -18,6 +23,15 @@
           <a href="/dashboard.html" data-i18n="nav.dashboard">Buyer dashboard →</a>
           <a href="/leaderboard.html" data-i18n="nav.leaderboard">Leaderboard →</a>
           <a href="/admin.html" data-i18n="nav.admin">Admin →</a>
+        </p>
+        <button id="btn-install" class="secondary hidden" type="button" data-i18n="pwa.install">Install app</button>
+        <label class="locale-row small"><span data-i18n="lang.label">Language</span>
+          <select id="locale-picker">
+            <option value="en">English</option>
+            <option value="es">Español</option>
+            <option value="ar">العربية</option>
+          </select>
+        </label>
           <label><span class="sr-only" data-i18n="lang.label">Language</span>
             <select class="lang-switch"><option value="en">English</option><option value="ar">العربية</option></select>
           </label>
@@ -28,9 +42,12 @@
         </div>
       </header>
 
+      <p id="offline-banner" class="panel warning small hidden" role="status" data-i18n="pwa.offline"></p>
+
       <section id="panel-connect" class="panel">
         <button id="btn-connect" data-i18n="connect.wallet">Connect wallet</button>
         <button id="btn-quick-start" class="secondary" data-i18n="connect.quick">Quick start (no extension needed)</button>
+        <p class="muted small" data-i18n="connect.note">
         <p class="muted small">
           Quick start generates a wallet in this browser — non-custodial (only you hold the key,
           it's just stored locally instead of in an extension), zero setup, zero XLM required.
@@ -45,7 +62,9 @@
         </p>
 
         <form id="apikey-checkout-form" class="inline-form">
+          <label for="apikey-email" class="sr-only">Email</label>
           <input id="apikey-email" type="email" placeholder="you@example.com" autocomplete="email" required />
+          <label for="apikey-amount" class="sr-only">Top-up amount (USDC)</label>
           <input id="apikey-amount" type="number" min="1" step="1" placeholder="Top-up (USDC)" required />
           <button id="btn-apikey-checkout" type="submit">Continue to checkout</button>
         </form>
@@ -59,7 +78,7 @@
             "show key again" and no key reset in this version.
           </p>
           <div class="row">
-            <input id="apikey-reveal-input" type="text" readonly value="" />
+            <input id="apikey-reveal-input" type="text" readonly value="" aria-label="API key" />
             <button id="btn-copy-apikey" class="secondary" type="button">Copy</button>
           </div>
           <p class="muted small" id="apikey-copy-status"></p>
@@ -79,6 +98,8 @@
       </section>
 
       <section id="panel-backup" class="panel hidden warning">
+        <h2 data-i18n="backup.heading">⚠ Back up your quick-start key</h2>
+        <p data-i18n-html="backup.body">
         <h2 data-i18n="backup.title">⚠ Back up your quick-start key</h2>
         <p>
           This wallet lives only in this browser. If you clear your browser data, use private
@@ -90,6 +111,8 @@
         <div class="row">
           <label for="backup-secret" class="sr-only" data-i18n="backup.secretLabel">Quick-start secret key</label>
           <input id="backup-secret" type="password" readonly value="" />
+          <button id="btn-reveal-secret" class="secondary" type="button" data-i18n="backup.reveal">Reveal</button>
+          <button id="btn-copy-secret" type="button" data-i18n="backup.copy">Copy</button>
           <button id="btn-reveal-secret" class="secondary" type="button" aria-controls="backup-secret" data-i18n="backup.reveal">Reveal</button>
           <button id="btn-copy-secret" type="button" data-i18n="backup.copy">Copy</button>
           <button id="btn-backup-done" class="secondary" type="button" data-i18n="backup.done">I've saved it — lock export</button>
@@ -98,6 +121,8 @@
       </section>
 
       <section id="panel-onboard" class="panel hidden">
+        <h2 data-i18n="onboard.heading">One more step</h2>
+        <p data-i18n="onboard.body">Your wallet has no USDC trustline yet. Onboarding is sponsored — free, no XLM required.</p>
         <h2 data-i18n="onboard.title">One more step</h2>
         <p>Your wallet has no USDC trustline yet. Onboarding is sponsored — free, no XLM required.</p>
         <button id="btn-onboard" data-i18n="onboard.button">Onboard (sponsored, free)</button>
@@ -107,6 +132,9 @@
         <div class="row">
           <div>
             <strong id="worker-address"></strong>
+            <div class="muted" id="worker-status" data-i18n="online.offline">offline</div>
+          </div>
+          <button id="btn-toggle" data-i18n="online.goOnline">Go online</button>
             <div class="muted" id="worker-status" role="status" aria-live="polite">offline</div>
           </div>
           <button id="btn-toggle" data-i18n="online.go">Go online</button>
@@ -114,22 +142,31 @@
 
         <div class="push-row">
           <div>
-            <div class="muted small">Practice mode</div>
-            <p id="practice-status" class="muted small">
+            <div class="muted small" data-i18n="practice.label">Practice mode</div>
+            <p id="practice-status" class="muted small" data-i18n="practice.off">
               Off — questions you answer are real and count toward your reputation.
             </p>
           </div>
-          <button id="btn-practice-toggle" class="secondary" type="button" aria-pressed="false">
+          <button id="btn-practice-toggle" class="secondary" type="button" aria-pressed="false" data-i18n="practice.label">
             Practice mode
           </button>
         </div>
-        <p class="muted small">
+        <p class="muted small" data-i18n="practice.note">
           Practice mode is a client-only preview: it shows a sample question so you can try the
           answer flow without a real payment. Practice answers never touch the chain, your stake,
           or your reputation (matchRatio / totalAnswers).
         </p>
 
         <fieldset id="category-picker">
+          <legend data-i18n="categories.legend">Topics you'll answer (optional — leave all unchecked to answer everything)</legend>
+          <label><input type="checkbox" value="math" /> <span data-i18n="cat.math">Math</span></label>
+          <label><input type="checkbox" value="coding" /> <span data-i18n="cat.coding">Coding</span></label>
+          <label><input type="checkbox" value="history" /> <span data-i18n="cat.history">History</span></label>
+          <label><input type="checkbox" value="general" /> <span data-i18n="cat.general">General knowledge</span></label>
+        </fieldset>
+
+        <div id="category-demand" class="category-demand" aria-live="polite">
+          <div class="muted small" data-i18n="demand.heading">Live demand — categories short on workers right now</div>
           <legend data-i18n="topics.legend">Topics you'll answer (optional — leave all unchecked to answer everything)</legend>
           <label data-category="math"><input type="checkbox" value="math" /> <span data-i18n="topic.math">Math</span><span class="category-demand-bar" aria-hidden="true"></span><span class="demand-level" hidden></span></label>
           <label data-category="coding"><input type="checkbox" value="coding" /> <span data-i18n="topic.coding">Coding</span><span class="category-demand-bar" aria-hidden="true"></span><span class="demand-level" hidden></span></label>
@@ -143,13 +180,36 @@
           <p id="category-demand-status" class="muted small"></p>
         </div>
 
+        <fieldset id="alert-prefs" class="alert-prefs">
+          <legend>New-question alerts (off by default, saved in this browser)</legend>
+          <label>Sound
+            <select id="alert-sound">
+              <option value="off">Off</option>
+              <option value="beep">Beep</option>
+              <option value="chime">Chime</option>
+            </select>
+          </label>
+          <label>Volume <input id="alert-volume" type="range" min="0" max="1" step="0.1" value="0.5" /></label>
+          <label>Vibration
+            <select id="alert-vibrate">
+              <option value="off">Off</option>
+              <option value="short">Short</option>
+              <option value="long">Long</option>
+            </select>
+          </label>
+          <button id="btn-alert-test" class="secondary" type="button">Test</button>
+        </fieldset>
+
         <div class="push-row">
           <div>
+            <div class="muted small" data-i18n="push.label">Push notifications</div>
+            <p id="push-status" class="muted small" data-i18n="push.off">Off — you'll only get questions while this tab is open.</p>
             <div class="muted small">Push notifications</div>
             <p id="push-status" class="muted small" role="status" aria-live="polite">Off — you'll only get questions while this tab is open.</p>
           </div>
-          <button id="btn-enable-push" class="secondary" type="button">Enable</button>
+          <button id="btn-enable-push" class="secondary" type="button" data-i18n="push.enable">Enable</button>
         </div>
+        <p class="muted small" data-i18n="push.note">
         <div class="push-row">
           <div>
             <div class="muted small">Notification digest <strong>(coming soon)</strong></div>
@@ -165,9 +225,19 @@
           Push only helps for longer-timeout questions (~20s+) — a notification round-trip is too
           slow for the fastest tier. It supplements the tab, it doesn't replace it.
         </p>
+
+        <fieldset id="dnd-prefs" class="alert-prefs">
+          <legend>Do not disturb (your local time — no push or in-tab alerts in this window)</legend>
+          <label><input id="dnd-enabled" type="checkbox" /> Enabled</label>
+          <label>From <input id="dnd-start" type="time" value="00:00" /></label>
+          <label>To <input id="dnd-end" type="time" value="07:00" /></label>
+          <button id="btn-dnd-save" class="secondary" type="button">Save</button>
+          <p id="dnd-status" class="muted small"></p>
+        </fieldset>
       </section>
 
       <section id="panel-earnings" class="panel hidden">
+        <h2 data-i18n="earnings.heading">Earnings &amp; stake</h2>
         <h2 data-i18n="earnings.title">Earnings &amp; stake</h2>
 
         <div class="row">
@@ -177,6 +247,11 @@
           </div>
           <div>
             <button id="btn-withdraw" data-i18n="earnings.withdraw">Withdraw</button>
+            <button id="btn-withdraw-bank" class="secondary hidden" type="button" data-i18n="earnings.withdrawBank">Withdraw to bank</button>
+          </div>
+        </div>
+        <div class="row" id="withdraw-beneficiary-row">
+          <input id="withdraw-beneficiary-input" type="text" data-i18n-placeholder="earnings.beneficiary" placeholder="Payout address (optional — defaults to your own)" />
             <button id="btn-withdraw-bank" class="secondary hidden" type="button">Withdraw to bank</button>
           </div>
         </div>
@@ -191,34 +266,45 @@
             <strong id="stake-amount">0.00 USDC</strong>
           </div>
           <form id="stake-form" class="inline-form">
+            <input id="stake-input" type="number" min="0.01" step="0.01" data-i18n-placeholder="earnings.amount" placeholder="Amount" />
+            <button id="btn-stake" type="submit" data-i18n="earnings.stake">Stake</button>
             <input id="stake-input" type="number" min="0.01" step="0.0000001" placeholder="Amount" />
             <button id="btn-stake" type="submit">Stake</button>
           </form>
         </div>
-        <p class="muted small">
+        <p class="muted small" data-i18n="earnings.note">
           Staking is optional — it's a credibility bond. Answers that lose a quorum vote forfeit a
           small slice of stake to the platform; workers who never stake are never slashed.
         </p>
 
         <div class="track-record" id="track-record">
-          <div class="muted small">Your track record</div>
-          <p id="track-record-summary">No answers yet — this fills in once you start answering.</p>
+          <div class="muted small" data-i18n="track.heading">Your track record</div>
+          <p id="track-record-summary" data-i18n="track.empty">No answers yet — this fills in once you start answering.</p>
         </div>
 
+        <div class="activity-heatmap" id="activity-heatmap">
+          <div class="muted small">Answer activity (last 26 weeks)</div>
+          <div id="activity-grid" class="activity-grid" role="img" aria-label="Daily answer activity"></div>
+          <p id="activity-status" class="muted small"></p>
         <div class="referral" id="referral">
           <div class="muted small">Invite other workers</div>
           <button id="btn-referral" class="secondary" type="button" disabled>Get referral link</button>
-          <input id="referral-link" class="hidden" type="text" readonly />
+          <input id="referral-link" class="hidden" type="text" readonly aria-label="Referral link" />
           <p class="muted small" id="referral-stats"></p>
         </div>
       </section>
 
+      <section id="panel-question" class="panel hidden">
+        <h2 id="question-heading" data-i18n="question.heading">Incoming question</h2>
+        <div class="timer-track"><div class="timer-bar" id="timer-bar"></div></div>
       <section id="panel-question" class="panel hidden" aria-labelledby="question-heading">
         <h2 id="question-heading" tabindex="-1" data-i18n="question.title">Incoming question</h2>
         <div class="timer-track" role="progressbar" id="timer-track" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-label="Time remaining to answer" data-i18n-attr="aria-label:question.timer"><div class="timer-bar" id="timer-bar"></div></div>
+        <p id="timer-announce" class="sr-only" aria-live="polite" aria-atomic="true"></p>
         <p id="question-text"></p>
         <p id="answer-suggested-badge" class="muted small hidden">Suggested — edit or replace before submitting</p>
         <form id="answer-form">
+          <input id="answer-input" type="text" data-i18n-placeholder="question.placeholder" placeholder="Type your answer…" autocomplete="off" />
           <label for="answer-input" class="sr-only" data-i18n="question.answer">Your answer</label>
           <input id="answer-input" type="text" placeholder="Type your answer…" autocomplete="off" data-i18n-attr="placeholder:question.placeholder" />
           <button id="btn-answer" type="submit" data-i18n="question.submit">Submit answer</button>
@@ -230,6 +316,8 @@
       </section>
 
       <section class="panel">
+        <h2 data-i18n="log.heading">Activity log</h2>
+        <ul id="log"></ul>
         <h2 id="log-heading" data-i18n="log.title">Activity log</h2>
         <ul id="log" role="log" aria-live="polite" aria-labelledby="log-heading"></ul>
       </section>

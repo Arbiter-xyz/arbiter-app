@@ -149,6 +149,10 @@ Sandbox-only (`/oracle/sandbox` + poll `/oracle/:jobId`) — no payment, no chai
 
 ```sh
 cd app && npm install && npm run dev      # or: npm run build
+# `npm run check` only syntax-checks src/main.js (`node --check src/main.js`) —
+# it does not cover the other app/src/*.js files (dashboard.js, admin.js,
+# customer.js, worker.js, leaderboard.js, status.js, demo.js, etc.). It's a
+# narrow smoke check, not a project-wide syntax gate.
 cd landing && python3 -m http.server 8123 # static, no build step
 # point landing/ at a local backend (defaults to production if absent):
 cp landing/config.example.js landing/config.js  # then edit ARBITER_API_BASE
@@ -190,3 +194,9 @@ executions, transaction links included.)
 
 <!-- handsoff-issue-269 -->
 - #269: Review: main.js's earnings-refresh interval can stack on reconnect
+
+<!-- handsoff-issue-211 -->
+- #211: admin.js's Overview tab — the default view — throws on every load: canView is referenced but defined nowhere
+
+<!-- handsoff-issue-227 -->
+- #227: admin.js's renderMatchRatioChart uses undefined SVG_NS
