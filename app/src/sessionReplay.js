@@ -3,6 +3,7 @@
 // build time, and the admin console additionally requires
 // VITE_SESSION_REPLAY_ADMIN=true. See README "Session replay" for why full
 // replay was chosen over error-context-only capture, and its limits.
+import { SENSITIVE_FIELD_IDS } from './sensitiveFields.js';
 
 const KEY = import.meta.env.VITE_SESSION_REPLAY_POSTHOG_KEY || '';
 const HOST = import.meta.env.VITE_SESSION_REPLAY_HOST || 'https://us.i.posthog.com';
@@ -19,8 +20,8 @@ export const BLOCKED_SELECTORS = [
   '#panel-backup',
   // main.js — payout address the worker types for withdrawTo
   '#withdraw-beneficiary-input',
-  // admin.js — privileged bearer token entry
-  '#admin-token-input',
+  // admin.js / demo.js — admin-token entry panel; the token inputs
+  // themselves (#admin-token-input, #demo-token) come from the spread below
   '#panel-login',
   // admin.js — renderKyc(): c.address, self-reported KYC status/tier
   '#view-kyc',
@@ -28,6 +29,8 @@ export const BLOCKED_SELECTORS = [
   // admin.js — renderPayouts(): p.address, amounts, status
   '#view-payouts',
   '#payouts-body',
+  // Every secret-bearing field id, shared with errorReporting.js (#198)
+  ...SENSITIVE_FIELD_IDS.map((id) => `#${id}`),
 ];
 
 // Masked elements keep layout but have their text replaced with asterisks.
@@ -41,19 +44,6 @@ export const MASKED_TEXT_SELECTORS = [
   '#payers-body',
   '#fraud-body',
   '#treasury-panel',
-];
-
-// Sensitive-field ids that must be covered by BLOCKED_SELECTORS. Kept in sync
-// with the ids referenced in main.js/admin.js/customer.js so a new
-// secret-bearing field can't ship unmasked without a signal. See
-// assertBlockedSelectorsCoverSensitiveFields() below.
-const SENSITIVE_FIELD_IDS = [
-  // main.js — worker's raw Stellar secret key
-  'backup-secret',
-  // main.js — payout address the worker types for withdrawTo
-  'withdraw-beneficiary-input',
-  // admin.js — privileged bearer token entry
-  'admin-token-input',
 ];
 
 // Dev-time drift check: verifies every known sensitive field id is covered by

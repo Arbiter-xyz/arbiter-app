@@ -9,6 +9,7 @@ import {
   HotWalletModule,
   LedgerModule,
 } from '@creit.tech/stellar-wallets-kit';
+import { createWalletKit } from './wallet.js';
 import { openSecureLocalWallet } from './localWallet.js';
 import { initI18n, t } from './i18n.js';
 import { initA11y } from './a11y.js';
@@ -58,6 +59,17 @@ const el = {
   trackRecordSummary: document.getElementById('track-record-summary'),
   btnEnablePush: document.getElementById('btn-enable-push'),
   pushStatus: document.getElementById('push-status'),
+  alertSound: document.getElementById('alert-sound'),
+  alertVolume: document.getElementById('alert-volume'),
+  alertVibrate: document.getElementById('alert-vibrate'),
+  btnAlertTest: document.getElementById('btn-alert-test'),
+  dndEnabled: document.getElementById('dnd-enabled'),
+  dndStart: document.getElementById('dnd-start'),
+  dndEnd: document.getElementById('dnd-end'),
+  btnDndSave: document.getElementById('btn-dnd-save'),
+  dndStatus: document.getElementById('dnd-status'),
+  activityGrid: document.getElementById('activity-grid'),
+  activityStatus: document.getElementById('activity-status'),
   digestSelect: document.getElementById('digest-select'),
   digestStatus: document.getElementById('digest-status'),
   btnWithdraw: document.getElementById('btn-withdraw'),
@@ -107,6 +119,7 @@ const state = {
   countdownHandle: null,
   sessionToken: null,
   sessionExpiresAt: 0,
+  pushSubscription: null,
   lastDraft: null,
 };
 
@@ -342,6 +355,10 @@ async function activateWallet(wallet, address) {
 
 async function hasUsdcTrustline(address) {
   const res = await fetch(`${HORIZON_URL}/accounts/${address}`);
+  if (res.status === 404) return false; // account doesn't exist on-chain at all yet
+  if (!res.ok) throw new Error(`Horizon returned ${res.status}`);
+  const account = await res.json();
+  return (account.balances || []).some((b) => b.asset_code === USDC_ASSET_CODE);
   if (res.status === 404) return false;
   if (!res.ok) throw new Error(`Horizon returned ${res.status}`);
   const account = await res.json();
@@ -355,6 +372,9 @@ async function routeAfterConnect() {
     const ready = await hasUsdcTrustline(state.address);
     showPanel(ready ? 'online' : 'onboard');
     if (ready) {
+      refreshEarnings();
+      setInterval(refreshEarnings, 20_000);
+      startCategoryDemandPolling();
       startCategoryDemandPolling();
       refreshEarnings();
       setInterval(refreshEarnings, 20_000);
@@ -382,7 +402,7 @@ el.btnOnboard.addEventListener('click', async () => {
     log('Signing onboarding transaction with your wallet…');
     const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
       address: state.address,
-      networkPassphrase: WalletNetwork.TESTNET,
+      networkPassphrase: Networks.TESTNET,
     });
 
     log('Submitting sponsored onboarding transaction…');
@@ -429,6 +449,29 @@ el.btnToggle.addEventListener('click', async () => {
  * expires. This exists because the backend now REQUIRES it for any
  * real-address workerId — see workerAuth.js. */
 async function ensureSession() {
+  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) return state.sessionToken;
+
+  log('Proving control of your address (one signature)…');
+  const challengeRes = await fetch(`${BACKEND_URL}/workers/${state.address}/session/challenge`, { method: 'POST' });
+  if (!challengeRes.ok) throw new Error((await challengeRes.json()).error || 'failed to get session challenge');
+  const { xdr } = await challengeRes.json();
+
+  const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
+    address: state.address,
+    networkPassphrase: WalletNetwork.TESTNET,
+  });
+
+  const sessionRes = await fetch(`${BACKEND_URL}/workers/${state.address}/session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ signedXdr: signedTxXdr }),
+  });
+  if (!sessionRes.ok) throw new Error((await sessionRes.json()).error || 'failed to establish session');
+  const { token, expiresAt } = await sessionRes.json();
+  state.sessionToken = token;
+  state.sessionExpiresAt = expiresAt;
+  log('Session established — you can answer questions as yourself, and only yourself.');
+  return token;
   return ensureSharedSession({
     address: state.address,
     activeWallet: state.activeWallet,
@@ -493,6 +536,7 @@ function onQuestionReceived({ questionId, question, expiresInMs }) {
   el.question.classList.remove('hidden');
   log(`New question dispatched: "${question}"`);
   startCountdown(expiresInMs);
+  alertNewQuestion({ questionId, question });
 }
 
 function startCountdown(totalMs) {
@@ -565,6 +609,7 @@ async function refreshEarnings() {
     if (owedRes.ok) el.owedAmount.textContent = `${(await owedRes.json()).owed} USDC`;
     if (stakeRes.ok) el.stakeAmount.textContent = `${(await stakeRes.json()).stake} USDC`;
     if (repRes.ok) renderTrackRecord(await repRes.json());
+    refreshActivityHeatmap();
   } catch (err) {
     log(`Could not refresh earnings/stake: ${err.message}`);
   }
@@ -602,7 +647,7 @@ el.btnWithdraw.addEventListener('click', async () => {
       : await buildWithdrawXdr(state.address, owedStroops);
     const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
       address: state.address,
-      networkPassphrase: WalletNetwork.TESTNET,
+      networkPassphrase: Networks.TESTNET,
     });
     const res = await fetch(`${BACKEND_URL}/sponsor/withdraw`, {
       method: 'POST',
@@ -637,7 +682,7 @@ async function autoRelayWithdrawal({ amount, beneficiary, memo }) {
   const xdr = await buildWithdrawToXdr(state.address, beneficiary, amountStroops, memo);
   const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
     address: state.address,
-    networkPassphrase: WalletNetwork.TESTNET,
+    networkPassphrase: Networks.TESTNET,
   });
   const token = await ensureSession();
   const res = await fetch(`${BACKEND_URL}/sponsor/withdraw`, {
@@ -661,7 +706,7 @@ initBankWithdraw({
   getAddress: () => state.address,
   getWallet: () => state.activeWallet,
   getArbiterSessionToken: ensureSession,
-  networkPassphrase: WalletNetwork.TESTNET,
+  networkPassphrase: Networks.TESTNET,
   assetCode: USDC_ASSET_CODE,
   autoRelayWithdrawal,
 });
@@ -670,6 +715,27 @@ el.stakeForm.addEventListener('submit', async (evt) => {
   evt.preventDefault();
   el.btnStake.disabled = true;
   try {
+    const amountStroops = stroopsFromUsdcInput(el.stakeInput.value);
+    log(`Building stake transaction for ${el.stakeInput.value} USDC…`);
+    const xdr = await buildStakeXdr(state.address, amountStroops);
+    const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
+      address: state.address,
+      networkPassphrase: WalletNetwork.TESTNET,
+    });
+    const res = await fetch(`${BACKEND_URL}/sponsor/stake`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ xdr: signedTxXdr, workerAddress: state.address, amountStroops: amountStroops.toString() }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || `stake failed: ${res.status}`);
+    const { hash } = await res.json();
+    log(`Staked (tx ${hash})`);
+    el.stakeInput.value = '';
+    await refreshEarnings();
+  } catch (err) {
+    log(`Stake failed: ${err.message}`);
+  } finally {
+    el.btnStake.disabled = false;
     state.activeWallet = wallet;
     state.address = address;
     el.workerAddress.textContent = address;
@@ -680,7 +746,7 @@ el.stakeForm.addEventListener('submit', async (evt) => {
     if (trusted) startCategoryDemandPolling();
     log(`Connected ${address}${trusted ? '' : ' — USDC trustline required before going online.'}`);
   } finally {
-    setConnectButtonsBusy(false);
+    el.btnStake.disabled = false;
   }
 });
 
@@ -690,6 +756,9 @@ el.stakeForm.addEventListener('submit', async (evt) => {
 // the console works identically without it, just tab-open-only.
 
 if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch((err) => {
+    log(`Service worker registration failed (push notifications unavailable): ${err.message}`);
+  });
   navigator.serviceWorker
     .register('/sw.js')
     .then(restorePushUiState)
@@ -742,6 +811,7 @@ if (el.btnEnablePush) {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') throw new Error('notification permission was not granted');
 
+      // Backend now requires proof of address control here too, same as
       // Backend requires proof of address control here too, same as
       // answering a question — a subscription silently redirects this
       // worker's notifications, so it can't be left open to anyone who
@@ -757,6 +827,12 @@ if (el.btnEnablePush) {
       const res = await fetch(`${BACKEND_URL}/workers/${state.address}/push-subscribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscription: subscription.toJSON(), categories: selectedCategories(), dnd: dndPayload(), token }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || `subscribe failed: ${res.status}`);
+
+      state.pushSubscription = subscription;
+      el.pushStatus.textContent = 'On — you may get notified for longer-timeout questions.';
         body: JSON.stringify({ subscription: subscription.toJSON(), categories: selectedCategories(), token }),
       });
       if (!res.ok) throw new Error((await res.json()).error || `subscribe failed: ${res.status}`);
@@ -767,7 +843,217 @@ if (el.btnEnablePush) {
     } catch (err) {
       log(`Could not enable push notifications: ${err.message}`);
       el.pushStatus.textContent = `Off — ${err.message}`;
+    } finally {
       el.btnEnablePush.disabled = false;
     }
   });
+}
+
+// --- New-question alerts: sound / vibration (issue #64) -----------------
+// Opt-in only: the default is silent so nobody answering back-to-back
+// express-tier questions gets an unexpected beep. Persisted with the same
+// localStorage pattern localWallet.js uses, under its own key.
+
+const ALERT_PREFS_KEY = 'arbiter.alertPrefs';
+const VIBRATION_PATTERNS = { short: [150], long: [300, 100, 300] };
+const SOUND_TONES = { beep: [880], chime: [660, 990] };
+let audioCtx = null;
+
+function loadJson(key, fallback) {
+  try {
+    return { ...fallback, ...JSON.parse(localStorage.getItem(key) || '{}') };
+  } catch {
+    return fallback;
+  }
+}
+
+function saveJson(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // storage blocked (private mode etc.) — preference just won't persist
+  }
+}
+
+const alertPrefs = loadJson(ALERT_PREFS_KEY, { sound: 'off', volume: 0.5, vibrate: 'off' });
+el.alertSound.value = alertPrefs.sound;
+el.alertVolume.value = String(alertPrefs.volume);
+el.alertVibrate.value = alertPrefs.vibrate;
+
+for (const input of [el.alertSound, el.alertVolume, el.alertVibrate]) {
+  input.addEventListener('change', () => {
+    alertPrefs.sound = el.alertSound.value;
+    alertPrefs.volume = Number(el.alertVolume.value);
+    alertPrefs.vibrate = el.alertVibrate.value;
+    saveJson(ALERT_PREFS_KEY, alertPrefs);
+  });
+}
+
+function playAlertSound() {
+  const tones = SOUND_TONES[alertPrefs.sound];
+  if (!tones) return;
+  try {
+    audioCtx ||= new AudioContext();
+    let t = audioCtx.currentTime;
+    for (const freq of tones) {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(alertPrefs.volume, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t);
+      osc.stop(t + 0.2);
+      t += 0.22;
+    }
+  } catch {
+    // autoplay blocked or Web Audio unsupported — silently skip
+  }
+}
+
+function vibrateAlert() {
+  const pattern = VIBRATION_PATTERNS[alertPrefs.vibrate];
+  if (pattern && 'vibrate' in navigator) navigator.vibrate(pattern);
+}
+
+el.btnAlertTest.addEventListener('click', () => {
+  playAlertSound();
+  vibrateAlert();
+});
+
+// --- Desktop notifications for a backgrounded tab (issue #65) ---------------
+// Reuses whatever permission the push flow already obtained — never asks on
+// its own. Uses the same `question-<id>` tag sw.js gives push notifications,
+// so if both fire for one question the browser replaces rather than stacks.
+
+function showDesktopNotification({ questionId, question }) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  if (document.visibilityState === 'visible') return;
+  try {
+    const n = new Notification('Arbiter — new question', { body: question, tag: `question-${questionId}` });
+    n.onclick = () => {
+      window.focus();
+      n.close();
+    };
+  } catch {
+    // some mobile browsers only allow notifications via the service worker
+  }
+}
+
+function alertNewQuestion(q) {
+  if (inDndWindow()) return;
+  playAlertSound();
+  vibrateAlert();
+  showDesktopNotification(q);
+}
+
+// --- Do-not-disturb hours (issue #66) ----------------------------------------
+// Entered in local time, sent to the backend as UTC "HH:MM" because it has
+// no notion of a worker's timezone. The same window also silences the
+// in-tab alerts above. Saving re-sends the existing push subscription so
+// the window stays editable after the initial subscribe.
+
+const DND_PREFS_KEY = 'arbiter.dndPrefs';
+const dndPrefs = loadJson(DND_PREFS_KEY, { enabled: false, start: '00:00', end: '07:00' });
+el.dndEnabled.checked = dndPrefs.enabled;
+el.dndStart.value = dndPrefs.start;
+el.dndEnd.value = dndPrefs.end;
+
+function minutesOf(hhmm) {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function localToUtc(hhmm) {
+  const mins = (((minutesOf(hhmm) + new Date().getTimezoneOffset()) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+}
+
+function dndPayload() {
+  if (!dndPrefs.enabled) return null;
+  return { startUtc: localToUtc(dndPrefs.start), endUtc: localToUtc(dndPrefs.end) };
+}
+
+function inDndWindow() {
+  if (!dndPrefs.enabled) return false;
+  const now = new Date();
+  const cur = now.getHours() * 60 + now.getMinutes();
+  const start = minutesOf(dndPrefs.start);
+  const end = minutesOf(dndPrefs.end);
+  // A window like 22:00 → 07:00 wraps past midnight.
+  return start <= end ? cur >= start && cur < end : cur >= start || cur < end;
+}
+
+el.btnDndSave.addEventListener('click', async () => {
+  dndPrefs.enabled = el.dndEnabled.checked;
+  dndPrefs.start = el.dndStart.value || '00:00';
+  dndPrefs.end = el.dndEnd.value || '07:00';
+  saveJson(DND_PREFS_KEY, dndPrefs);
+  el.dndStatus.textContent = 'Saved in this browser.';
+
+  if (!state.pushSubscription || !state.address) return;
+  el.btnDndSave.disabled = true;
+  try {
+    const token = await ensureSession();
+    const res = await fetch(`${BACKEND_URL}/workers/${state.address}/push-subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscription: state.pushSubscription.toJSON(), categories: selectedCategories(), dnd: dndPayload(), token }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || `update failed: ${res.status}`);
+    el.dndStatus.textContent = 'Saved — push notifications respect this window.';
+  } catch (err) {
+    el.dndStatus.textContent = `Saved locally, but the push subscription was not updated: ${err.message}`;
+  } finally {
+    el.btnDndSave.disabled = false;
+  }
+});
+
+// --- Earnings activity heatmap (issue #67) -----------------------------------
+// GitHub-contributions style: one cell per day, columns are weeks. Needs
+// GET /workers/:address/activity?days=N returning
+// { days: [{ date: 'YYYY-MM-DD', answers, matched }] } from per-answer
+// timestamps — cumulative rep: counters can't produce it. Days the backend
+// doesn't list are rendered as zero, never interpolated.
+
+const ACTIVITY_WEEKS = 26;
+
+function isoDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function renderActivityHeatmap(days) {
+  const byDate = new Map(days.map((d) => [d.date, d]));
+  const max = Math.max(1, ...days.map((d) => d.answers || 0));
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - start.getDay() - (ACTIVITY_WEEKS - 1) * 7); // align to a Sunday
+
+  const cells = [];
+  const today = new Date();
+  for (const d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+    const key = isoDate(d);
+    const entry = byDate.get(key);
+    const answers = entry ? entry.answers || 0 : 0;
+    const cell = document.createElement('div');
+    cell.className = 'activity-cell';
+    cell.dataset.level = answers === 0 ? '0' : String(Math.min(4, Math.ceil((answers / max) * 4)));
+    cell.title = `${key}: ${answers} answer${answers === 1 ? '' : 's'}${entry ? `, ${entry.matched || 0} matched` : ''}`;
+    cells.push(cell);
+  }
+  el.activityGrid.replaceChildren(...cells);
+  const total = days.reduce((sum, d) => sum + (d.answers || 0), 0);
+  el.activityStatus.textContent = `${total} answer${total === 1 ? '' : 's'} in the last ${ACTIVITY_WEEKS} weeks`;
+}
+
+async function refreshActivityHeatmap() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/workers/${state.address}/activity?days=${ACTIVITY_WEEKS * 7}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { days } = await res.json();
+    renderActivityHeatmap(Array.isArray(days) ? days : []);
+  } catch {
+    el.activityGrid.replaceChildren();
+    el.activityStatus.textContent = 'Activity history is not available from this server yet.';
+  }
 }

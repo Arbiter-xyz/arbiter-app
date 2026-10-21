@@ -37,9 +37,17 @@ const MAX_AUTO_RELAY_AMOUNT = 100000;
 // click.
 const ANCHOR_CONFIG_TTL_MS = 5 * 60 * 1000;
 
+// How many times reportToArbiter retries a failed /anchor/report POST before
+// giving up. A dropped report means admin.js's renderKyc/renderPayouts views
+// silently miss this withdrawal, so a couple of retries with backoff is worth
+// the extra requests — but it stays bounded so a persistently-down backend
+// can't wedge the withdraw flow.
+const REPORT_MAX_ATTEMPTS = 3;
+const REPORT_RETRY_BASE_MS = 500;
+
 async function getAnchorConfig() {
   const res = await fetch(`${BACKEND_URL}/anchor/config`);
-  if (res.status === 503) return null; // no anchor configured on this backend
+  if (res.status === 503) return NO_ANCHOR; // no anchor configured on this backend
   if (!res.ok) throw new Error(`failed to load anchor config (${res.status})`);
   return res.json();
 }
@@ -96,20 +104,40 @@ async function pollTransaction(anchorConfig, jwt, id, onUpdate) {
   throw new Error('timed out waiting for the anchor to reach a payment-ready state');
 }
 
+// Best-effort report to the backend so admin.js's renderKyc/renderPayouts
+// views can show this withdrawal. A dropped report means those views silently
+// miss it, so retry a bounded number of times with backoff before giving up.
+// Returns true on success, false if every attempt failed — callers can use
+// that to surface an out-of-sync indicator instead of failing silently.
 async function reportToArbiter({ address, arbiterSessionToken, transaction }) {
-  await fetch(`${BACKEND_URL}/anchor/report`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      address,
-      token: arbiterSessionToken,
-      kind: 'withdrawal',
-      status: transaction.status,
-      amount: transaction.amount_in || null,
-      assetCode: transaction.amount_in_asset || null,
-      anchorTransactionId: transaction.id,
-    }),
-  }).catch(() => {}); // best-effort — the admin console cache is a convenience, not the source of truth
+  const body = JSON.stringify({
+    address,
+    token: arbiterSessionToken,
+    kind: 'withdrawal',
+    status: transaction.status,
+    amount: transaction.amount_in || null,
+    assetCode: transaction.amount_in_asset || null,
+    anchorTransactionId: transaction.id,
+  });
+
+  for (let attempt = 1; attempt <= REPORT_MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/anchor/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+      if (res.ok) return true;
+      // 4xx (other than 429) won't succeed on retry — bail out early.
+      if (res.status >= 400 && res.status < 500 && res.status !== 429) return false;
+    } catch {
+      // network error — fall through to retry
+    }
+    if (attempt < REPORT_MAX_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, REPORT_RETRY_BASE_MS * attempt));
+    }
+  }
+  return false;
 }
 
 /**
@@ -137,6 +165,11 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
   // ANCHOR_CONFIG_TTL_MS, so a long-lived tab can't keep opening the
   // withdrawal popup against a stale endpoint after the backend's anchor
   // config has changed. Concurrent callers share the in-flight promise.
+  //
+  // Only a definitive "no anchor configured" (NO_ANCHOR) is cached for the
+  // full TTL. A transient failure (500, network error) is NOT cached — the
+  // promise is cleared so the next call retries, rather than pinning the
+  // session into a permanent "unconfigured" state.
   async function ensureAnchorConfig() {
     const isStale = !anchorConfigPromise || Date.now() - anchorConfigFetchedAt > ANCHOR_CONFIG_TTL_MS;
     if (isStale) {
@@ -153,7 +186,7 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
 
   ensureAnchorConfig()
     .then((cfg) => {
-      if (cfg) button.classList.remove('hidden');
+      if (cfg && cfg !== NO_ANCHOR) button.classList.remove('hidden');
     })
     .catch(() => {}); // no anchor configured, or unreachable — button stays hidden either way
 
@@ -162,7 +195,7 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
     status.textContent = '';
     try {
       const anchorConfig = await ensureAnchorConfig();
-      if (!anchorConfig) throw new Error('no fiat anchor is configured on this backend');
+      if (!anchorConfig || anchorConfig === NO_ANCHOR) throw new Error('no fiat anchor is configured on this backend');
 
       const address = getAddress();
       const wallet = getWallet();

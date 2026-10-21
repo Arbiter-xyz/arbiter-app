@@ -143,6 +143,26 @@
           <p id="category-demand-status" class="muted small"></p>
         </div>
 
+        <fieldset id="alert-prefs" class="alert-prefs">
+          <legend>New-question alerts (off by default, saved in this browser)</legend>
+          <label>Sound
+            <select id="alert-sound">
+              <option value="off">Off</option>
+              <option value="beep">Beep</option>
+              <option value="chime">Chime</option>
+            </select>
+          </label>
+          <label>Volume <input id="alert-volume" type="range" min="0" max="1" step="0.1" value="0.5" /></label>
+          <label>Vibration
+            <select id="alert-vibrate">
+              <option value="off">Off</option>
+              <option value="short">Short</option>
+              <option value="long">Long</option>
+            </select>
+          </label>
+          <button id="btn-alert-test" class="secondary" type="button">Test</button>
+        </fieldset>
+
         <div class="push-row">
           <div>
             <div class="muted small">Push notifications</div>
@@ -165,6 +185,15 @@
           Push only helps for longer-timeout questions (~20s+) — a notification round-trip is too
           slow for the fastest tier. It supplements the tab, it doesn't replace it.
         </p>
+
+        <fieldset id="dnd-prefs" class="alert-prefs">
+          <legend>Do not disturb (your local time — no push or in-tab alerts in this window)</legend>
+          <label><input id="dnd-enabled" type="checkbox" /> Enabled</label>
+          <label>From <input id="dnd-start" type="time" value="00:00" /></label>
+          <label>To <input id="dnd-end" type="time" value="07:00" /></label>
+          <button id="btn-dnd-save" class="secondary" type="button">Save</button>
+          <p id="dnd-status" class="muted small"></p>
+        </fieldset>
       </section>
 
       <section id="panel-earnings" class="panel hidden">
@@ -205,6 +234,10 @@
           <p id="track-record-summary">No answers yet — this fills in once you start answering.</p>
         </div>
 
+        <div class="activity-heatmap" id="activity-heatmap">
+          <div class="muted small">Answer activity (last 26 weeks)</div>
+          <div id="activity-grid" class="activity-grid" role="img" aria-label="Daily answer activity"></div>
+          <p id="activity-status" class="muted small"></p>
         <div class="referral" id="referral">
           <div class="muted small">Invite other workers</div>
           <button id="btn-referral" class="secondary" type="button" disabled>Get referral link</button>
