@@ -5,7 +5,7 @@
 (function () {
   "use strict";
 
-  const API_BASE = "https://arbiter-backend-production-4e43.up.railway.app";
+  const API_BASE = window.ARBITER_API_BASE || "https://arbiter-backend-production-4e43.up.railway.app";
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   /* ---------------- #12 live throughput ticker ----------------------- */

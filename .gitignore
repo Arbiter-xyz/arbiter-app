@@ -13,3 +13,6 @@ e2e/repos/
 # Runtime artifacts produced by the integrated stack (volumes, logs, state)
 e2e/.runtime/
 e2e/**/node_modules/
+
+# landing/ local backend override (#44); see landing/config.example.js
+landing/config.js
