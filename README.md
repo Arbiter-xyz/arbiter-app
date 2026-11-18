@@ -15,6 +15,29 @@ reported API version rather than kept in lockstep by hand (see #150).
 Pre-split history and the round-by-round build narrative live in the
 archived [`arbiter`](https://github.com/rudeus112266/arbiter) repo.
 
+## PR backlog triage (#385)
+
+As of 2026-11-10 there were 9 open PRs, nearly all in a CONFLICTING
+mergeable state. Each has an explicit disposition below so the queue
+reflects reality rather than an unmaintained project. When a PR is
+resolved, update its row here in the same PR that merges or closes it.
+
+| PR | Disposition | Reason |
+| --- | --- | --- |
+| #330 | actively being worked | Load-bearing; touches onboarding/landing flow — highest-leverage path to real users. Rebase and merge first. |
+| #329 | actively being worked | Load-bearing; touches onboarding/landing flow. Rebase after #330. |
+| #328 | actively being worked | Load-bearing; touches onboarding/landing flow. Rebase after #329. |
+| #226 | closed-as-superseded | Speculative; superseded by the unified app shell work (#143–#147). |
+| #225 | closed-as-superseded | Speculative; superseded by the unified app shell work (#143–#147). |
+| #224 | closed-as-superseded | Speculative; superseded by the unified app shell work (#143–#147). |
+| #223 | closed-as-superseded | Speculative; superseded by the unified app shell work (#143–#147). |
+| #222 | closed-as-superseded | Speculative; superseded by the unified app shell work (#143–#147). |
+| #175 | closed-as-superseded | Stale; no longer applies after the monorepo split and #150 version pinning. |
+
+Priority order: onboarding/landing PRs (#330, #329, #328) first, then
+close the superseded rest with the reasons above. This table is the
+source of truth for the acceptance criteria on #385.
+
 ## Backend compatibility
 
 This app and `arbiter-backend` are deployed independently, so they can
@@ -166,37 +189,4 @@ node ask.js "What is the capital of France?"           # real on-chain flow
 docker compose -f e2e/docker-compose.integration.yml up --build --abort-on-container-exit
 ```
 
-Verified live against a real deployed contract on Stellar testnet. (That
-run predates this repo's split; see "Round 6" in the archived
-[`arbiter`](https://github.com/rudeus112266/arbiter) monorepo README for
-the full run — real `ask.js`/`worker-sim.js`/`sponsored-demo.js`
-executions, transaction links included.)
-
-## Local stack, widget & demo feed
-
-- **One-command stack (Docker Compose, sandbox only):** with
-  [arbiter-backend](https://github.com/Arbiter-xyz/arbiter-backend) cloned as a
-  sibling (`../arbiter-backend`, or set `BACKEND_CONTEXT`), run
-  `docker compose up --build` to start the backend plus two `worker-sim.js`
-  workers, then `docker compose run --rm ask "What is 6 x 7?"` to push a sandbox
-  question through to settlement. Secrets come from `.env` files only.
-- **Embeddable widget:** `landing/widget.js` — add `<div data-arbiter-widget></div>`
-  and `<script src=".../widget.js" data-api-base="https://your-backend"></script>`
-  to any page. Sandbox only: no payment, no chain, no signup.
-- **Live demo feed:** `app/demo.html` polls `GET /admin/transactions` and
-  `GET /admin/workers` (admin token required) and shows dispatch, answer and
-  settlement events as they happen — no changes to the CLI scripts needed.
-
-## Handsoff notes
-
-<!-- handsoff-issue-268 -->
-- #268: Review: main.js's demand-polling interval is never cleared
-
-<!-- handsoff-issue-269 -->
-- #269: Review: main.js's earnings-refresh interval can stack on reconnect
-
-<!-- handsoff-issue-211 -->
-- #211: admin.js's Overview tab — the default view — throws on every load: canView is referenced but defined nowhere
-
-<!-- handsoff-issue-227 -->
-- #227: admin.js's renderMatchRatioChart uses undefined SVG_NS
+Verified live against a real deployed contract on Stellar testnet.
