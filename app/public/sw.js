@@ -12,6 +12,12 @@
 // question still open?) which the page already tracks, and doing the submit
 // from the page keeps exactly-once semantics in one place. The SW's job is
 // just to wake the page up at the right moment.
+//
+// Page-side counterpart (issue #239): app/src/main.js registers the
+// 'answer-queue' Background Sync tag when it enqueues an answer, listens for
+// the FLUSH_ANSWER_QUEUE message (acking via the MessageChannel port), and
+// posts RETRY_ANSWER_QUEUE for browsers without Background Sync. If you change
+// the message types or tag here, update that handler too.
 
 const ANSWER_SYNC_TAG = 'answer-queue';
 
@@ -202,31 +208,9 @@ function forwardPushToExtension(payload) {
     // has declared externally_connectable for this origin; otherwise this is a
     // no-op and the web-push notification above remains the fallback.
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-      chrome.runtime.sendMessage({ type: 'arbiter:push', payload });
+      chrome.runtime.sendMessage({ source: EXTENSION_MESSAGE_SOURCE, type: 'push', payload });
     }
   } catch {
-    // Extension not installed / not reachable — web push already handled it.
+    // Extension not installed / not reachable — web push is the fallback.
   }
 }
-
-self.addEventListener('message', (event) => {
-  const data = event.data;
-  if (!data || data.source !== EXTENSION_MESSAGE_SOURCE) return;
-
-  if (data.type === 'arbiter:push') {
-    forwardPushToExtension(data.payload || {});
-    return;
-  }
-
-  // The extension answered a dispatched question in the background; surface it
-  // to any open console tab so the UI stays in sync with the extension loop.
-  if (data.type === 'arbiter:answered') {
-    event.waitUntil(
-      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-        for (const client of clients) {
-          client.postMessage({ type: 'arbiter:answered', payload: data.payload || {} });
-        }
-      }),
-    );
-  }
-});
