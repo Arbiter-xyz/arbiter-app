@@ -17,7 +17,7 @@ export function renderMarkdown(target, text) {
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
     .replace(/\n/g, '<br>')
-    .replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codeSpans[Number(i)]}</code>`);
+    .replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${escapeHtml(codeSpans[Number(i)])}</code>`);
 
   target.innerHTML = html;
 }
