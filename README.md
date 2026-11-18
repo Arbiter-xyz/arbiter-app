@@ -200,3 +200,12 @@ executions, transaction links included.)
 
 <!-- handsoff-issue-227 -->
 - #227: admin.js's renderMatchRatioChart uses undefined SVG_NS
+
+<!-- handsoff-issue-371 -->
+- #371: main.js does not parse: duplicate initI18n import with executable statements wedged between import statements
+
+<!-- handsoff-issue-372 -->
+- #372: dashboard.js does not parse: duplicate initI18n import, same pattern as main.js
+
+<!-- handsoff-issue-373 -->
+- #373: i18n.js does not parse: two entire competing i18n implementations concatenated, one missing its closing brace
