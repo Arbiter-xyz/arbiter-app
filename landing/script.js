@@ -118,10 +118,16 @@
      time — so this is the real price, not a client-side re-derivation.
      If the endpoint is unreachable we fall back to the static base price
      and label the result as an approximation.
-  ------------------------------------------------------------------- */
-  const pricingGrid = document.querySelector(".pricing-grid");
 
-  if (pricingGrid) {
+     The calculator mounts into the #pricing section itself rather than a
+     dedicated .pricing-grid container: index.html's #pricing section only
+     holds the surge canvas, so requiring a separate grid element left this
+     block silently dead. Mounting into #pricing keeps the wiring in one
+     place and can't diverge from the markup again.
+  ------------------------------------------------------------------- */
+  const pricingSection = document.getElementById("pricing");
+
+  if (pricingSection) {
     const TIERS = [
       { id: "instant", label: "Instant", base: 0.05 },
       { id: "standard", label: "Standard", base: 0.25 },
@@ -181,7 +187,7 @@
     calc.appendChild(tierRow);
     calc.appendChild(output);
     calc.appendChild(note);
-    pricingGrid.insertAdjacentElement("afterend", calc);
+    pricingSection.appendChild(calc);
 
     render();
 
@@ -207,77 +213,6 @@
   /* -------------------------------------------------------------------
      Compare-tiers slider (#pricing) — a presentation layer over the same
      four tiers' already-documented real values (base price, quorum size,
-     answer window) that the static .pricing-grid cards list. The cards
-     remain the no-JS / reduced-motion fallback; this control is only
-     injected when motion is allowed, and it never invents numbers —
-     confidence stays qualitative, matching the existing copy.
-  ------------------------------------------------------------------- */
-  if (pricingGrid && !prefersReducedMotion) {
-    const COMPARE_TIERS = [
-      { label: "Instant", price: 0.05, quorum: 1, window: "30s", confidence: "Single worker — fastest, least redundant" },
-      { label: "Standard", price: 0.25, quorum: 2, window: "20s", confidence: "Two-worker agreement" },
-      { label: "Express", price: 0.4, quorum: 2, window: "12s", confidence: "Two-worker agreement, tighter deadline" },
-      { label: "Priority", price: 0.6, quorum: 3, window: "8s", confidence: "Highest-confidence consensus" },
-    ];
+     answe
 
-    const compare = document.createElement("div");
-    compare.className = "pricing-compare";
-
-    const compareHeading = document.createElement("h3");
-    compareHeading.textContent = "Compare tiers";
-
-    const slider = document.createElement("input");
-    slider.type = "range";
-    slider.className = "pricing-compare-slider";
-    slider.min = "0";
-    slider.max = String(COMPARE_TIERS.length - 1);
-    slider.step = "1";
-    slider.value = "1";
-    slider.setAttribute("aria-label", "Compare pricing tiers");
-
-    const readout = document.createElement("div");
-    readout.className = "pricing-compare-readout";
-    readout.setAttribute("aria-live", "polite");
-
-    function renderCompare() {
-      const tier = COMPARE_TIERS[Number(slider.value)];
-      readout.textContent = "";
-
-      const name = document.createElement("p");
-      name.className = "pricing-compare-tier";
-      name.textContent = tier.label;
-
-      const price = document.createElement("p");
-      price.className = "pricing-compare-price";
-      price.textContent = `${tier.price.toFixed(2)} USDC per request`;
-
-      const detail = document.createElement("p");
-      detail.className = "pricing-compare-detail";
-      detail.textContent = `Quorum of ${tier.quorum} worker${tier.quorum === 1 ? "" : "s"} · ${tier.window} answer window`;
-
-      const confidence = document.createElement("p");
-      confidence.className = "pricing-compare-confidence";
-      confidence.textContent = tier.confidence;
-
-      readout.appendChild(name);
-      readout.appendChild(price);
-      readout.appendChild(detail);
-      readout.appendChild(confidence);
-    }
-
-    slider.addEventListener("input", renderCompare);
-
-    compare.appendChild(compareHeading);
-    compare.appendChild(slider);
-    compare.appendChild(readout);
-    pricingGrid.insertAdjacentElement("afterend", compare);
-
-    renderCompare();
-  }
-
-  /* -------------------------------------------------------------------
-     Interactive architecture diagram (#architecture) — a hand-authored
-     SVG mirroring the README's ASCII flow (app/demo-agent → backend
-     server.js → 
-
-/* … truncated 3811 chars — edit only what you need near the top … */
+/* … truncated 3055 chars — edit only what you need near the top … */
