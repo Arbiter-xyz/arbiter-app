@@ -200,3 +200,6 @@ executions, transaction links included.)
 
 <!-- handsoff-issue-227 -->
 - #227: admin.js's renderMatchRatioChart uses undefined SVG_NS
+
+<!-- handsoff-issue-245 -->
+- #245: Review: admin.js's renderTreasury calls balanceFigure, undefined

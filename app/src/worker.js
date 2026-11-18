@@ -1,10 +1,16 @@
 // Public worker profile page (issue #86). Reads only already-public,
 // unauthenticated endpoints — no owed balance or session data here.
-import { truncateAddress, formatRatio, workerOgImageUrl } from './format.js';
+import { truncateAddress, formatRatio } from './format.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
 const $ = (id) => document.getElementById(id);
+
+// Build the og:image / twitter:image URL for a worker profile. Kept local to
+// this page since format.js does not export a worker og-image helper.
+function workerOgImageUrl(baseUrl, address) {
+  return `${baseUrl}/og/worker/${encodeURIComponent(address)}.png`;
+}
 
 async function getJson(path) {
   const res = await fetch(`${BACKEND_URL}${path}`);
