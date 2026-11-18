@@ -2,10 +2,31 @@
 // registration (the SW also precaches the static shell), a custom install
 // button driven by beforeinstallprompt, and an honest offline banner — the
 // SSE dispatch channel can't work offline, so we say so instead of faking it.
+//
+// The SW's IndexedDB answer queue (see flushAnswerQueue in app/public/sw.js)
+// is owned by the page: we register Background Sync for it and, as a fallback
+// for browsers without the SyncManager, ask the SW to flush on reconnect.
 import { t } from './i18n.js';
 import { webPushSupported } from './platform.js';
 
+const ANSWER_QUEUE_SYNC_TAG = 'flush-answer-queue';
+
 let deferredPrompt = null;
+
+async function requestAnswerQueueSync() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    if ('sync' in reg) {
+      await reg.sync.register(ANSWER_QUEUE_SYNC_TAG);
+    } else if (reg.active) {
+      // No Background Sync support: nudge the SW to flush now that we're online.
+      reg.active.postMessage({ type: 'FLUSH_ANSWER_QUEUE' });
+    }
+  } catch {
+    // non-fatal: the queue will be retried on the next online event
+  }
+}
 
 export function initPwa() {
   const btnInstall = document.getElementById('btn-install');
@@ -42,7 +63,11 @@ export function initPwa() {
 
   window.addEventListener('appinstalled', () => btnInstall?.classList.add('hidden'));
 
-  const syncOnline = () => banner?.classList.toggle('hidden', navigator.onLine);
+  const syncOnline = () => {
+    const online = navigator.onLine;
+    banner?.classList.toggle('hidden', online);
+    if (online) requestAnswerQueueSync();
+  };
   window.addEventListener('online', syncOnline);
   window.addEventListener('offline', syncOnline);
   syncOnline();
