@@ -203,3 +203,6 @@ executions, transaction links included.)
 
 <!-- handsoff-issue-371 -->
 - #371: main.js does not parse: duplicate initI18n import with executable statements wedged between import statements
+
+<!-- handsoff-issue-372 -->
+- #372: dashboard.js does not parse: duplicate initI18n import, same pattern as main.js
