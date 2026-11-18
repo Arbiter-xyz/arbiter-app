@@ -206,3 +206,6 @@ executions, transaction links included.)
 
 <!-- handsoff-issue-372 -->
 - #372: dashboard.js does not parse: duplicate initI18n import, same pattern as main.js
+
+<!-- handsoff-issue-373 -->
+- #373: i18n.js does not parse: two entire competing i18n implementations concatenated, one missing its closing brace
