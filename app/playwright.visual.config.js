@@ -1,10 +1,16 @@
 // Self-hosted visual regression suite (issue #10). Uses Playwright's own
 // toHaveScreenshot() pixel diffing — no SaaS. Baselines live in
 // visual/__screenshots__ and are reviewed like code in PRs.
+//
+// NOTE (issue #238): this is the single source of truth for the visual suite.
+// The former app/visual/playwright.config.js was an orphaned, divergent copy
+// (different testDir/testMatch/snapshot template/webServer) that was never
+// wired to an npm script; it has been removed so `npm run visual` cannot drift.
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './visual',
+  testMatch: '**/*.visual.spec.js',
   snapshotPathTemplate: '{testDir}/__screenshots__/{projectName}/{arg}{ext}',
   fullyParallel: true,
   retries: 0,
