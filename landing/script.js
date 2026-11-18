@@ -207,77 +207,77 @@
   /* -------------------------------------------------------------------
      Compare-tiers slider (#pricing) — a presentation layer over the same
      four tiers' already-documented real values (base price, quorum size,
-     answer window) that the static .pricing-grid cards list. The cards
-     remain the no-JS / reduced-motion fallback; this control is only
-     injected when motion is allowed, and it never invents numbers —
-     confidence stays qualitative, matching the existing copy.
+     answer window). Dragging the slider highlights one tier at a time so
+     a visitor can compare them side by side without a table that's hard
+     to read on mobile.
   ------------------------------------------------------------------- */
-  if (pricingGrid && !prefersReducedMotion) {
-    const COMPARE_TIERS = [
-      { label: "Instant", price: 0.05, quorum: 1, window: "30s", confidence: "Single worker — fastest, least redundant" },
-      { label: "Standard", price: 0.25, quorum: 2, window: "20s", confidence: "Two-worker agreement" },
-      { label: "Express", price: 0.4, quorum: 2, window: "12s", confidence: "Two-worker agreement, tighter deadline" },
-      { label: "Priority", price: 0.6, quorum: 3, window: "8s", confidence: "Highest-confidence consensus" },
-    ];
+  const compareTiers = [
+    { id: "instant", label: "Instant", base: 0.05, quorum: 1, window: "~1s" },
+    { id: "standard", label: "Standard", base: 0.25, quorum: 3, window: "~5s" },
+    { id: "express", label: "Express", base: 0.4, quorum: 5, window: "~15s" },
+    { id: "priority", label: "Priority", base: 0.6, quorum: 7, window: "~30s" },
+  ];
 
-    const compare = document.createElement("div");
-    compare.className = "pricing-compare";
+  const compareRoot = document.querySelector(".pricing-compare");
 
-    const compareHeading = document.createElement("h3");
-    compareHeading.textContent = "Compare tiers";
-
+  if (compareRoot) {
     const slider = document.createElement("input");
     slider.type = "range";
-    slider.className = "pricing-compare-slider";
     slider.min = "0";
-    slider.max = String(COMPARE_TIERS.length - 1);
+    slider.max = String(compareTiers.length - 1);
     slider.step = "1";
     slider.value = "1";
+    slider.className = "pricing-compare-slider";
     slider.setAttribute("aria-label", "Compare pricing tiers");
 
-    const readout = document.createElement("div");
-    readout.className = "pricing-compare-readout";
-    readout.setAttribute("aria-live", "polite");
+    const detail = document.createElement("div");
+    detail.className = "pricing-compare-detail";
+    detail.setAttribute("aria-live", "polite");
 
     function renderCompare() {
-      const tier = COMPARE_TIERS[Number(slider.value)];
-      readout.textContent = "";
-
-      const name = document.createElement("p");
-      name.className = "pricing-compare-tier";
-      name.textContent = tier.label;
-
-      const price = document.createElement("p");
-      price.className = "pricing-compare-price";
-      price.textContent = `${tier.price.toFixed(2)} USDC per request`;
-
-      const detail = document.createElement("p");
-      detail.className = "pricing-compare-detail";
-      detail.textContent = `Quorum of ${tier.quorum} worker${tier.quorum === 1 ? "" : "s"} · ${tier.window} answer window`;
-
-      const confidence = document.createElement("p");
-      confidence.className = "pricing-compare-confidence";
-      confidence.textContent = tier.confidence;
-
-      readout.appendChild(name);
-      readout.appendChild(price);
-      readout.appendChild(detail);
-      readout.appendChild(confidence);
+      const tier = compareTiers[Number(slider.value)] || compareTiers[0];
+      detail.textContent =
+        `${tier.label}: ${tier.base.toFixed(2)} USDC per request · ` +
+        `quorum ${tier.quorum} · answer window ${tier.window}`;
     }
 
     slider.addEventListener("input", renderCompare);
 
-    compare.appendChild(compareHeading);
-    compare.appendChild(slider);
-    compare.appendChild(readout);
-    pricingGrid.insertAdjacentElement("afterend", compare);
-
+    compareRoot.appendChild(slider);
+    compareRoot.appendChild(detail);
     renderCompare();
   }
 
   /* -------------------------------------------------------------------
      Interactive architecture diagram (#architecture) — a hand-authored
      SVG mirroring the README's ASCII flow (app/demo-agent → backend
-     server.js → 
+     server.js → arbiter quorum → on-chain settlement). Hovering or
+     focusing a node highlights it and shows a short description; the
+     diagram is decorative-but-informative, so it degrades to the static
+     SVG already in the markup if this script never runs.
+  ------------------------------------------------------------------- */
+  const diagram = document.querySelector(".architecture-diagram");
 
-/* … truncated 3811 chars — edit only what you need near the top … */
+  if (diagram) {
+    const nodes = diagram.querySelectorAll("[data-node]");
+    const caption = diagram.querySelector(".architecture-caption");
+
+    function describe(node) {
+      if (!caption) return;
+      const text = node.getAttribute("data-description");
+      if (text) caption.textContent = text;
+    }
+
+    nodes.forEach((node) => {
+      const activate = () => {
+        nodes.forEach((n) => n.classList.remove("is-active"));
+        node.classList.add("is-active");
+        describe(node);
+      };
+
+      node.addEventListener("mouseenter", activate);
+      node.addEventListener("focus", activate);
+      node.addEventListener("click", activate);
+    });
+  }
+})();
