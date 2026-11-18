@@ -200,3 +200,6 @@ executions, transaction links included.)
 
 <!-- handsoff-issue-227 -->
 - #227: admin.js's renderMatchRatioChart uses undefined SVG_NS
+
+<!-- handsoff-issue-219 -->
+- #219: Leadermock.js is an orphaned, stale duplicate of leaderboard.js
