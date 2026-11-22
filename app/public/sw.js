@@ -208,11 +208,14 @@ const EXTENSION_MESSAGE_SOURCE = 'arbiter-extension';
 // NOTE: scaffolding only (see above) — no extension/ directory exists yet, so
 // this currently has no recipient. It is a no-op until the extension ships.
 function forwardPushToExtension(payload) {
-  return self.clients
-    .matchAll({ type: 'window', includeUncontrolled: true })
-    .then((clients) =>
-      clients.forEach((client) =>
-        client.postMessage({ source: EXTENSION_MESSAGE_SOURCE, type: 'arbiter:push', payload }),
-      ),
-    );
+  try {
+    // chrome.runtime.sendMessage reaches the extension only when the extension
+    // has declared externally_connectable for this origin; otherwise this is a
+    // no-op and the web-push notification above remains the fallback.
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      chrome.runtime.sendMessage({ source: 'arbiter-page', type: 'push', payload });
+    }
+  } catch {
+    // extension not installed / not reachable — ignore
+  }
 }

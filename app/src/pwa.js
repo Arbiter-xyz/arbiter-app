@@ -9,7 +9,7 @@
 import { t } from './i18n.js';
 import { webPushSupported } from './platform.js';
 
-const ANSWER_QUEUE_SYNC_TAG = 'flush-answer-queue';
+const ANSWER_QUEUE_SYNC_TAG = 'answer-queue'; // must match ANSWER_SYNC_TAG in public/sw.js
 
 let deferredPrompt = null;
 
@@ -21,7 +21,7 @@ async function requestAnswerQueueSync() {
       await reg.sync.register(ANSWER_QUEUE_SYNC_TAG);
     } else if (reg.active) {
       // No Background Sync support: nudge the SW to flush now that we're online.
-      reg.active.postMessage({ type: 'FLUSH_ANSWER_QUEUE' });
+      reg.active.postMessage({ type: 'RETRY_ANSWER_QUEUE' }); // the message sw.js listens for
     }
   } catch {
     // non-fatal: the queue will be retried on the next online event
