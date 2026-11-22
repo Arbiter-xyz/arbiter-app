@@ -1,0 +1,8 @@
+{
+  "appId": "xyz.arbiter.worker",
+  "appName": "Arbiter",
+  "webDir": "../app/dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}

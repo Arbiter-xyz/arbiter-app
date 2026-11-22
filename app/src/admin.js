@@ -3,17 +3,27 @@ import { truncateAddress, formatRatio } from './format.js';
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';
 const DENSITY_KEY = 'arbiter-admin-density';
+const LAYOUT_KEY = 'arbiter-admin-layout';
+
+// Views each role may open. A role missing from this map (or no role system
+// on the backend at all) keeps today's single-token full access.
+const ROLE_VIEWS = {
+  readonly: ['overview', 'transactions', 'workers', 'payers', 'pools', 'blockchain', 'fraud'],
+};
+let allowedViews = null; // null = unrestricted
 
 function applyDensity(compact) {
-  document.getElementById('admin-shell').classList.toggle('density-compact', compact);
+  document.getElementById('admin-shell')?.classList.toggle('density-compact', compact);
   const toggle = document.getElementById('density-toggle');
-  toggle.classList.toggle('active', compact);
-  toggle.setAttribute('aria-pressed', String(compact));
+  if (toggle) {
+    toggle.classList.toggle('active', compact);
+    toggle.setAttribute('aria-pressed', String(compact));
+  }
 }
 
 applyDensity(localStorage.getItem(DENSITY_KEY) === 'compact');
-document.getElementById('density-toggle').addEventListener('click', () => {
-  const compact = !document.getElementById('admin-shell').classList.contains('density-compact');
+document.getElementById('density-toggle')?.addEventListener('click', () => {
+  const compact = !document.getElementById('admin-shell')?.classList.contains('density-compact');
   localStorage.setItem(DENSITY_KEY, compact ? 'compact' : 'comfortable');
   applyDensity(compact);
 });
@@ -24,6 +34,18 @@ document.getElementById('density-toggle').addEventListener('click', () => {
 // below can flag them consistently.
 const LOW_BALANCE_USDC = 100;
 const LOW_BALANCE_XLM = 50;
+
+// Fraud-flag match-ratio cutoff. This used to be a hardcoded constant with
+// no admin-facing config surface; it's now backed by localStorage (same
+// pattern as DENSITY_KEY above) so an operator can tune it per-browser
+// without a redeploy, while still defaulting to the original 0.5 policy.
+const FRAUD_THRESHOLD_KEY = 'arbiter-admin-fraud-threshold';
+const DEFAULT_FRAUD_THRESHOLD = 0.5;
+
+function getFraudThreshold() {
+  const raw = Number(localStorage.getItem(FRAUD_THRESHOLD_KEY));
+  return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : DEFAULT_FRAUD_THRESHOLD;
+}
 
 // Every table below renders data that traces back to caller-controlled
 // input somewhere upstream — a non-address workerId (no auth required,
@@ -68,7 +90,7 @@ async function fetchAdmin(path, options = {}) {
     headers: { Authorization: `Bearer ${token}`, ...(options.headers || {}) },
   });
   if (res.status === 401) {
-    localStorage.removeItem(TOKEN_KEY);
+    try { localStorage.removeItem(TOKEN_KEY); } catch { /* storage blocked — nothing stored to clear */ }
     showLogin('That token was rejected — try again.');
     throw new Error('unauthorized');
   }
@@ -378,10 +400,20 @@ function renderMatchRatioChart(container, ratios, flagBelow = 0.5) {
 
 async function renderFraud() {
   const tbody = document.getElementById('fraud-body');
+  const thresholdInput = document.getElementById('fraud-threshold');
+  thresholdInput.value = getFraudThreshold();
+  thresholdInput.onchange = () => {
+    const v = Number(thresholdInput.value);
+    if (Number.isFinite(v) && v >= 0 && v <= 1) {
+      localStorage.setItem(FRAUD_THRESHOLD_KEY, String(v));
+      renderFraud();
+    }
+  };
   const { workers } = await fetchAdmin('/admin/workers');
   renderMatchRatioChart(
     document.getElementById('fraud-chart'),
     workers.filter((w) => w.established && w.matchRatio !== null).map((w) => w.matchRatio),
+    getFraudThreshold(),
   );
   const flagged = workers
     .filter((w) => w.established && w.matchRatio !== null)
@@ -448,122 +480,33 @@ async function renderPayouts() {
   );
 }
 
-// ---------------------------------------------------------------------
-// Worker pool whitelists (issue #36). Whitelist-gated dispatch for private
-// worker pools is assumed to be backend-owned enforcement (dispatch.js) —
-// this view only manages the whitelist data itself, against an assumed
-// contract (the authoritative shape is the backend agent's to set):
-//   GET    /admin/worker-pools                          -> { pools: [{ id, name, whitelist: string[] }] }
-//   POST   /admin/worker-pools/:poolId/whitelist         { address } -> { whitelist: string[] }
-//   DELETE /admin/worker-pools/:poolId/whitelist/:address            -> { whitelist: string[] }
-// ---------------------------------------------------------------------
-
-let poolsCache = [];
-let selectedPoolId = null;
-
-// Mirrors the StrKey.isValidEd25519PublicKey check main.js already uses for
-// the optional withdraw-beneficiary field — reject malformed input before
-// it ever reaches the backend.
-function isValidWorkerAddress(address) {
-  return /^G[A-Z2-7]{55}$/.test(address);
-}
-
-async function renderPools() {
-  const poolsSelect = document.getElementById('pools-select');
-  const { pools } = await fetchAdmin('/admin/worker-pools');
-  poolsCache = pools || [];
-  poolsSelect.replaceChildren(
-    ...poolsCache.map((p) => {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.name || p.id;
-      return opt;
-    }),
-  );
-  if (poolsCache.length === 0) {
-    selectedPoolId = null;
-    replaceRows(document.getElementById('pools-body'), [emptyRow(2, 'No worker pools configured yet.')]);
+async function renderAuditLog() {
+  const tbody = document.getElementById('audit-body');
+  if (!tbody) return;
+  let entries;
+  try {
+    ({ entries } = await fetchAdmin('/admin/audit'));
+  } catch (err) {
+    if (err.message === 'unauthorized') throw err;
+    replaceRows(tbody, [emptyRow(5, 'Audit log unavailable — this backend does not expose GET /admin/audit yet.')]);
     return;
   }
-  selectedPoolId = poolsCache[0].id;
-  poolsSelect.value = selectedPoolId;
-  renderPoolWhitelist();
-}
-
-function renderPoolWhitelist() {
-  const tbody = document.getElementById('pools-body');
-  const pool = poolsCache.find((p) => p.id === selectedPoolId);
-  const whitelist = (pool && pool.whitelist) || [];
-  if (whitelist.length === 0) {
-    replaceRows(tbody, [emptyRow(2, 'No whitelisted workers in this pool yet.')]);
+  if (!entries || entries.length === 0) {
+    replaceRows(tbody, [emptyRow(5, 'No admin actions recorded yet.')]);
     return;
   }
   replaceRows(
     tbody,
-    whitelist.map((address) => {
-      const btnRemove = document.createElement('button');
-      btnRemove.textContent = 'Remove';
-      btnRemove.className = 'small';
-      btnRemove.addEventListener('click', () => removeFromWhitelist(address));
-      const actionCell = document.createElement('td');
-      actionCell.appendChild(btnRemove);
-      return row([td(address, { title: address }), actionCell]);
-    }),
+    entries.map((e) =>
+      row([
+        td(e.at ? new Date(e.at).toLocaleString() : '—', { className: 'muted small' }),
+        td(e.actor || '—'),
+        td(e.action || '—'),
+        td(truncateAddress(e.target), { title: e.target || '' }),
+        td(e.detail === undefined ? '—' : typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail)),
+      ]),
+    ),
   );
-}
-
-document.getElementById('pools-select').addEventListener('change', (evt) => {
-  selectedPoolId = evt.target.value;
-  renderPoolWhitelist();
-});
-
-document.getElementById('pool-add-form').addEventListener('submit', async (evt) => {
-  evt.preventDefault();
-  const status = document.getElementById('pools-status');
-  const input = document.getElementById('pool-add-address');
-  const address = input.value.trim();
-  if (!selectedPoolId) {
-    status.textContent = 'No pool selected.';
-    return;
-  }
-  if (!isValidWorkerAddress(address)) {
-    status.textContent = 'Not a valid Stellar worker address.';
-    return;
-  }
-  const pool = poolsCache.find((p) => p.id === selectedPoolId);
-  if (pool && (pool.whitelist || []).includes(address)) {
-    status.textContent = 'That address is already whitelisted for this pool.';
-    return;
-  }
-  try {
-    const { whitelist } = await fetchAdmin(`/admin/worker-pools/${encodeURIComponent(selectedPoolId)}/whitelist`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address }),
-    });
-    if (pool) pool.whitelist = whitelist;
-    input.value = '';
-    status.textContent = 'Added.';
-    renderPoolWhitelist();
-  } catch (err) {
-    if (err.message !== 'unauthorized') status.textContent = `Could not add address: ${err.message}`;
-  }
-});
-
-async function removeFromWhitelist(address) {
-  const status = document.getElementById('pools-status');
-  try {
-    const { whitelist } = await fetchAdmin(
-      `/admin/worker-pools/${encodeURIComponent(selectedPoolId)}/whitelist/${encodeURIComponent(address)}`,
-      { method: 'DELETE' },
-    );
-    const pool = poolsCache.find((p) => p.id === selectedPoolId);
-    if (pool) pool.whitelist = whitelist;
-    status.textContent = 'Removed.';
-    renderPoolWhitelist();
-  } catch (err) {
-    if (err.message !== 'unauthorized') status.textContent = `Could not remove address: ${err.message}`;
-  }
 }
 
 const VIEWS = {
@@ -571,23 +514,170 @@ const VIEWS = {
   transactions: renderTransactions,
   workers: renderWorkers,
   payers: renderPayers,
-  pools: renderPools,
   fees: renderFees,
   treasury: renderTreasury,
   kyc: renderKyc,
   payouts: renderPayouts,
   blockchain: renderBlockchain,
   fraud: renderFraud,
+  audit: renderAuditLog,
 };
 
-async function selectView(name) {
-  document.querySelectorAll('.admin-nav-link[data-view]').forEach((el) => el.classList.toggle('active', el.dataset.view === name));
+function canView(name) {
+  return allowedViews === null || allowedViews.includes(name);
+}
+
+// ---------------------------------------------------------------------
+// Role-based access. GET /admin/whoami returning { role } narrows the nav;
+// a backend without it (404) keeps single-token full access unchanged.
+// ---------------------------------------------------------------------
+
+async function loadRole() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  let role = null;
+  try {
+    const res = await fetch(`${BACKEND_URL}/admin/whoami`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.ok) ({ role } = await res.json());
+  } catch {
+    // no role system reachable — fall through to full access
+  }
+  allowedViews = role && ROLE_VIEWS[role] ? ROLE_VIEWS[role] : null;
+  const label = document.getElementById('admin-role');
+  if (label) {
+    label.textContent = role ? `Role: ${role}` : '';
+    label.classList.toggle('hidden', !role);
+  }
+}
+
+// ---------------------------------------------------------------------
+// Layout preference: per-group order and hidden views, in localStorage.
+// No saved preference = the static default order from admin.html.
+// ---------------------------------------------------------------------
+
+function loadLayout() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAYOUT_KEY));
+    return { order: saved?.order || [], hidden: saved?.hidden || [] };
+  } catch {
+    return { order: [], hidden: [] };
+  }
+}
+
+function saveLayout(layout) {
+  localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+}
+
+function navLinks() {
+  return [...document.querySelectorAll('.admin-nav-link[data-view]')];
+}
+
+function applyLayout() {
+  const { order, hidden } = loadLayout();
+  document.querySelectorAll('.admin-nav-group').forEach((group) => {
+    const links = [...group.querySelectorAll('.admin-nav-link[data-view]')];
+    const rank = (el) => {
+      const i = order.indexOf(el.dataset.view);
+      return i === -1 ? order.length + links.indexOf(el) : i;
+    };
+    links.sort((a, b) => rank(a) - rank(b));
+    const anchor = group.querySelector('a.admin-nav-link');
+    links.forEach((el) => group.insertBefore(el, anchor));
+  });
+  navLinks().forEach((el) => {
+    el.classList.toggle('hidden', !canView(el.dataset.view) || hidden.includes(el.dataset.view));
+  });
+}
+
+function renderCustomizePanel() {
+  const panel = document.getElementById('admin-customize-panel');
+  if (!panel) return;
+  const layout = loadLayout();
+  const links = navLinks().filter((el) => canView(el.dataset.view));
+  const rows = links.map((el) => {
+    const view = el.dataset.view;
+    const wrap = document.createElement('div');
+    wrap.className = 'admin-customize-row';
+    const label = document.createElement('label');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = !layout.hidden.includes(view);
+    box.addEventListener('change', () => {
+      layout.hidden = box.checked ? layout.hidden.filter((v) => v !== view) : [...layout.hidden, view];
+      saveLayout(layout);
+      applyLayout();
+    });
+    label.append(box, ` ${el.textContent}`);
+    const move = (dir) => {
+      const current = navLinks().map((l) => l.dataset.view);
+      const siblings = [...el.parentElement.querySelectorAll('.admin-nav-link[data-view]')].map((l) => l.dataset.view);
+      const i = siblings.indexOf(view);
+      const j = i + dir;
+      if (j < 0 || j >= siblings.length) return;
+      [siblings[i], siblings[j]] = [siblings[j], siblings[i]];
+      layout.order = [...siblings, ...current.filter((v) => !siblings.includes(v))];
+      saveLayout(layout);
+      applyLayout();
+      renderCustomizePanel();
+    };
+    const up = document.createElement('button');
+    up.type = 'button';
+    up.textContent = '↑';
+    up.addEventListener('click', () => move(-1));
+    const down = document.createElement('button');
+    down.type = 'button';
+    down.textContent = '↓';
+    down.addEventListener('click', () => move(1));
+    wrap.append(label, up, down);
+    return wrap;
+  });
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.className = 'admin-nav-customize';
+  reset.textContent = 'Reset to default';
+  reset.addEventListener('click', () => {
+    localStorage.removeItem(LAYOUT_KEY);
+    window.location.reload();
+  });
+  panel.replaceChildren(...rows, reset);
+}
+
+document.getElementById('btn-admin-customize')?.addEventListener('click', (e) => {
+  const panel = document.getElementById('admin-customize-panel');
+  if (!panel) return;
+  const open = panel.classList.toggle('hidden') === false;
+  e.currentTarget.setAttribute('aria-expanded', String(open));
+  if (open) renderCustomizePanel();
+});
+
+function firstVisibleView() {
+  return navLinks().find((el) => !el.classList.contains('hidden'))?.dataset.view || 'overview';
+}
+
+async function enterConsole() {
+  showShell();
+  await loadRole();
+  applyLayout();
+  selectView(canView('overview') && !loadLayout().hidden.includes('overview') ? 'overview' : firstVisibleView());
+}
+
+// `moveFocus` is true only for user-initiated switches (#55), so the initial
+// overview render after login doesn't yank focus away from the page start.
+async function selectView(name, moveFocus = false) {
+  // Fail closed: a role without access never triggers the view's fetches.
+  if (!canView(name)) return;
+  document.querySelectorAll('.admin-nav-link[data-view]').forEach((el) => {
+    const active = el.dataset.view === name;
+    el.classList.toggle('active', active);
+    el.setAttribute('aria-selected', String(active));
+    el.tabIndex = active ? 0 : -1;
+  });
   document.querySelectorAll('.admin-view').forEach((el) => el.classList.toggle('active', el.id === `view-${name}`));
+  if (moveFocus) document.querySelector(`#view-${name} h2`)?.focus();
 
   if (!loaded.has(name)) {
     loaded.add(name);
     try {
-      await VIEWS[name]();
+      await VIEWS[name]?.();
     } catch (err) {
       if (err.message !== 'unauthorized') console.error(`failed to load ${name}:`, err);
       loaded.delete(name);
@@ -595,30 +685,49 @@ async function selectView(name) {
   }
 }
 
-document.querySelectorAll('.admin-nav-link[data-view]').forEach((el) => {
-  el.addEventListener('click', () => selectView(el.dataset.view));
+// Tab semantics (#54) with a roving tabindex (#55): Tab enters the tablist
+// once, arrow keys / Home / End move between views, Enter/Space activates.
+const navTabs = [...document.querySelectorAll('.admin-nav-link[data-view]')];
+navTabs.forEach((el, i) => {
+  el.setAttribute('role', 'tab');
+  el.setAttribute('aria-controls', `view-${el.dataset.view}`);
+  document.getElementById(`view-${el.dataset.view}`)?.setAttribute('role', 'tabpanel');
+  el.addEventListener('click', () => selectView(el.dataset.view, true));
+  el.addEventListener('keydown', (e) => {
+    const next = { ArrowDown: i + 1, ArrowRight: i + 1, ArrowUp: i - 1, ArrowLeft: i - 1, Home: 0, End: navTabs.length - 1 }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    const target = navTabs[(next + navTabs.length) % navTabs.length];
+    navTabs.forEach((t) => (t.tabIndex = t === target ? 0 : -1));
+    target.focus();
+  });
 });
+document.querySelectorAll('.admin-view h2').forEach((h) => (h.tabIndex = -1));
 
-document.getElementById('btn-admin-login').addEventListener('click', () => {
+document.getElementById('admin-login-form').addEventListener('submit', (e) => {
+  e.preventDefault();
   const token = document.getElementById('admin-token-input').value.trim();
   if (!token) return;
-  localStorage.setItem(TOKEN_KEY, token);
-  showShell();
-  selectView('overview');
+  try {
+    localStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    showLogin("Couldn't save the token — browser storage is blocked or full. Allow site data and try again.");
+    return;
+  }
+  enterConsole();
 });
 
 // Issue #17: this console holds a real, privileged bearer token — give it
 // an in-app way to end that session, instead of the token persisting in
 // localStorage forever with no way to clear it short of devtools.
-document.getElementById('btn-admin-logout').addEventListener('click', () => {
+document.getElementById('btn-admin-logout')?.addEventListener('click', () => {
   localStorage.removeItem(TOKEN_KEY);
   loaded.clear(); // so a previously-loaded view is refetched, not shown stale, next login
   showLogin();
 });
 
 if (localStorage.getItem(TOKEN_KEY)) {
-  showShell();
-  selectView('overview');
+  enterConsole();
 } else {
   showLogin();
 }
