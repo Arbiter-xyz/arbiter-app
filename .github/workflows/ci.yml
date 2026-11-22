@@ -25,6 +25,13 @@ jobs:
       # exact match and failed on it in practice; npm install tolerates it.
       - run: npm install --no-audit --no-fund
         working-directory: app
+      # Lint gate (issue #513). The ESLint config from #294 exists to catch
+      # ReferenceError-class bugs (no-undef) before runtime, but CI never ran
+      # it — which is how undefined identifiers reached main. Run it before
+      # the build so a no-undef error fails fast.
+      - name: Lint (no-undef gate)
+        run: npm run lint
+        working-directory: app
       - run: npm run build
         working-directory: app
       # Hard, enforced bundle-size budget (issue #4). The wallet-kit chunk
