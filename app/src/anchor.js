@@ -21,9 +21,33 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const POLL_INTERVAL_MS = 3000;
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 
+// Upper bound on the amount we'll auto-relay to an anchor's collection
+// account. The amount comes straight from the anchor's SEP-24 response, so
+// a compromised or misconfigured anchor could otherwise get a worker to
+// sign a transfer far larger than the UI implied. Anything above this is
+// treated as untrusted and falls back to the manual-instructions display.
+const MAX_AUTO_RELAY_AMOUNT = 100000;
+
+// How long a cached anchor config is trusted before we re-fetch it. The
+// config pins the anchor's webAuthEndpoint and transferServer, so a
+// long-lived tab that cached it once could otherwise keep opening the
+// withdrawal popup against an endpoint the backend has since changed
+// (e.g. an anchor migration or a rotated/compromised endpoint). Re-fetching
+// bounds that staleness window without re-hitting the backend on every
+// click.
+const ANCHOR_CONFIG_TTL_MS = 5 * 60 * 1000;
+
+// How many times reportToArbiter retries a failed /anchor/report POST before
+// giving up. A dropped report means admin.js's renderKyc/renderPayouts views
+// silently miss this withdrawal, so a couple of retries with backoff is worth
+// the extra requests — but it stays bounded so a persistently-down backend
+// can't wedge the withdraw flow.
+const REPORT_MAX_ATTEMPTS = 3;
+const REPORT_RETRY_BASE_MS = 500;
+
 async function getAnchorConfig() {
   const res = await fetch(`${BACKEND_URL}/anchor/config`);
-  if (res.status === 503) return null; // no anchor configured on this backend
+  if (res.status === 503) return NO_ANCHOR; // no anchor configured on this backend
   if (!res.ok) throw new Error(`failed to load anchor config (${res.status})`);
   return res.json();
 }
@@ -48,7 +72,7 @@ async function sep10Auth(anchorConfig, address, wallet, networkPassphrase) {
 }
 
 async function startInteractiveWithdraw(anchorConfig, jwt, address, assetCode) {
-  const res = await fetch(`${anchorConfig.transferServerSep24}/transactions/withdraw/interactive`, {
+  const res = await fetch(`${anchorConfig.transferServer}/transactions/withdraw/interactive`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ asset_code: assetCode, account: address }),
@@ -62,7 +86,7 @@ async function pollTransaction(anchorConfig, jwt, id, onUpdate) {
   let lastStatus = null;
 
   while (Date.now() < deadline) {
-    const url = new URL(`${anchorConfig.transferServerSep24}/transaction`);
+    const url = new URL(`${anchorConfig.transferServer}/transaction`);
     url.searchParams.set('id', id);
     const res = await fetch(url, { headers: { Authorization: `Bearer ${jwt}` } });
     if (res.ok) {
@@ -80,20 +104,40 @@ async function pollTransaction(anchorConfig, jwt, id, onUpdate) {
   throw new Error('timed out waiting for the anchor to reach a payment-ready state');
 }
 
+// Best-effort report to the backend so admin.js's renderKyc/renderPayouts
+// views can show this withdrawal. A dropped report means those views silently
+// miss it, so retry a bounded number of times with backoff before giving up.
+// Returns true on success, false if every attempt failed — callers can use
+// that to surface an out-of-sync indicator instead of failing silently.
 async function reportToArbiter({ address, arbiterSessionToken, transaction }) {
-  await fetch(`${BACKEND_URL}/anchor/report`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      address,
-      token: arbiterSessionToken,
-      kind: 'withdrawal',
-      status: transaction.status,
-      amount: transaction.amount_in || null,
-      assetCode: transaction.amount_in_asset || null,
-      anchorTransactionId: transaction.id,
-    }),
-  }).catch(() => {}); // best-effort — the admin console cache is a convenience, not the source of truth
+  const body = JSON.stringify({
+    address,
+    token: arbiterSessionToken,
+    kind: 'withdrawal',
+    status: transaction.status,
+    amount: transaction.amount_in || null,
+    assetCode: transaction.amount_in_asset || null,
+    anchorTransactionId: transaction.id,
+  });
+
+  for (let attempt = 1; attempt <= REPORT_MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/anchor/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+      if (res.ok) return true;
+      // 4xx (other than 429) won't succeed on retry — bail out early.
+      if (res.status >= 400 && res.status < 500 && res.status !== 429) return false;
+    } catch {
+      // network error — fall through to retry
+    }
+    if (attempt < REPORT_MAX_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, REPORT_RETRY_BASE_MS * attempt));
+    }
+  }
+  return false;
 }
 
 /**
@@ -115,95 +159,120 @@ async function reportToArbiter({ address, arbiterSessionToken, transaction }) {
  */
 export function initBankWithdraw({ button, status, getAddress, getWallet, getArbiterSessionToken, networkPassphrase, assetCode, autoRelayWithdrawal }) {
   let anchorConfigPromise = null;
+  let anchorConfigFetchedAt = 0;
 
-  async function ensureAnchorConfig() {
-    if (!anchorConfigPromise) anchorConfigPromise = getAnchorConfig();
+  // Re-fetch the anchor config once the cached copy is older than
+  // ANCHOR_CONFIG_TTL_MS, so a long-lived tab can't keep opening the
+  // withdrawal popup against a stale endpoint after the backend's anchor
+  // config has changed. Concurrent callers share the in-flight promise.
+  //
+  // Only a successful fetch is cached; a failed one clears the promise so
+  // the next click retries instead of being stuck on a rejected promise.
+  function loadAnchorConfig() {
+    const now = Date.now();
+    if (anchorConfigPromise && now - anchorConfigFetchedAt < ANCHOR_CONFIG_TTL_MS) {
+      return anchorConfigPromise;
+    }
+    anchorConfigFetchedAt = now;
+    anchorConfigPromise = getAnchorConfig().catch((err) => {
+      anchorConfigPromise = null;
+      throw err;
+    });
     return anchorConfigPromise;
   }
 
-  ensureAnchorConfig()
-    .then((cfg) => {
-      if (cfg) button.classList.remove('hidden');
+  // Hide the button until we know an anchor is configured.
+  button.hidden = true;
+  loadAnchorConfig()
+    .then((config) => {
+      if (config && config.webAuthEndpoint && config.transferServer) {
+        button.hidden = false;
+      }
     })
-    .catch(() => {}); // no anchor configured, or unreachable — button stays hidden either way
+    .catch(() => {
+      // Leave the button hidden — no anchor, nothing to withdraw to.
+    });
 
   button.addEventListener('click', async () => {
     button.disabled = true;
     status.textContent = '';
     try {
-      const anchorConfig = await ensureAnchorConfig();
-      if (!anchorConfig) throw new Error('no fiat anchor is configured on this backend');
+      const anchorConfig = await loadAnchorConfig();
+      if (!anchorConfig || !anchorConfig.webAuthEndpoint || !anchorConfig.transferServer) {
+        status.textContent = 'No bank anchor is configured on this deployment.';
+        return;
+      }
 
-      const address = getAddress();
-      const wallet = getWallet();
+      const address = await getAddress();
+      const wallet = await getWallet();
+      if (!address || !wallet) {
+        status.textContent = 'Connect a wallet first.';
+        return;
+      }
 
-      status.textContent = 'Authenticating with the anchor (one signature)…';
+      status.textContent = 'Signing in to the anchor…';
       const jwt = await sep10Auth(anchorConfig, address, wallet, networkPassphrase);
 
-      status.textContent = 'Opening the anchor\'s withdrawal form…';
+      status.textContent = 'Opening the anchor\'s withdrawal page…';
       const { url, id } = await startInteractiveWithdraw(anchorConfig, jwt, address, assetCode);
-      window.open(url, 'arbiter-anchor-withdraw', 'width=480,height=720');
+      window.open(url, '_blank', 'noopener');
 
-      status.textContent = 'Waiting for you to finish the anchor\'s form…';
-      const transaction = await pollTransaction(anchorConfig, jwt, id, (t) => {
-        status.textContent = `Anchor status: ${t.status}`;
+      status.textContent = 'Waiting for you to finish the anchor\'s withdrawal form…';
+      const transaction = await pollTransaction(anchorConfig, jwt, id, (tx) => {
+        status.textContent = `Anchor status: ${tx.status}`;
       });
 
-      await reportToArbiter({ address, arbiterSessionToken: await getArbiterSessionToken(), transaction });
+      if (transaction.status === 'error' || transaction.status === 'refunded') {
+        status.textContent = `The anchor could not complete this withdrawal (${transaction.status}).`;
+        return;
+      }
 
-      if (transaction.status === 'pending_user_transfer_start') {
-        const canAutoRelay =
-          typeof autoRelayWithdrawal === 'function' &&
-          transaction.withdraw_anchor_account &&
-          transaction.amount_in &&
-          Number(transaction.amount_in) > 0;
+      const arbiterSessionToken = await getArbiterSessionToken();
+      const reported = await reportToArbiter({ address, arbiterSessionToken, transaction });
+      if (!reported) {
+        status.textContent = 'Withdrawal reached a payment-ready state, but reporting it to the backend failed — an admin may need to reconcile this manually.';
+      }
 
-        let fallbackPrefix = '';
-        if (canAutoRelay && window.confirm(`Send ${transaction.amount_in} ${assetCode} to the anchor to complete this withdrawal?`)) {
+      const amount = transaction.amount_in;
+      const beneficiary = transaction.withdraw_anchor_account;
+      const memo = transaction.withdraw_memo;
+      const memoType = transaction.withdraw_memo_type;
+
+      const canAutoRelay =
+        typeof autoRelayWithdrawal === 'function' &&
+        amount &&
+        beneficiary &&
+        Number(amount) > 0 &&
+        Number(amount) <= MAX_AUTO_RELAY_AMOUNT;
+
+      if (canAutoRelay) {
+        const confirmed = window.confirm(
+          `Send ${amount} ${assetCode} to the anchor's collection account?\n\n` +
+          `Destination: ${beneficiary}\n` +
+          (memo ? `Memo (${memoType || 'text'}): ${memo}\n` : '') +
+          '\nThis is a real transfer and cannot be undone.'
+        );
+        if (confirmed) {
+          status.textContent = 'Sending the withdrawal transfer…';
           try {
-            status.textContent = 'Sending the payment to the anchor…';
-            await autoRelayWithdrawal({
-              amount: transaction.amount_in,
-              beneficiary: transaction.withdraw_anchor_account,
-              memo: transaction.withdraw_memo
-                ? { type: transaction.withdraw_memo_type || 'text', value: transaction.withdraw_memo }
-                : null,
-            });
-            status.textContent = 'Payment sent — waiting for the anchor to confirm receipt…';
+            await autoRelayWithdrawal({ amount, beneficiary, memo });
+            status.textContent = 'Withdrawal sent to the anchor. It will credit your bank account once the anchor processes it.';
             return;
           } catch (err) {
-            // Fail to the safer manual-instructions path below rather than
-            // leaving the worker unsure whether the transfer went through.
-            fallbackPrefix = `Automatic transfer failed (${err.message}) — showing manual instructions instead. `;
+            status.textContent = `Automatic transfer failed (${err.message}). Follow the anchor's instructions below to send it manually.`;
           }
         }
-
-        // Built with createElement/textContent, not innerHTML — amount_in,
-        // withdraw_anchor_account, and withdraw_memo all come straight from
-        // the configured anchor's own SEP-24 API response, a third party
-        // this backend doesn't control. A malicious or compromised anchor
-        // could otherwise inject markup here.
-        status.textContent = fallbackPrefix;
-        status.append('Send ');
-        const amountStrong = document.createElement('strong');
-        amountStrong.textContent = `${transaction.amount_in} ${assetCode}`;
-        status.append(amountStrong, ' to ');
-        const accountCode = document.createElement('code');
-        accountCode.textContent = transaction.withdraw_anchor_account;
-        status.append(accountCode);
-        if (transaction.withdraw_memo) {
-          const memoCode = document.createElement('code');
-          memoCode.textContent = transaction.withdraw_memo;
-          status.append(' with memo ', memoCode);
-        }
-        status.append(' to complete this withdrawal — the anchor is now waiting for that on-chain payment.');
-      } else if (transaction.status === 'completed') {
-        status.textContent = 'Withdrawal completed by the anchor.';
-      } else {
-        status.textContent = `Anchor reported: ${transaction.status}`;
       }
+
+      // Manual fallback: show exactly what the anchor wants the user to send.
+      const lines = [
+        `Send ${amount || '(amount not provided)'} ${assetCode} to the anchor to complete this withdrawal.`,
+        beneficiary ? `Destination: ${beneficiary}` : null,
+        memo ? `Memo (${memoType || 'text'}): ${memo}` : null,
+      ].filter(Boolean);
+      status.textContent = lines.join(' ');
     } catch (err) {
-      status.textContent = `Bank withdrawal failed: ${err.message}`;
+      status.textContent = `Withdrawal failed: ${err.message}`;
     } finally {
       button.disabled = false;
     }

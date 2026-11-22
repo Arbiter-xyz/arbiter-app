@@ -1,34 +1,50 @@
 # Security Policy
 
-## Supported Versions
+## Reporting a vulnerability
 
-Arbiter is currently deployed continuously from the `main` branch. Security fixes are applied directly to `main`.
+Please **do not** open a public GitHub issue for security problems.
 
-| Version / Branch | Supported          |
-| ---------------- | ------------------ |
-| `main`           | :white_check_mark: |
-| Older commits    | :x:                |
+Report privately through either channel:
 
-## Reporting a Vulnerability
+- **GitHub Security Advisories** — use the ["Report a vulnerability"](https://github.com/Arbiter-xyz/arbiter-app/security/advisories/new)
+  button on this repository's **Security** tab (preferred: it keeps the
+  report, discussion and fix private until a coordinated disclosure).
+- **Email** — `security@arbiter.xyz`.
 
-**Please do not report security vulnerabilities through public GitHub issues, discussions, or pull requests.**
+Please include enough to reproduce: affected page/flow, browser/environment,
+and the impact you believe it has. If you have a proof of concept, attach it.
 
-Instead, please report vulnerabilities privately using **[GitHub Private Vulnerability Reporting](https://github.com/Arbiter-xyz/arbiter-app/security/advisories/new)** on this repository.
+## What's in scope
 
-When submitting a report, please include:
+This repository — the Arbiter frontend — is the client-side security-sensitive
+surface. In particular:
 
-- The affected component(s) and file path(s) (e.g., `app/src/localWallet.js`, `app/src/contractCalls.js`, `app/src/admin.js`, `app/src/customer.js`, `landing/`).
-- Step-by-step reproduction instructions or a minimal proof-of-concept.
-- The potential impact (e.g., key extraction, unauthorized session token access, stored/reflected XSS in the worker/buyer/admin consoles, or Soroban XDR manipulation).
+- The non-custodial quick-start wallet (`walletWorker.js`): key generation,
+  storage, and signing, all meant to stay inside the Web Worker and never
+  touch the main thread or leave the browser unencrypted.
+- Admin console authentication and any place a bearer token or secret could
+  end up logged, cached, or sent somewhere it shouldn't (error reporting,
+  session replay).
+- Input rendering: anywhere self-reported or third-party data (worker IDs,
+  question/answer text, SEP-24 anchor fields) reaches the DOM — XSS via
+  `innerHTML` is the main risk shape here.
 
-## Response Timeline
+Out of scope: the backend API (report to
+[arbiter-backend](https://github.com/Arbiter-xyz/arbiter-backend)), the
+on-chain contract (report to
+[arbiter-contract](https://github.com/Arbiter-xyz/arbiter-contract)), and
+findings that require a compromised host or already-leaked secret.
 
-- **Initial acknowledgment:** within **48 hours** of report submission.
-- **Triage & severity assessment:** within **5 business days**.
-- **Remediation & coordinated disclosure:** we aim to ship a fix within **14 days** for critical/high-severity issues and coordinate public disclosure after the patch is deployed.
+## Deployment status
 
-## Scope & Security Model Notes
+This is presently a **testnet-only** deployment. It is production-shaped,
+but the keys and funds involved are testnet — please calibrate severity
+accordingly. We would still rather hear about an issue early than read it
+in a public issue.
 
-- **Non-custodial browser wallet (`app/src/localWallet.js`):** Quick-start Stellar keys are generated client-side and migrated into non-extractable WebCrypto storage once backup is confirmed. Any bypass allowing secret extraction after `lockExport()` or XSS in the application pages (`app/*.html`) is considered high severity.
-- **Session & bearer tokens (`app/src/session.js`, `app/src/admin.js`, `app/src/customer.js`):** Leakage of session tokens, API keys (`#apikey-reveal-input`), or admin bearer tokens (`#admin-token-input`) to third-party origins or telemetry/replay pipelines (`app/src/errorReporting.js`, `app/src/sessionReplay.js`) is in scope.
-- **Cross-repository issues:** For vulnerabilities in the backend (`arbiter-backend`), Soroban contracts (`arbiter-contracts`), or SDKs (`arbiter-sdk`, `arbiter-Guillotine`), please report via the corresponding repository's Security Advisories tab or mention the cross-repo impact in your report here.
+## What to expect
+
+We aim to acknowledge a report within **3 business days** and to give an
+initial assessment within **7 business days**. We'll keep you updated as
+we work on a fix and are happy to credit you in the advisory unless you'd
+prefer otherwise.

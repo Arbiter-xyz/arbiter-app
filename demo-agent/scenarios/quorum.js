@@ -8,6 +8,9 @@ export async function run() {
   if (!process.env.DEMO_PAYER_SECRET) throw new Error('DEMO_PAYER_SECRET is not set');
   const payer = Keypair.fromSecret(process.env.DEMO_PAYER_SECRET);
   const count = Number(process.env.SCENARIO_WORKERS || 3);
+  if (!Number.isInteger(count) || count < 1) {
+    throw new Error(`SCENARIO_WORKERS must be a positive integer, got ${JSON.stringify(process.env.SCENARIO_WORKERS)}`);
+  }
   const stamp = Date.now();
 
   const workers = await Promise.all(
@@ -16,6 +19,10 @@ export async function run() {
   try {
     const { challenge, job } = await askAndSettle(payer, { question: 'What is the capital of France?' });
     console.log(`Price ${challenge.amount} USDC (surge ${challenge.surgeMultiplier ?? 1}x)`);
+    const quorumSize = challenge.quorumSize ?? job.quorumSize;
+    if (quorumSize != null && count < quorumSize) {
+      console.log(`⚠ only ${count} worker(s) online but quorumSize is ${quorumSize}; the job cannot reach quorum`);
+    }
     if (job.outcome === 'resolved') {
       console.log(`✓ RESOLVED "${job.answer}" by ${job.matchingWorkers.length}/${count} workers: ${explorerTxLink(job.payoutTx)}`);
     } else {

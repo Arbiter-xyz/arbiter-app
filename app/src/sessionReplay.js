@@ -3,6 +3,7 @@
 // build time, and the admin console additionally requires
 // VITE_SESSION_REPLAY_ADMIN=true. See README "Session replay" for why full
 // replay was chosen over error-context-only capture, and its limits.
+import { SENSITIVE_FIELD_IDS } from './sensitiveFields.js';
 
 const KEY = import.meta.env.VITE_SESSION_REPLAY_POSTHOG_KEY || '';
 const HOST = import.meta.env.VITE_SESSION_REPLAY_HOST || 'https://us.i.posthog.com';
@@ -19,8 +20,8 @@ export const BLOCKED_SELECTORS = [
   '#panel-backup',
   // main.js — payout address the worker types for withdrawTo
   '#withdraw-beneficiary-input',
-  // admin.js — privileged bearer token entry
-  '#admin-token-input',
+  // admin.js / demo.js — admin-token entry panel; the token inputs
+  // themselves (#admin-token-input, #demo-token) come from the spread below
   '#panel-login',
   // admin.js — renderKyc(): c.address, self-reported KYC status/tier
   '#view-kyc',
@@ -28,10 +29,11 @@ export const BLOCKED_SELECTORS = [
   // admin.js — renderPayouts(): p.address, amounts, status
   '#view-payouts',
   '#payouts-body',
-  // customer.js — one-time revealed plaintext API key and demo bearer token
+  // checkout.js — revealed plaintext API key on the fiat/API-key checkout
   '#apikey-reveal-input',
   '#apikey-reveal',
-  '#demo-token',
+  // Every secret-bearing field id, shared with errorReporting.js (#198)
+  ...SENSITIVE_FIELD_IDS.map((id) => `#${id}`),
 ];
 
 // Masked elements keep layout but have their text replaced with asterisks.
@@ -47,6 +49,21 @@ export const MASKED_TEXT_SELECTORS = [
   '#treasury-panel',
 ];
 
+// Dev-time drift check: verifies every known sensitive field id is covered by
+// BLOCKED_SELECTORS. Returns the list of uncovered ids (empty when in sync) so
+// callers/tests can assert on it; logs a warning in dev builds. No-op in prod.
+export function assertBlockedSelectorsCoverSensitiveFields() {
+  const blocked = new Set(BLOCKED_SELECTORS);
+  const uncovered = SENSITIVE_FIELD_IDS.filter((id) => !blocked.has(`#${id}`));
+  if (uncovered.length > 0 && import.meta.env.DEV) {
+    console.warn(
+      'session replay: sensitive field ids missing from BLOCKED_SELECTORS:',
+      uncovered,
+    );
+  }
+  return uncovered;
+}
+
 function userOptedOut() {
   return navigator.doNotTrack === '1' || navigator.globalPrivacyControl === true;
 }
@@ -56,6 +73,7 @@ function userOptedOut() {
 export async function initSessionReplay({ page } = {}) {
   if (!KEY || userOptedOut()) return false;
   if (page === 'admin' && !ADMIN_ENABLED) return false;
+  assertBlockedSelectorsCoverSensitiveFields();
   try {
     const { default: posthog } = await import('posthog-js');
     posthog.init(KEY, {
