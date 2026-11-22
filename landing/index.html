@@ -235,6 +235,13 @@
         <p class="section-sub reveal">One endpoint, no API key to start. See the
           <a href="https://github.com/Arbiter-xyz/arbiter-backend#readme">docs</a> for the full
           surface.</p>
+        <!-- Same sandbox endpoint landing/widget.js calls; script.js adds the Copy button. -->
+        <div class="terminal reveal">
+          <div class="terminal-bar"><span class="terminal-title">curl</span></div>
+          <pre><code>curl -X POST https://arbiter-backend-production-4e43.up.railway.app/oracle/sandbox \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What is 6 x 7?"}'</code></pre>
+        </div>
       </div>
     </section>
 
@@ -244,6 +251,8 @@
         <h2 id="pricing-heading" class="section-heading reveal" data-i18n="nav.pricing">Pricing</h2>
         <p class="section-sub reveal">Pay per question, with a wallet or a card. Price is locked
           in at quote time.</p>
+        <!-- Tier-pricing calculator mount point (landing/script.js); a11y-check.mjs asserts it exists. -->
+        <div class="pricing-grid" id="pricing-grid" aria-live="polite"></div>
         <div class="surge-live reveal" id="surge-live" hidden>
           <div class="surge-head">
             <span>Surge multiplier now: <strong id="surge-now">1.00x</strong></span>
