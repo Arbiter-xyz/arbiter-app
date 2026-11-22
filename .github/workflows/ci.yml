@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   app:
     name: Worker console + dashboard (build + audit)
@@ -92,10 +95,10 @@ jobs:
   e2e:
     name: E2E (Playwright wallet-connect smoke, stubbed backend)
     runs-on: ubuntu-latest
-    # Real testnet transactions (sponsor funding, paid question, settlement)
-    # are inherently slower than unit tests; give the suite room to retry
-    # through testnet congestion without masking real regressions.
-    timeout-minutes: 20
+    # This is a stubbed-backend smoke test: the spec intercepts every backend
+    # call with page.route, so no real testnet transactions run here. 10
+    # minutes is plenty for the browser install and the smoke suite.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -112,12 +115,9 @@ jobs:
         run: npx playwright test
         working-directory: app
         env:
-          # Point the suite at a real (or realistically faked) testnet backend.
-          # Override via repo/environment secrets when running against a live
-          # testnet; the suite falls back to its local fake backend otherwise.
+          # Optional base URL override; the suite otherwise uses its local
+          # fake backend (all backend calls are stubbed via page.route).
           E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
-          E2E_TESTNET_RPC_URL: ${{ secrets.E2E_TESTNET_RPC_URL }}
-          E2E_SPONSOR_URL: ${{ secrets.E2E_SPONSOR_URL }}
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
