@@ -82,8 +82,6 @@
      Copy-to-clipboard on code snippets — genuinely useful for a
      developer-facing page, not decorative. Injected via JS so the
      snippet degrades to plain, manually-selectable text if this fails.
-     If the page has no .terminal markup, we inject a real, working
-     snippet block so the feature is not dead on arrival.
   ------------------------------------------------------------------- */
   function wireCopyButtons() {
     document.querySelectorAll(".terminal").forEach((terminal) => {
@@ -115,36 +113,6 @@
     });
   }
 
-  if (!document.querySelector(".terminal")) {
-    const anchor =
-      document.querySelector(".pricing-grid") ||
-      document.querySelector("main") ||
-      document.body;
-
-    if (anchor) {
-      const terminal = document.createElement("div");
-      terminal.className = "terminal";
-
-      const bar = document.createElement("div");
-      bar.className = "terminal-bar";
-      bar.textContent = "curl";
-
-      const pre = document.createElement("pre");
-      const code = document.createElement("code");
-      code.textContent = "curl -X POST https://api.example.com/oracle \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"prompt\": \"hello\"}'";
-      pre.appendChild(code);
-
-      terminal.appendChild(bar);
-      terminal.appendChild(pre);
-
-      if (anchor === document.body) {
-        anchor.appendChild(terminal);
-      } else {
-        anchor.insertAdjacentElement("afterend", terminal);
-      }
-    }
-  }
-
   wireCopyButtons();
 
   /* -------------------------------------------------------------------
@@ -155,10 +123,14 @@
      time — so this is the real price, not a client-side re-derivation.
      If the endpoint is unreachable we fall back to the static base price
      and label the result as an approximation.
-  ------------------------------------------------------------------- */
-  const pricingGrid = document.querySelector(".pricing-grid");
 
-  if (pricingGrid) {
+     The calculator mounts into .pricing-grid (in index.html's #pricing
+     section), falling back to #pricing itself so a markup change can't
+     leave this block silently dead again.
+  ------------------------------------------------------------------- */
+  const pricingSection = document.querySelector(".pricing-grid") || document.getElementById("pricing");
+
+  if (pricingSection) {
     const TIERS = [
       { id: "instant", label: "Instant", base: 0.05 },
       { id: "standard", label: "Standard", base: 0.25 },
@@ -218,7 +190,7 @@
     calc.appendChild(tierRow);
     calc.appendChild(output);
     calc.appendChild(note);
-    pricingGrid.insertAdjacentElement("afterend", calc);
+    pricingSection.appendChild(calc);
 
     render();
 
@@ -240,10 +212,4 @@
         /* keep the labeled approximation already rendered */
       });
   }
-
-  /* -------------------------------------------------------------------
-     Compare-tiers slider (#pricing) — a presentation layer over the same
-     four tiers' already-documented real values (base price, quorum size,
-     answe
-
-/* … truncated 3055 chars — edit only what you need near the top … */
+})();

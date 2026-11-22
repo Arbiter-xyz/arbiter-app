@@ -11,4 +11,6 @@ export const SENSITIVE_FIELD_IDS = [
   'admin-token-input',
   // demo.js — second admin-token entry on demo.html (same ADMIN_TOKEN)
   'demo-token',
+  // checkout.js — revealed plaintext API key on the fiat/API-key checkout page
+  'apikey-reveal-input',
 ];
