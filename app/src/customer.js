@@ -26,6 +26,7 @@ const REQUEST_TIMEOUT_MS = 15000;
 const el = {
   login: document.getElementById('panel-login'),
   account: document.getElementById('panel-account'),
+  loginForm: document.getElementById('customer-login-form'),
   keyInput: document.getElementById('customer-key-input'),
   btnLogin: document.getElementById('btn-customer-login'),
   loginStatus: document.getElementById('customer-login-status'),
@@ -34,6 +35,7 @@ const el = {
   creditBalance: document.getElementById('credit-balance'),
   creditBalanceStroops: document.getElementById('credit-balance-stroops'),
   btnTopUp: document.getElementById('btn-top-up'),
+  webhookForm: document.getElementById('webhook-form'),
   webhookInput: document.getElementById('webhook-url-input'),
   btnWebhookSave: document.getElementById('btn-webhook-save'),
   btnWebhookDelete: document.getElementById('btn-webhook-delete'),
@@ -116,39 +118,15 @@ function isPlausibleWebhookUrl(value) {
   }
 }
 
-el.btnLogin.addEventListener('click', async () => {
+async function login() {
   const key = el.keyInput.value.trim();
   if (!key) return;
   localStorage.setItem(KEY_STORAGE, key);
   el.loginStatus.textContent = '';
   await loadAccount();
-});
+}
 
-el.btnLogout.addEventListener('click', () => {
-  localStorage.removeItem(KEY_STORAGE);
-  el.keyInput.value = '';
-  showLogin();
-});
-
-el.btnTopUp.addEventListener('click', async () => {
-  el.btnTopUp.disabled = true;
-  try {
-    const here = window.location.href.split(/[?#]/)[0];
-    const { checkoutUrl } = await fetchCustomer('/billing/checkout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ successUrl: `${here}?checkout=success`, cancelUrl: `${here}?checkout=cancel` }),
-    });
-    if (!checkoutUrl) throw new Error('checkout session had no redirect url');
-    window.location.href = checkoutUrl;
-  } catch (err) {
-    if (err.message !== 'unauthorized') log(`Could not start checkout: ${err.message}`);
-  } finally {
-    el.btnTopUp.disabled = false;
-  }
-});
-
-el.btnWebhookSave.addEventListener('click', async () => {
+async function saveWebhook() {
   const url = el.webhookInput.value.trim();
   if (!isPlausibleWebhookUrl(url)) {
     el.webhookStatus.textContent = 'Enter a valid https:// webhook URL before saving.';
@@ -174,7 +152,48 @@ el.btnWebhookSave.addEventListener('click', async () => {
   } finally {
     el.btnWebhookSave.disabled = false;
   }
+}
+
+// #518: the login and webhook rows are now <form>s so Enter submits them.
+// preventDefault keeps the page from navigating; the button click handlers
+// below still work for mouse users.
+el.loginForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  login();
 });
+
+el.webhookForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  saveWebhook();
+});
+
+el.btnLogin.addEventListener('click', login);
+
+el.btnLogout.addEventListener('click', () => {
+  localStorage.removeItem(KEY_STORAGE);
+  el.keyInput.value = '';
+  showLogin();
+});
+
+el.btnTopUp.addEventListener('click', async () => {
+  el.btnTopUp.disabled = true;
+  try {
+    const here = window.location.href.split(/[?#]/)[0];
+    const { checkoutUrl } = await fetchCustomer('/billing/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ successUrl: `${here}?checkout=success`, cancelUrl: `${here}?checkout=cancel` }),
+    });
+    if (!checkoutUrl) throw new Error('checkout session had no redirect url');
+    window.location.href = checkoutUrl;
+  } catch (err) {
+    if (err.message !== 'unauthorized') log(`Could not start checkout: ${err.message}`);
+  } finally {
+    el.btnTopUp.disabled = false;
+  }
+});
+
+el.btnWebhookSave.addEventListener('click', saveWebhook);
 
 el.btnWebhookDelete.addEventListener('click', async () => {
   if (!currentWebhookId) {
