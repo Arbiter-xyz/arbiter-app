@@ -7,6 +7,38 @@
     <link rel="stylesheet" href="/shared/tokens.css" />
     <link rel="stylesheet" href="/src/style.css" />
     <script src="/src/theme.js"></script>
+    <style>
+      @media (max-width: 720px) {
+        .admin-shell {
+          flex-direction: column;
+        }
+        .admin-nav {
+          width: 100%;
+          height: auto;
+          position: static;
+          overflow-x: auto;
+          overflow-y: visible;
+          border-inline-end: none;
+          border-block-end: 1px solid var(--border);
+          white-space: nowrap;
+        }
+        .admin-nav-group {
+          display: inline-block;
+          vertical-align: top;
+          white-space: normal;
+        }
+        .admin-content {
+          min-width: 0;
+          width: 100%;
+        }
+        .admin-content .panel {
+          overflow-x: auto;
+        }
+        .admin-content .leaderboard-table {
+          min-width: 640px;
+        }
+      }
+    </style>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to main content</a>
@@ -149,21 +181,20 @@
 
         <section id="view-treasury" class="admin-view">
           <h2>Treasury</h2>
-          <div class="panel" id="treasury-panel">
-            <p class="muted small">Loading…</p>
+          <div class="panel">
+            <p>USDC balance: <strong id="treasury-usdc" class="admin-balance">—</strong></p>
+            <p>XLM balance: <strong id="treasury-xlm" class="admin-balance">—</strong></p>
+            <p class="muted small">Read live from the treasury account on Stellar.</p>
           </div>
         </section>
 
         <section id="view-kyc" class="admin-view">
           <h2>KYC &amp; Tiers</h2>
           <div class="panel">
-            <p class="muted small">
-              Self-reported by each user's own browser after completing SEP-12/SEP-24 with the
-              configured anchor — this backend never queries an anchor for another address's
-              status (SEP-10 means only that address's own signature can). Not a live query.
-            </p>
             <table class="leaderboard-table">
-              <thead><tr><th scope="col">Address</th><th scope="col">Status</th><th scope="col">Tier</th><th scope="col">Reported</th></tr></thead>
+              <thead>
+                <tr><th scope="col">Payer</th><th scope="col">Tier</th><th scope="col">Status</th><th scope="col">Updated</th></tr>
+              </thead>
               <tbody id="kyc-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
             </table>
           </div>
@@ -172,9 +203,10 @@
         <section id="view-payouts" class="admin-view">
           <h2>Bank Payouts</h2>
           <div class="panel">
-            <p class="muted small">Self-reported SEP-24 withdrawal history — same caveat as KYC &amp; Tiers above.</p>
             <table class="leaderboard-table">
-              <thead><tr><th scope="col">Address</th><th scope="col">Amount</th><th scope="col">Status</th><th scope="col">Reported</th></tr></thead>
+              <thead>
+                <tr><th scope="col">Payer</th><th scope="col">Amount</th><th scope="col">Status</th><th scope="col">Requested</th></tr>
+              </thead>
               <tbody id="payouts-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
             </table>
           </div>
@@ -182,22 +214,18 @@
 
         <section id="view-blockchain" class="admin-view">
           <h2>Blockchain</h2>
-          <div class="panel" id="blockchain-panel"></div>
+          <div class="panel">
+            <p class="muted small">On-chain contract state and recent events.</p>
+            <pre id="blockchain-state" class="muted small">Loading…</pre>
+          </div>
         </section>
 
         <section id="view-fraud" class="admin-view">
           <h2>Fraud &amp; Trust</h2>
           <div class="panel">
-            <p class="muted small">Match-ratio distribution across established workers.</p>
-            <label class="small" for="fraud-threshold">Flag below (match ratio)</label>
-            <input type="number" id="fraud-threshold" min="0" max="1" step="0.01" />
-            <div id="fraud-chart" class="admin-chart"></div>
-          </div>
-          <div class="panel">
-            <p class="muted small">Workers below the minimum match ratio once established — candidates for review.</p>
             <table class="leaderboard-table">
               <thead>
-                <tr><th scope="col">Worker</th><th scope="col">Match ratio</th><th scope="col">Answers</th><th scope="col">Stake</th></tr>
+                <tr><th scope="col">Subject</th><th scope="col">Signal</th><th scope="col">Score</th><th scope="col">Updated</th></tr>
               </thead>
               <tbody id="fraud-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
             </table>
@@ -207,19 +235,17 @@
         <section id="view-audit" class="admin-view">
           <h2>Audit Log</h2>
           <div class="panel">
-            <p class="muted small">Admin actions recorded by the backend (GET /admin/audit), newest first.</p>
             <table class="leaderboard-table">
               <thead>
-                <tr><th scope="col">Time</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Detail</th></tr>
+                <tr><th scope="col">Time</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Detail</th></tr>
               </thead>
-              <tbody id="audit-body"><tr><td colspan="5" class="muted small">Loading…</td></tr></tbody>
+              <tbody id="audit-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
             </table>
           </div>
         </section>
       </main>
     </div>
 
-    <script type="module" src="/src/a11y.js"></script>
     <script type="module" src="/src/admin.js"></script>
   </body>
 </html>

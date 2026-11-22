@@ -15,7 +15,7 @@ export default defineConfig({
   use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } },
   projects: [
     { name: 'desktop', use: { viewport: { width: 1280, height: 800 } } },
-    { name: 'mobile', use: { ...devices['Pixel 7'] } },
+    { name: 'mobile', use: { ...devices['Pixel 7'], viewport: { width: 375, height: 812 } } },
   ],
   webServer: [
     { command: 'npm run build && npx vite preview --port 4173 --strictPort', port: 4173, reuseExistingServer: !process.env.CI },
