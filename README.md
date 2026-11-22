@@ -201,6 +201,11 @@ executions, transaction links included.)
 <!-- handsoff-issue-227 -->
 - #227: admin.js's renderMatchRatioChart uses undefined SVG_NS
 
+<!-- handsoff-issue-525 -->
+- #525: Activity heatmap: expose per-day data to screen readers
+
+<!-- handsoff-issue-527 -->
+- #527: Admin KYC and Payouts show "Invalid Date" when reportedAt is missing
 <!-- handsoff-issue-510 -->
 - #510: localWallet.js: delete unused exports, including getLocalWalletSecret()
 

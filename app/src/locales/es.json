@@ -78,5 +78,11 @@
   "dash.confidence": "confianza {value}",
   "status.pending": "en curso",
   "status.resolved": "resuelta",
-  "status.refunded": "reembolsada"
+  "status.refunded": "reembolsada",
+  "online.statusAll": "en línea — todos los temas",
+  "online.statusCategories": "en línea — {categories}",
+  "online.goOffline": "Desconectarse",
+  "push.on": "Activado — es posible que recibas notificaciones para preguntas con tiempos de espera más largos.",
+  "question.secondsLeft": { "one": "queda {count} segundo", "other": "quedan {count} segundos" },
+  "question.timeUp": "Se acabó el tiempo"
 }
