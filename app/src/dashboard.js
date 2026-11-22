@@ -1,11 +1,14 @@
 import { openSecureLocalWallet } from './localWallet.js';
+import { createWalletKit, wireConnectButtons } from './wallet.js';
 import { subscribeQuestionStatus } from './statusChannel.js';
 import { initI18n, onLocaleChange, t, formatUsdc, formatNumber } from './i18n.js';
 import { renderMarkdown } from './markdown.js';
-import { initI18n, t } from './i18n.js';
-
-initI18n();
+import { renderFencedCode } from './codeBlocks.js';
+import { createStarButton } from './starredQuestions.js';
+import { createNotificationCenter } from './notifications.js';
 import { ensureSession as ensureSharedSession } from './session.js';
+import { startTour } from './tour.js';
+import { initSupportChat, setSupportWallet } from './support.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
@@ -33,19 +36,32 @@ const el = {
   questionStatus: document.getElementById('question-status'),
   log: document.getElementById('log'),
   liveStatus: document.getElementById('live-status'),
+  accountSwitcher: document.getElementById('account-switcher'),
+  accountSelect: document.getElementById('account-select'),
+  btnAddWallet: document.getElementById('btn-add-wallet'),
 };
 
 initI18n();
 
+const headerEl = document.querySelector('header');
+const notify = headerEl
+  ? createNotificationCenter({ mount: headerEl, storageKey: 'arbiter-dashboard-notifications' })
+  : () => {};
+
 const state = {
+  identities: new Map(),
   address: null,
   activeWallet: null,
   sessionToken: null,
   sessionExpiresAt: 0,
   channel: null,
   lastData: null,
+  starredOnly: false,
   // questionId -> <li>, so a pushed status change patches one row in place.
   items: new Map(),
+  get identity() {
+    return this.identities.get(this.address) || null;
+  },
   // questionId -> setInterval handle for that row's cancel countdown. Kept
   // here (not on the <li>) so render() can clear every live countdown before
   // it replaces the list — otherwise a detached row's interval keeps ticking
@@ -60,18 +76,15 @@ function log(message) {
   notify(message);
 }
 
+function setConnectButtonsBusy(busy) {
+  if (el.btnConnect) el.btnConnect.disabled = busy;
+  if (el.btnQuickStart) el.btnQuickStart.disabled = busy;
+}
+
 /** Proves control of this address once, same primitive as the worker
  * console's ensureSession() — these questions/balance are only readable
  * with a valid session now, not by anyone who just knows the address. */
 async function ensureSession() {
-  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) return state.sessionToken;
-
-  log(t('dash.proving'));
-  const challengeRes = await fetch(`${BACKEND_URL}/payers/${state.address}/session/challenge`, { method: 'POST' });
-  if (!challengeRes.ok) throw new Error((await challengeRes.json()).error || 'failed to get session challenge');
-  const { xdr } = await challengeRes.json();
-
-  const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
   return ensureSharedSession({
     address: state.address,
     activeWallet: state.activeWallet,
@@ -80,43 +93,26 @@ async function ensureSession() {
     onSession: ({ token, expiresAt }) => {
       state.sessionToken = token;
       state.sessionExpiresAt = expiresAt;
+      if (state.identity) {
+        state.identity.sessionToken = token;
+        state.identity.sessionExpiresAt = expiresAt;
+      }
     },
     log,
+    role: 'payers',
+    provingMessage: t('dash.proving'),
+    establishedMessage: t('dash.session'),
   });
-  if (!sessionRes.ok) throw new Error((await sessionRes.json()).error || 'failed to establish session');
-  const { token, expiresAt } = await sessionRes.json();
-  state.sessionToken = token;
-  state.sessionExpiresAt = expiresAt;
-  log(t('dash.session'));
-  return token;
-}
-
-el.btnConnect.addEventListener('click', async () => {
-  setConnectButtonsBusy(true);
-  try {
-    await kit.openModal({
-      onWalletSelected: async (option) => {
-        kit.setWallet(option.id);
-        const { address } = await kit.getAddress();
-        await activate(kit, address);
-      },
-      onClosed: (err) => {
-        setConnectButtonsBusy(false);
-        if (err) log(t('log.walletClosed', { error: err.message }));
-      },
-    });
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(t('log.connectFailed', { error: err.message }));
-  }
 }
 
 // Module list + button wiring live in wallet.js, shared with main.js
-// (issue #19). This page has no backup panel, so `quickStart` is unused.
+// (issue #19). Quick-start button is wired explicitly below with
+// openSecureLocalWallet() so legacy plaintext secrets in localStorage are
+// migrated into the hardened worker store (issue #195).
 wireConnectButtons({
   kit,
   connectButton: el.btnConnect,
-  quickStartButton: el.btnQuickStart,
+  quickStartButton: null,
   onActivated: activate,
   onError: log,
 });
@@ -133,23 +129,45 @@ el.btnQuickStart.addEventListener('click', async () => {
   }
 });
 
+async function activate(wallet, address, opts = {}) {
+  const walletId = typeof opts === 'string' ? opts : opts?.walletId || null;
+  state.activeWallet = wallet;
+  const existing = state.identities.get(address);
+  if (existing) Object.assign(existing, { wallet, walletId });
+  else state.identities.set(address, { address, wallet, walletId, sessionToken: null, sessionExpiresAt: 0 });
+  await switchIdentity(address, wallet);
+}
+
 async function switchIdentity(address, wallet = null) {
   state.address = address;
-  // Populate activeWallet so ensureSession()'s wallet-signed session-proof
-  // flow has a signer (issue #213). Fall back to the kit's currently
-  // selected wallet when no explicit wallet is passed in.
-  state.activeWallet = wallet || state.activeWallet || kit;
+  const identity = state.identity;
+  if (wallet) state.activeWallet = wallet;
+  else if (identity?.wallet) state.activeWallet = identity.wallet;
+  if (identity?.walletId) kit.setWallet(identity.walletId);
+  state.sessionToken = identity?.sessionToken || null;
+  state.sessionExpiresAt = identity?.sessionExpiresAt || 0;
   el.payerAddress.textContent = address;
   el.connect.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
-  log(t('dash.connectedLog', { address }));
-  await loadQuestions();
+  if (el.accountSelect && el.accountSwitcher && state.identities.size > 0) {
+    el.accountSelect.innerHTML = '';
+    for (const addr of state.identities.keys()) {
+      const option = document.createElement('option');
+      option.value = addr;
+      option.textContent = `${addr.slice(0, 6)}…${addr.slice(-4)}`;
+      option.selected = addr === address;
+      el.accountSelect.append(option);
+    }
+    el.accountSwitcher.classList.remove('hidden');
+  }
   log(`Connected ${address}`);
   setSupportWallet(address);
-  await loadQuestions();
-  startLiveUpdates();
+  startLiveUpdates(); // fetches the initial snapshot
   setConnectButtonsBusy(false);
 }
+
+el.accountSelect?.addEventListener('change', () => switchIdentity(el.accountSelect.value));
+el.btnAddWallet?.addEventListener('click', () => el.btnConnect.click());
 
 // Live updates (issue #6): polling via statusChannel.js, which re-fetches the
 // snapshot on an interval, on tab refocus, and on Refresh.
@@ -202,7 +220,15 @@ function render(data) {
   el.statSpend.textContent = formatUsdc(data.totalSpend);
   el.statCount.textContent = formatNumber(data.totalTracked);
   el.statSuccess.textContent = data.successRate === null ? '—' : formatNumber(data.successRate, { style: 'percent' });
+  if (el.spendCalendarGrid && el.spendCalendarTotal) {
+    renderSpendCalendar(data.questions || [], data.totalSpend);
+  }
+  renderQuestionList();
+}
 
+function renderQuestionList() {
+  const data = state.lastData;
+  if (!data) return;
   clearCountdowns();
   el.questionList.innerHTML = '';
   state.items.clear();
@@ -284,10 +310,8 @@ function renderQuestionItem(q) {
   renderFencedCode(qText, q.question || q.questionId);
   const qMeta = document.createElement('div');
   qMeta.className = 'q-meta';
-  const parts = [q.tier, q.amount ? `${q.amount} USDC` : null];
-  if (q.status === 'settled' && q.outcome === 'resolved') parts.push(t('dash.confidence', { value: q.confidence }));
   const parts = [q.tier, q.amount ? formatUsdc(q.amount) : null];
-  if (q.status === 'settled' && q.outcome === 'resolved') parts.push(`confidence ${formatNumber(q.confidence)}`);
+  if (q.status === 'settled' && q.outcome === 'resolved') parts.push(t('dash.confidence', { value: formatNumber(q.confidence) }));
   qMeta.textContent = parts.filter(Boolean).join(' · ');
   left.append(qText, qMeta);
 
