@@ -18,10 +18,28 @@ function setLastSeen(version) {
   }
 }
 
+/**
+ * Returns the changelog entries the user has not seen yet, newest first.
+ * When the last-seen version is unknown (first run or cleared storage) only
+ * the latest entry is returned so we don't dump the entire history at once.
+ * When the user has skipped several releases, every entry newer than the
+ * last-seen version is returned so nothing is silently missed.
+ */
+export function getUnseenEntries() {
+  const lastSeen = getLastSeen();
+  if (!lastSeen) return CHANGELOG.slice(0, 1);
+
+  const seenIndex = CHANGELOG.findIndex((entry) => entry.version === lastSeen);
+  if (seenIndex === -1) return CHANGELOG.slice(0, 1);
+
+  return CHANGELOG.slice(0, seenIndex);
+}
+
 /** Shows the changelog modal once per version bump. */
 export function showWhatsNewIfNeeded() {
-  const latest = CHANGELOG[0];
-  if (!latest || getLastSeen() === latest.version) return;
+  const unseen = getUnseenEntries();
+  const latest = unseen[0];
+  if (!latest) return;
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -42,6 +60,22 @@ export function showWhatsNewIfNeeded() {
     li.textContent = text;
     list.appendChild(li);
   }
+
+  box.append(h, date, list);
+
+  // Aggregate entries from any releases the user skipped so nothing is lost.
+  for (const entry of unseen.slice(1)) {
+    const sub = document.createElement('h3');
+    sub.textContent = `${entry.version} (${entry.date})`;
+    const subList = document.createElement('ul');
+    for (const text of entry.items) {
+      const li = document.createElement('li');
+      li.textContent = text;
+      subList.appendChild(li);
+    }
+    box.append(sub, subList);
+  }
+
   const close = document.createElement('button');
   close.type = 'button';
   close.textContent = 'Got it';
@@ -50,7 +84,7 @@ export function showWhatsNewIfNeeded() {
     overlay.remove();
   });
 
-  box.append(h, date, list, close);
+  box.appendChild(close);
   overlay.appendChild(box);
   document.body.appendChild(overlay);
   close.focus();

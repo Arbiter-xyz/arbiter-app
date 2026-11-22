@@ -1,18 +1,10 @@
-import {
-  StellarWalletsKit,
-  WalletNetwork,
-  FreighterModule,
-  LobstrModule,
-  xBullModule,
-  HanaModule,
-  AlbedoModule,
-  HotWalletModule,
-  LedgerModule,
-} from '@creit.tech/stellar-wallets-kit';
 import { openSecureLocalWallet } from './localWallet.js';
 import { subscribeQuestionStatus } from './statusChannel.js';
 import { initI18n, onLocaleChange, t, formatUsdc, formatNumber } from './i18n.js';
 import { renderMarkdown } from './markdown.js';
+import { initI18n, t } from './i18n.js';
+
+initI18n();
 import { ensureSession as ensureSharedSession } from './session.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
@@ -54,6 +46,11 @@ const state = {
   lastData: null,
   // questionId -> <li>, so a pushed status change patches one row in place.
   items: new Map(),
+  // questionId -> setInterval handle for that row's cancel countdown. Kept
+  // here (not on the <li>) so render() can clear every live countdown before
+  // it replaces the list — otherwise a detached row's interval keeps ticking
+  // forever (issue #282).
+  countdowns: new Map(),
 };
 
 function log(message) {
@@ -67,6 +64,14 @@ function log(message) {
  * console's ensureSession() — these questions/balance are only readable
  * with a valid session now, not by anyone who just knows the address. */
 async function ensureSession() {
+  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) return state.sessionToken;
+
+  log(t('dash.proving'));
+  const challengeRes = await fetch(`${BACKEND_URL}/payers/${state.address}/session/challenge`, { method: 'POST' });
+  if (!challengeRes.ok) throw new Error((await challengeRes.json()).error || 'failed to get session challenge');
+  const { xdr } = await challengeRes.json();
+
+  const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
   return ensureSharedSession({
     address: state.address,
     activeWallet: state.activeWallet,
@@ -78,6 +83,32 @@ async function ensureSession() {
     },
     log,
   });
+  if (!sessionRes.ok) throw new Error((await sessionRes.json()).error || 'failed to establish session');
+  const { token, expiresAt } = await sessionRes.json();
+  state.sessionToken = token;
+  state.sessionExpiresAt = expiresAt;
+  log(t('dash.session'));
+  return token;
+}
+
+el.btnConnect.addEventListener('click', async () => {
+  setConnectButtonsBusy(true);
+  try {
+    await kit.openModal({
+      onWalletSelected: async (option) => {
+        kit.setWallet(option.id);
+        const { address } = await kit.getAddress();
+        await activate(kit, address);
+      },
+      onClosed: (err) => {
+        setConnectButtonsBusy(false);
+        if (err) log(t('log.walletClosed', { error: err.message }));
+      },
+    });
+  } catch (err) {
+    setConnectButtonsBusy(false);
+    log(t('log.connectFailed', { error: err.message }));
+  }
 }
 
 // Module list + button wiring live in wallet.js, shared with main.js
@@ -98,24 +129,30 @@ el.btnQuickStart.addEventListener('click', async () => {
     await activate(localWallet, address);
   } catch (err) {
     setConnectButtonsBusy(false);
-    log(`Quick start failed: ${err.message}`);
+    log(t('log.quickStartFailed', { error: err.message }));
   }
 });
 
-async function switchIdentity(address) {
+async function switchIdentity(address, wallet = null) {
   state.address = address;
-  if (state.identity.walletId) kit.setWallet(state.identity.walletId);
+  // Populate activeWallet so ensureSession()'s wallet-signed session-proof
+  // flow has a signer (issue #213). Fall back to the kit's currently
+  // selected wallet when no explicit wallet is passed in.
+  state.activeWallet = wallet || state.activeWallet || kit;
   el.payerAddress.textContent = address;
   el.connect.classList.add('hidden');
   el.dashboard.classList.remove('hidden');
+  log(t('dash.connectedLog', { address }));
+  await loadQuestions();
   log(`Connected ${address}`);
+  setSupportWallet(address);
+  await loadQuestions();
   startLiveUpdates();
   setConnectButtonsBusy(false);
 }
 
-// Live updates (issue #6): one shared push stream across all dashboard tabs
-// for this address instead of each tab polling. The snapshot is only
-// re-fetched to backfill (reconnect, gap, tab refocus) or on Refresh.
+// Live updates (issue #6): polling via statusChannel.js, which re-fetches the
+// snapshot on an interval, on tab refocus, and on Refresh.
 function startLiveUpdates() {
   state.channel?.close();
   state.channel = subscribeQuestionStatus({
@@ -126,7 +163,6 @@ function startLiveUpdates() {
       render(data);
       log(`Loaded ${t('dash.questions', { n: data.questions.length })} — ${formatNumber(data.totalTracked)} tracked in total.`);
     },
-    onEvent: applyStatusEvent,
     onConnection: (connected) => {
       el.liveStatus.textContent = t(connected ? 'dash.live' : 'dash.reconnecting');
     },
@@ -134,28 +170,19 @@ function startLiveUpdates() {
   state.channel.ready.catch((err) => log(`Could not load questions: ${err.message}`));
 }
 
-function applyStatusEvent(q) {
-  const existing = state.items.get(q.questionId);
-  const prev = state.lastData?.questions.find((x) => x.questionId === q.questionId);
-  const merged = { ...prev, ...q };
-  if (prev) Object.assign(prev, q);
-  const li = renderQuestionItem(merged);
-  if (existing) existing.replaceWith(li);
-  else el.questionList.prepend(li);
-  state.items.set(q.questionId, li);
-  log(`${q.questionId}: ${describeStatus(merged).label}`);
-  // Aggregates (spend / success rate) are server-computed; refresh them
-  // once a job reaches its terminal state.
-  if (q.status === 'settled') state.channel?.resync();
-}
-
 el.btnRefresh.addEventListener('click', async () => {
   if (!state.channel) return;
   el.btnRefresh.disabled = true;
   try {
+    const token = await ensureSession();
+    const res = await fetch(`${BACKEND_URL}/payers/${state.address}/questions?token=${encodeURIComponent(token)}`);
+    if (!res.ok) throw new Error(`unexpected status ${res.status}`);
+    const data = await res.json();
+    render(data);
+    log(t('dash.loaded', { count: data.questions.length, total: data.totalTracked }));
     await state.channel.resync();
   } catch (err) {
-    log(`Could not load questions: ${err.message}`);
+    log(t('dash.loadFailed', { error: err.message }));
   } finally {
     el.btnRefresh.disabled = false;
   }
@@ -163,17 +190,26 @@ el.btnRefresh.addEventListener('click', async () => {
 
 onLocaleChange(() => state.lastData && render(state.lastData));
 
+// Clears every live cancel countdown. Called before render() replaces the
+// question list so a detached row's setInterval can't keep ticking (#282).
+function clearCountdowns() {
+  for (const handle of state.countdowns.values()) clearInterval(handle);
+  state.countdowns.clear();
+}
+
 function render(data) {
   state.lastData = data;
   el.statSpend.textContent = formatUsdc(data.totalSpend);
   el.statCount.textContent = formatNumber(data.totalTracked);
   el.statSuccess.textContent = data.successRate === null ? '—' : formatNumber(data.successRate, { style: 'percent' });
 
+  clearCountdowns();
   el.questionList.innerHTML = '';
   state.items.clear();
   if (data.questions.length === 0) {
     const li = document.createElement('li');
     li.className = 'muted small';
+    li.textContent = t('dash.empty');
     li.textContent = t('dash.none');
     el.questionList.appendChild(li);
     return;
@@ -184,6 +220,25 @@ function render(data) {
     state.items.set(q.questionId, li);
     el.questionList.appendChild(li);
   }
+}
+
+// Intensity floor for the spend calendar. A flat floor (e.g. 0.12) makes a
+// tiny real spend (say 0.01 USDC against a 1000 USDC max) render almost
+// identically to a much larger one near the floor, so the calendar visually
+// overstates small days. Instead we scale on a log curve so small spends
+// stay distinguishable from each other while still being visible, and only
+// fall back to a small floor for a genuinely zero day.
+const SPEND_INTENSITY_FLOOR = 0.06;
+
+function spendIntensity(amount, max) {
+  if (!Number.isFinite(amount) || amount <= 0) return SPEND_INTENSITY_FLOOR;
+  if (!Number.isFinite(max) || max <= 0) return SPEND_INTENSITY_FLOOR;
+  const ratio = Math.min(amount / max, 1);
+  // log1p keeps small ratios from collapsing onto the floor: 0.001 -> ~0.14,
+  // 0.01 -> ~0.29, 0.1 -> ~0.55, 1 -> 1, so a tiny spend no longer reads the
+  // same as a much larger one near the floor.
+  const scaled = Math.log1p(ratio * 9) / Math.log1p(9);
+  return Math.max(SPEND_INTENSITY_FLOOR, scaled);
 }
 
 function renderSpendCalendar(questions, totalSpend) {
@@ -202,7 +257,7 @@ function renderSpendCalendar(questions, totalSpend) {
   for (const [day, amount] of entries) {
     const cell = document.createElement('div');
     cell.className = 'spend-calendar-cell';
-    cell.style.setProperty('--spend-intensity', String(Math.max(0.12, amount / max)));
+    cell.style.setProperty('--spend-intensity', String(spendIntensity(amount, max)));
     cell.setAttribute('role', 'listitem');
     cell.title = `${day}: ${amount.toFixed(2)} USDC`;
     cell.setAttribute('aria-label', cell.title);
@@ -229,6 +284,8 @@ function renderQuestionItem(q) {
   renderFencedCode(qText, q.question || q.questionId);
   const qMeta = document.createElement('div');
   qMeta.className = 'q-meta';
+  const parts = [q.tier, q.amount ? `${q.amount} USDC` : null];
+  if (q.status === 'settled' && q.outcome === 'resolved') parts.push(t('dash.confidence', { value: q.confidence }));
   const parts = [q.tier, q.amount ? formatUsdc(q.amount) : null];
   if (q.status === 'settled' && q.outcome === 'resolved') parts.push(`confidence ${formatNumber(q.confidence)}`);
   qMeta.textContent = parts.filter(Boolean).join(' · ');
@@ -265,20 +322,21 @@ function renderQuestionItem(q) {
   // countdown and a Cancel button, mirroring the worker console's
   // setInterval-driven timer-bar pattern (main.js's startCountdown()/
   // el.timerBar) rather than inventing a second countdown UI.
-  if (q.status !== 'settled' && Number.isFinite(q.cancelableUntil) && q.cancelableUntil > Date.now()) {
-    li.appendChild(renderCancelControls(q));
+  const cancellableUntil = q.cancellableUntil ?? q.cancelableUntil;
+  if (q.status !== 'settled' && Number.isFinite(cancellableUntil) && cancellableUntil > Date.now()) {
+    li.appendChild(renderCancelControls(q, cancellableUntil));
   }
 
   return li;
 }
 
 /** Renders the countdown + Cancel button for a question still inside its
- * undo window (`q.cancelableUntil`, an epoch-ms timestamp assumed to be
- * added to the GET /payers/:address/questions response for an in-progress
- * question — see issue #32). Wired to the assumed
- * POST /payers/:address/questions/:questionId/cancel endpoint, reusing the
+ * undo window (`q.cancellableUntil`, an epoch-ms timestamp returned in the
+ * GET /payers/:address/questions response for an in-progress question —
+ * see issue #32 / #203). Wired to
+ * POST /payers/:address/questions/:questionId/cancel, reusing the
  * existing payer session token from ensureSession(). */
-function renderCancelControls(q) {
+function renderCancelControls(q, cancellableUntil = q.cancellableUntil ?? q.cancelableUntil) {
   const wrap = document.createElement('div');
   wrap.className = 'cancel-controls';
 
@@ -298,11 +356,11 @@ function renderCancelControls(q) {
 
   wrap.append(track, label, btnCancel);
 
-  const total = q.cancelableUntil - Date.now();
+  const total = cancellableUntil - Date.now();
   let handle = null;
 
   function tick() {
-    const remainingMs = q.cancelableUntil - Date.now();
+    const remainingMs = cancellableUntil - Date.now();
     if (remainingMs <= 0) {
       clearInterval(handle);
       wrap.remove();
@@ -350,6 +408,7 @@ function renderCancelControls(q) {
 }
 
 function describeStatus(q) {
+  if (q.status !== 'settled') return { label: t('status.pending'), cls: 'badge-pending' };
   if (q.status !== 'settled') {
     const key = q.status === 'awaiting_workers' || q.status === 'reconciling' ? q.status : 'pending';
     return { label: t(`status.${key}`), cls: 'badge-pending' };
@@ -357,3 +416,33 @@ function describeStatus(q) {
   if (q.outcome === 'resolved') return { label: t('status.resolved'), cls: 'badge-resolved' };
   return { label: t('status.refunded'), cls: 'badge-refunded' };
 }
+
+// --- First-visit walkthrough (issue #61) ----------------------------------
+// Payers expect a "login"; this page is not one. Explain the read-only,
+// address-keyed model and the status badges once, on first connect.
+const statsRow = el.statSpend.closest('.row, .stats') || el.statSpend.parentElement;
+el.connect.addEventListener(
+  'click',
+  () =>
+    startTour('arbiter_tour_payer_seen', [
+      {
+        target: null,
+        title: 'No account, just your address',
+        text: 'This dashboard is read-only. Everything shown is rebuilt from the backend\'s job records for the connected wallet address — nothing is saved, and no account is created.',
+      },
+      {
+        target: statsRow,
+        title: 'Your totals',
+        text: 'Total spend, number of questions asked, and the share that resolved successfully.',
+      },
+      {
+        target: el.questionList,
+        title: 'Status badges',
+        text: '"in progress": workers are still answering. "resolved": an answer was settled and paid. "refunded": no valid answer was reached, so your payment was returned.',
+      },
+    ]),
+  { once: true },
+);
+
+// --- Live support chat (issue #62) ----------------------------------------
+initSupportChat('payer');
