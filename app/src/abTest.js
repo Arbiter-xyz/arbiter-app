@@ -75,6 +75,35 @@ export function applyOnboardingVariant(address, log) {
   return variant;
 }
 
+// Wire the experiment into the onboarding flow. Called once at module load so
+// the assigned variant is applied to #panel-onboard as soon as the app boots,
+// making the A/B test actually run instead of sitting as dead code (#218).
+// The address is read from the same localStorage key the app uses to persist
+// the connected wallet; if none is present yet, we defer until one is.
+const ADDRESS_STORAGE_KEY = 'arbiter.address';
+
+function currentAddress() {
+  try {
+    return globalThis.localStorage?.getItem(ADDRESS_STORAGE_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+function runOnboardingExperiment() {
+  const address = currentAddress();
+  if (!address) return;
+  applyOnboardingVariant(address, (msg) => console.info(msg));
+}
+
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', runOnboardingExperiment, { once: true });
+  } else {
+    runOnboardingExperiment();
+  }
+}
+
 // --- Tests (issue #250) ---------------------------------------------------
 //
 // The audit flagged that nothing verified the FNV-1a bucketing spreads

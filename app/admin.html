@@ -7,6 +7,38 @@
     <link rel="stylesheet" href="/shared/tokens.css" />
     <link rel="stylesheet" href="/src/style.css" />
     <script src="/src/theme.js"></script>
+    <style>
+      @media (max-width: 720px) {
+        .admin-shell {
+          flex-direction: column;
+        }
+        .admin-nav {
+          width: 100%;
+          height: auto;
+          position: static;
+          overflow-x: auto;
+          overflow-y: visible;
+          border-inline-end: none;
+          border-block-end: 1px solid var(--border);
+          white-space: nowrap;
+        }
+        .admin-nav-group {
+          display: inline-block;
+          vertical-align: top;
+          white-space: normal;
+        }
+        .admin-content {
+          min-width: 0;
+          width: 100%;
+        }
+        .admin-content .panel {
+          overflow-x: auto;
+        }
+        .admin-content .leaderboard-table {
+          min-width: 640px;
+        }
+      }
+    </style>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to main content</a>
@@ -158,7 +190,7 @@
           <div class="panel">
             <p>USDC balance: <strong id="treasury-usdc" class="admin-balance">—</strong></p>
             <p>XLM balance: <strong id="treasury-xlm" class="admin-balance">—</strong></p>
-            <p class="muted small">Read live from the treasury account on-chain.</p>
+            <p class="muted small">Read live from the configured Stellar account.</p>
           </div>
         </section>
 
@@ -168,7 +200,7 @@
             <div class="table-scroll" tabindex="0" role="region" aria-label="KYC and tiers table, scroll horizontally to see all columns">
               <table class="leaderboard-table">
                 <thead>
-                  <tr><th scope="col">Payer</th><th scope="col">Tier</th><th scope="col">Status</th><th scope="col">Updated</th></tr>
+                  <tr><th scope="col">Payer</th><th scope="col">Tier</th><th scope="col">Limit</th><th scope="col">Verified</th></tr>
                 </thead>
                 <tbody id="kyc-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
               </table>
@@ -193,14 +225,8 @@
         <section id="view-blockchain" class="admin-view">
           <h2>Blockchain</h2>
           <div class="panel">
-            <div class="table-scroll" tabindex="0" role="region" aria-label="Blockchain events table, scroll horizontally to see all columns">
-              <table class="leaderboard-table">
-                <thead>
-                  <tr><th scope="col">Event</th><th scope="col">Ledger</th><th scope="col">Tx</th><th scope="col">Time</th></tr>
-                </thead>
-                <tbody id="blockchain-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
-              </table>
-            </div>
+            <p class="muted small">Contract and network status.</p>
+            <pre id="blockchain-status" class="muted small">Loading…</pre>
           </div>
         </section>
 
@@ -210,9 +236,9 @@
             <div class="table-scroll" tabindex="0" role="region" aria-label="Fraud and trust table, scroll horizontally to see all columns">
               <table class="leaderboard-table">
                 <thead>
-                  <tr><th scope="col">Worker</th><th scope="col">Signal</th><th scope="col">Score</th><th scope="col">Updated</th></tr>
+                  <tr><th scope="col">Worker</th><th scope="col">Signal</th><th scope="col">Score</th></tr>
                 </thead>
-                <tbody id="fraud-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
+                <tbody id="fraud-body"><tr><td colspan="3" class="muted small">Loading…</td></tr></tbody>
               </table>
             </div>
           </div>
@@ -224,7 +250,7 @@
             <div class="table-scroll" tabindex="0" role="region" aria-label="Audit log table, scroll horizontally to see all columns">
               <table class="leaderboard-table">
                 <thead>
-                  <tr><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Time</th></tr>
+                  <tr><th scope="col">Time</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Detail</th></tr>
                 </thead>
                 <tbody id="audit-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
               </table>
@@ -233,6 +259,7 @@
         </section>
       </main>
     </div>
+
     <script type="module" src="/src/admin.js"></script>
   </body>
 </html>

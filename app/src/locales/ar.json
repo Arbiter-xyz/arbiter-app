@@ -25,7 +25,7 @@
   "online.offline": "غير متصل",
   "online.goOnline": "الاتصال",
   "online.statusAll": "متصل — كل المواضيع",
-  "online.statusTopics": "متصل — {topics}",
+  "online.statusCategories": "متصل — {categories}",
   "online.goOffline": "قطع الاتصال",
   "practice.label": "وضع التدريب",
   "practice.off": "متوقف — الأسئلة التي تجيب عنها حقيقية وتُحتسب في سمعتك.",
