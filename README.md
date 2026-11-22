@@ -203,3 +203,6 @@ executions, transaction links included.)
 
 <!-- handsoff-issue-510 -->
 - #510: localWallet.js: delete unused exports, including getLocalWalletSecret()
+
+<!-- handsoff-issue-511 -->
+- #511: main.js: replace the wallet-kit v1 connect code with wireConnectButtons()
