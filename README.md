@@ -203,3 +203,6 @@ executions, transaction links included.)
 
 <!-- handsoff-issue-525 -->
 - #525: Activity heatmap: expose per-day data to screen readers
+
+<!-- handsoff-issue-527 -->
+- #527: Admin KYC and Payouts show "Invalid Date" when reportedAt is missing
