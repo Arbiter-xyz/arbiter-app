@@ -148,21 +148,82 @@
           <article class="feature-card reveal">
             <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4.4-3 8.4-7 9-4-.6-7-4.6-7-9V6l7-3z"/><path d="M9.5 12l1.8 1.8L14.5 10"/></svg>
             <h3>Fail-closed by design</h3>
-            <p>If a quorum can't be reached, the escrow refunds in full. There is no partial
-              payout state — the contract either settles or returns your money.</p>
+            <p>Every code path ends in an on-chain <code>resolve()</code> or <code>refund()</code>.
+              There is no stuck or partially-settled state.</p>
           </article>
+
           <article class="feature-card reveal">
-            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-            <h3>Real-time quorum</h3>
-            <p>Workers receive your question over a live channel and answer in parallel, so
-              settlement is fast — not a batch job that runs overnight.</p>
+            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.6 10.6L15.4 7.4M8.6 13.4L15.4 16.6"/></svg>
+            <h3>On-chain settlement</h3>
+            <p>Funds sit in a Soroban escrow contract, never a custodial backend. Payouts and
+              refunds are real transactions you can verify yourself.</p>
           </article>
+
           <article class="feature-card reveal">
-            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/></svg>
-            <h3>Pay however you like</h3>
-            <p>Card, USDC escrow, or an API key billed per question. The platform covers the
-              Stellar network fee, so you never need to hold XLM.</p>
+            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 17l5-5 4 4 8-9"/><path d="M15 7h5v5"/></svg>
+            <h3 data-i18n="h.surge">Surge-aware pricing</h3>
+            <p>Price reflects live worker supply, not a fixed sticker — and it&rsquo;s locked in
+              at quote time, so it can never move on you mid-flow.</p>
           </article>
+
+          <article class="feature-card reveal">
+            <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4.4-3 8.4-7 9-4-.6-7-4.6-7-9V6l7-3z"/><path d="M9 12.5l2 2 4-4.5"/></svg>
+            <h3>Staked verifier reputation</h3>
+            <p>Workers post a real USDC bond as a credibility signal before checking a claim.
+              Answers that lose a quorum vote forfeit a slice of that bond.</p>
+          </article>
+        </div>
+
+        <!-- COMPARISON TABLE -->
+        <div class="comparison reveal" id="comparison">
+          <h3 class="comparison-heading">How Arbiter compares</h3>
+          <p class="comparison-sub">The same argument the FAQ makes in prose, side by side: what
+            actually backs an answer when being wrong is expensive and checkable.</p>
+          <div class="comparison-scroll">
+            <table class="comparison-table">
+              <caption class="sr-only">Comparison of Arbiter against a raw LLM call and unstaked crowdsourcing</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Dimension</th>
+                  <th scope="col" class="is-arbiter">Arbiter</th>
+                  <th scope="col">Raw LLM call</th>
+                  <th scope="col">Unstaked crowdsourcing</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">Who answers</th>
+                  <td class="is-arbiter">A live quorum of humans, reconciled into one consensus</td>
+                  <td>A single model, one pass, no second opinion</td>
+                  <td>Whoever shows up, with no bond at risk</td>
+                </tr>
+                <tr>
+                  <th scope="row">Staking / slashing</th>
+                  <td class="is-arbiter">Workers post a USDC bond; a losing answer forfeits a slice of it</td>
+                  <td>None — a wrong answer costs the model nothing</td>
+                  <td>None — no stake to lose, so no cost to being wrong</td>
+                </tr>
+                <tr>
+                  <th scope="row">Settlement</th>
+                  <td class="is-arbiter">On-chain via a Soroban escrow contract, verifiable by anyone</td>
+                  <td>Off-chain, no settlement layer at all</td>
+                  <td>Off-chain, no on-chain settlement guarantee</td>
+                </tr>
+                <tr>
+                  <th scope="row">When consensus fails</th>
+                  <td class="is-arbiter">Fail-closed: a full on-chain refund, never a partial state</td>
+                  <td>No notion of consensus — you get an answer either way</td>
+                  <td>Ambiguous — no defined refund path</td>
+                </tr>
+                <tr>
+                  <th scope="row">Best for</th>
+                  <td class="is-arbiter">Technical claims where being wrong is expensive and checkable</td>
+                  <td>Drafting, brainstorming, low-stakes lookups</td>
+                  <td>Subjective or opinion-based tasks</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </section>
@@ -171,10 +232,9 @@
     <section class="section" id="developers" aria-labelledby="developers-heading">
       <div class="container">
         <h2 id="developers-heading" class="section-heading reveal" data-i18n="nav.developers">Developers</h2>
-        <p class="section-sub reveal">One endpoint. No API key to start.</p>
-        <pre class="code-block reveal"><code>curl -X POST https://api.arbiter.xyz/oracle \
-  -H "Content-Type: application/json" \
-  -d '{"question": "Does Soroban support reentrant contract calls?"}'</code></pre>
+        <p class="section-sub reveal">One endpoint, no API key to start. See the
+          <a href="https://github.com/Arbiter-xyz/arbiter-backend#readme">docs</a> for the full
+          surface.</p>
       </div>
     </section>
 
@@ -182,16 +242,32 @@
     <section class="section section-alt" id="pricing" aria-labelledby="pricing-heading">
       <div class="container">
         <h2 id="pricing-heading" class="section-heading reveal" data-i18n="nav.pricing">Pricing</h2>
-        <p class="section-sub reveal">Pay per question. No subscription, no minimum.</p>
-
-        <!-- Live tier-pricing calculator. Populated by script.js's pricing
-             block, which queries for .pricing-grid. Keep this container in
-             sync with that selector. -->
+        <p class="section-sub reveal">Pay per question, with a wallet or a card. Price is locked
+          in at quote time.</p>
+        <!-- Tier-pricing calculator mount point (landing/script.js); a11y-check.mjs asserts it exists. -->
         <div class="pricing-grid" id="pricing-grid" aria-live="polite"></div>
-
-        <div class="surge-live">
-          <canvas id="surge-canvas" aria-hidden="true"></canvas>
+        <div class="surge-live reveal" id="surge-live" hidden>
+          <div class="surge-head">
+            <span>Surge multiplier now: <strong id="surge-now">1.00x</strong></span>
+            <span class="surge-status" id="surge-status">Connecting…</span>
+          </div>
+          <canvas id="surge-canvas" aria-label="Live surge multiplier over the last 10 minutes" role="img"></canvas>
+          <p class="surge-note">Streamed live from the backend's smoothed worker-supply signal.
+            Gaps mean the connection dropped — history is never filled in.</p>
         </div>
+      </div>
+    </section>
+
+    <!-- FOR WORKERS -->
+    <section class="worker-band" aria-labelledby="worker-heading">
+      <div class="container worker-band-inner reveal">
+        <div>
+          <h2 id="worker-heading">Verify claims. Get paid in USDC.</h2>
+          <p>Auditors, on-chain analysts, and technical reviewers: stake a bond, check what you
+            actually know, get settled on-chain automatically. Wrong quorum answers cost you a
+            slice of your stake — right ones build a public, verifiable track record.</p>
+        </div>
+        <a href="https://arbiter-app-ten.vercel.app/index.html" class="btn btn-secondary btn-on-dark">Start earning</a>
       </div>
     </section>
 
@@ -201,19 +277,11 @@
         <h2 id="faq-heading" class="section-heading reveal" data-i18n="nav.faq">FAQ</h2>
         <div class="faq-list">
           <details class="faq-item reveal">
-            <summary>Do I need a Stellar wallet?</summary>
-            <p>No. You can pay by card and never touch a wallet. If you already have one, you
-              can pay in USDC instead — the platform covers the network fee.</p>
-          </details>
-          <details class="faq-item reveal">
-            <summary>What happens if no consensus is reached?</summary>
-            <p>You get a full refund. The contract is fail-closed: it either settles or returns
-              your money, never a partial payout.</p>
-          </details>
-          <details class="faq-item reveal">
-            <summary>How is this different from asking an LLM?</summary>
-            <p>An LLM guesses. Arbiter routes your question to a staked quorum of real humans
-              who are paid only when their answer reconciles into consensus.</p>
+            <summary>Why a human quorum instead of just asking an LLM?</summary>
+            <p>A raw LLM call has no stake behind it — if it&rsquo;s wrong, nothing happens to
+              anyone. Arbiter&rsquo;s workers post a real USDC bond before answering, and a losing
+              answer forfeits a slice of it. That staked accountability, settled on-chain, is the
+              difference between a guess and a checked answer.</p>
           </details>
         </div>
       </div>
@@ -221,12 +289,16 @@
   </main>
 
   <footer class="site-footer">
-    <div class="container footer-inner">
+    <div class="container">
       <p>&copy; Arbiter. Built on Stellar / Soroban.</p>
-      <a href="https://github.com/Arbiter-xyz/arbiter-backend#readme" data-i18n="nav.docs">Read the docs</a>
     </div>
   </footer>
 
-  <script src="script.js" defer></script>
+  <!-- Optional, git-ignored local override (see config.example.js). A 404
+       here is harmless: scripts fall back to the production backend. -->
+  <script src="config.js"></script>
+  <script src="i18n.js"></script>
+  <script src="script.js"></script>
+  <script src="live.js" defer></script>
 </body>
 </html>

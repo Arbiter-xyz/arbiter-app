@@ -119,13 +119,11 @@
      If the endpoint is unreachable we fall back to the static base price
      and label the result as an approximation.
 
-     The calculator mounts into the #pricing section itself rather than a
-     dedicated .pricing-grid container: index.html's #pricing section only
-     holds the surge canvas, so requiring a separate grid element left this
-     block silently dead. Mounting into #pricing keeps the wiring in one
-     place and can't diverge from the markup again.
+     The calculator mounts into .pricing-grid (in index.html's #pricing
+     section), falling back to #pricing itself so a markup change can't
+     leave this block silently dead again.
   ------------------------------------------------------------------- */
-  const pricingSection = document.getElementById("pricing");
+  const pricingSection = document.querySelector(".pricing-grid") || document.getElementById("pricing");
 
   if (pricingSection) {
     const TIERS = [
@@ -209,10 +207,4 @@
         /* keep the labeled approximation already rendered */
       });
   }
-
-  /* -------------------------------------------------------------------
-     Compare-tiers slider (#pricing) — a presentation layer over the same
-     four tiers' already-documented real values (base price, quorum size,
-     answe
-
-/* … truncated 3055 chars — edit only what you need near the top … */
+})();
