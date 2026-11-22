@@ -24,6 +24,7 @@ export function createNotificationCenter({ mount, storageKey }) {
   const bell = wrap.querySelector('.notif-bell');
   const badge = wrap.querySelector('.notif-badge');
   const panel = wrap.querySelector('.notif-panel');
+  const clearButton = wrap.querySelector('.notif-clear');
   const list = wrap.querySelector('.notif-list');
 
   function save() {
@@ -74,6 +75,9 @@ export function createNotificationCenter({ mount, storageKey }) {
       save();
     }
     render();
+    if (open) {
+      clearButton.focus();
+    }
   }
 
   function onBellClick() {
@@ -87,13 +91,21 @@ export function createNotificationCenter({ mount, storageKey }) {
   function onDocumentClick(evt) {
     if (!wrap.contains(evt.target)) setOpen(false);
   }
+  function onDocumentKeydown(evt) {
+    if ((evt.key === 'Escape' || evt.key === 'Esc') && !panel.classList.contains('hidden')) {
+      evt.preventDefault();
+      setOpen(false);
+      bell.focus();
+    }
+  }
   function onServiceWorkerMessage(evt) {
     if (evt.data?.type === 'arbiter:notify') push(evt.data.message);
   }
 
   bell.addEventListener('click', onBellClick);
-  wrap.querySelector('.notif-clear').addEventListener('click', onClearClick);
+  clearButton.addEventListener('click', onClearClick);
   document.addEventListener('click', onDocumentClick);
+  document.addEventListener('keydown', onDocumentKeydown);
 
   // Push payloads the service worker relays to open tabs (see sw.js).
   navigator.serviceWorker?.addEventListener('message', onServiceWorkerMessage);
@@ -118,8 +130,9 @@ export function createNotificationCenter({ mount, storageKey }) {
 
   function destroy() {
     bell.removeEventListener('click', onBellClick);
-    wrap.querySelector('.notif-clear').removeEventListener('click', onClearClick);
+    clearButton.removeEventListener('click', onClearClick);
     document.removeEventListener('click', onDocumentClick);
+    document.removeEventListener('keydown', onDocumentKeydown);
     navigator.serviceWorker?.removeEventListener('message', onServiceWorkerMessage);
     wrap.remove();
   }
