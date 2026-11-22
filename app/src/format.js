@@ -23,6 +23,8 @@ export function formatRatio(ratio) {
 // applies locale-aware currency formatting. Leaderboard stake/activity
 // values arrive as whole-unit numbers, so this whole-unit, null-safe
 // formatter is the correct one to import there.
+// Exported here so consumers (leaderboard.js, admin.js) can import it instead
+// of referencing an undefined global (issue #235).
 export function formatUsdc(amount) {
   if (amount === null || amount === undefined || Number.isNaN(Number(amount))) {
     return '—';
@@ -39,4 +41,15 @@ export function formatUsdc(amount) {
 export function balanceFigure(amount, label) {
   const figure = formatUsdc(amount);
   return label ? `${label}: ${figure}` : figure;
+}
+
+// Builds the og:image URL for a worker profile page (issue #246). worker.js
+// imported this from format.js but it was never defined there, so the
+// og-image assignment threw on every load. Kept null-safe so a missing
+// worker id falls back to the site-wide default image instead of throwing.
+const DEFAULT_OG_IMAGE = 'https://handsoff.app/og-default.png';
+
+export function workerOgImageUrl(workerId) {
+  if (!workerId) return DEFAULT_OG_IMAGE;
+  return `https://handsoff.app/og/worker/${encodeURIComponent(workerId)}.png`;
 }

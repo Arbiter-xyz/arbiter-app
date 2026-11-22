@@ -91,11 +91,9 @@ async function main() {
   console.log(reply);
 }
 
-// ESM entrypoint check: run main() only when this file is executed directly.
-const isMain =
-  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-
-if (isMain) {
+// ESM entrypoint check: `require.main === module` is undefined under
+// "type":"module", so compare the invoked script path against this module.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => {
     console.error(err);
     process.exit(1);

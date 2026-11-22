@@ -119,9 +119,14 @@ function isPlausibleWebhookUrl(value) {
 el.btnLogin.addEventListener('click', async () => {
   const key = el.keyInput.value.trim();
   if (!key) return;
-  localStorage.setItem(KEY_STORAGE, key);
-  el.loginStatus.textContent = '';
-  await loadAccount();
+  el.btnLogin.disabled = true;
+  try {
+    localStorage.setItem(KEY_STORAGE, key);
+    el.loginStatus.textContent = '';
+    await loadAccount();
+  } finally {
+    el.btnLogin.disabled = false;
+  }
 });
 
 el.btnLogout.addEventListener('click', () => {
