@@ -3,8 +3,27 @@ const bytes = (length) => crypto.getRandomValues(new Uint8Array(length));
 const encode = (value) => btoa(String.fromCharCode(...new Uint8Array(value)));
 const decode = (value) => Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 
+/**
+ * Whether this device/browser can perform a WebAuthn ceremony at all.
+ * Used by callers to decide between the biometric gate and the password fallback.
+ *
+ * @returns {boolean} `true` if WebAuthn is available in this environment.
+ */
+export function isBiometricUnlockSupported() {
+  return typeof window !== 'undefined' && !!window.PublicKeyCredential && !!navigator.credentials;
+}
+
+/**
+ * Whether a biometric credential has already been enrolled on this device.
+ *
+ * @returns {boolean} `true` if an enrolled credential id is stored.
+ */
+export function isBiometricUnlockEnrolled() {
+  return isBiometricUnlockSupported() && !!localStorage.getItem(CREDENTIAL_KEY);
+}
+
 export async function enrollBiometricUnlock() {
-  if (!window.PublicKeyCredential || localStorage.getItem(CREDENTIAL_KEY)) return false;
+  if (!isBiometricUnlockSupported() || localStorage.getItem(CREDENTIAL_KEY)) return false;
   try {
     const credential = await navigator.credentials.create({ publicKey: {
       challenge: bytes(32), rp: { name: 'Arbiter' }, user: { id: bytes(16), name: 'local-wallet', displayName: 'Arbiter quick-start wallet' },
@@ -28,7 +47,24 @@ export async function enrollBiometricUnlock() {
  */
 export async function unlockLocalWalletSecret() {
   const id = localStorage.getItem(CREDENTIAL_KEY);
-  if (!id || !window.PublicKeyCredential) return false;
-  await navigator.credentials.get({ publicKey: { challenge: bytes(32), allowCredentials: [{ type: 'public-key', id: decode(id) }], userVerification: 'required', timeout: 60_000 } });
-  return true;
+  if (!id || !isBiometricUnlockSupported()) return false;
+  try {
+    await navigator.credentials.get({ publicKey: { challenge: bytes(32), allowCredentials: [{ type: 'public-key', id: decode(id) }], userVerification: 'required', timeout: 60_000 } });
+    return true;
+  } catch { return false; }
+}
+
+/**
+ * Gate a secret-reveal/copy action behind a biometric check when enrolled.
+ *
+ * - If biometrics are not supported or not enrolled, resolves `true` so the
+ *   caller falls back to its existing password-reveal flow.
+ * - If enrolled, resolves `true` only when the WebAuthn ceremony succeeds;
+ *   a cancelled/failed ceremony resolves `false` so the caller can abort.
+ *
+ * @returns {Promise<boolean>} `true` if the action may proceed.
+ */
+export async function authorizeSecretReveal() {
+  if (!isBiometricUnlockEnrolled()) return true;
+  return unlockLocalWalletSecret();
 }

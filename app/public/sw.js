@@ -202,31 +202,9 @@ function forwardPushToExtension(payload) {
     // has declared externally_connectable for this origin; otherwise this is a
     // no-op and the web-push notification above remains the fallback.
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-      chrome.runtime.sendMessage({ type: 'arbiter:push', payload });
+      chrome.runtime.sendMessage({ source: 'arbiter-page', type: 'push', payload });
     }
   } catch {
-    // Extension not installed / not reachable — web push already handled it.
+    // extension not installed / not reachable — ignore
   }
 }
-
-self.addEventListener('message', (event) => {
-  const data = event.data;
-  if (!data || data.source !== EXTENSION_MESSAGE_SOURCE) return;
-
-  if (data.type === 'arbiter:push') {
-    forwardPushToExtension(data.payload || {});
-    return;
-  }
-
-  // The extension answered a dispatched question in the background; surface it
-  // to any open console tab so the UI stays in sync with the extension loop.
-  if (data.type === 'arbiter:answered') {
-    event.waitUntil(
-      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-        for (const client of clients) {
-          client.postMessage({ type: 'arbiter:answered', payload: data.payload || {} });
-        }
-      }),
-    );
-  }
-});
