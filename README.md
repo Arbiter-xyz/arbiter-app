@@ -209,3 +209,5 @@ executions, transaction links included.)
 
 <!-- handsoff-issue-373 -->
 - #373: i18n.js does not parse: two entire competing i18n implementations concatenated, one missing its closing brace
+<!-- handsoff-issue-378 -->
+- #378: EPIC: fix-first punch list — main doesn't build, plus the fraudulent/regressed closures blocking everything else
