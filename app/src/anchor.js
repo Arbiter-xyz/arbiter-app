@@ -166,43 +166,115 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
   // withdrawal popup against a stale endpoint after the backend's anchor
   // config has changed. Concurrent callers share the in-flight promise.
   //
-  // Only a definitive "no anchor configured" (NO_ANCHOR) is cached for the
-  // full TTL. A transient failure (500, network error) is NOT cached — the
-  // promise is cleared so the next call retries, rather than pinning the
-  // session into a permanent "unconfigured" state.
-  async function ensureAnchorConfig() {
-    const isStale = !anchorConfigPromise || Date.now() - anchorConfigFetchedAt > ANCHOR_CONFIG_TTL_MS;
-    if (isStale) {
-      anchorConfigFetchedAt = Date.now();
-      anchorConfigPromise = getAnchorConfig().catch((err) => {
-        // Don't cache a failed fetch — let the next call retry.
-        anchorConfigPromise = null;
-        anchorConfigFetchedAt = 0;
-        throw err;
-      });
+  // Only a successful fetch is cached; a failed one clears the promise so
+  // the next click retries instead of being stuck on a rejected promise.
+  function loadAnchorConfig() {
+    const now = Date.now();
+    if (anchorConfigPromise && now - anchorConfigFetchedAt < ANCHOR_CONFIG_TTL_MS) {
+      return anchorConfigPromise;
     }
+    anchorConfigFetchedAt = now;
+    anchorConfigPromise = getAnchorConfig().catch((err) => {
+      anchorConfigPromise = null;
+      throw err;
+    });
     return anchorConfigPromise;
   }
 
-  ensureAnchorConfig()
-    .then((cfg) => {
-      if (cfg && cfg !== NO_ANCHOR) button.classList.remove('hidden');
+  // Hide the button until we know an anchor is configured.
+  button.hidden = true;
+  loadAnchorConfig()
+    .then((config) => {
+      if (config && config.webAuthEndpoint && config.transferServer) {
+        button.hidden = false;
+      }
     })
-    .catch(() => {}); // no anchor configured, or unreachable — button stays hidden either way
+    .catch(() => {
+      // Leave the button hidden — no anchor, nothing to withdraw to.
+    });
 
   button.addEventListener('click', async () => {
     button.disabled = true;
     status.textContent = '';
     try {
-      const anchorConfig = await ensureAnchorConfig();
-      if (!anchorConfig || anchorConfig === NO_ANCHOR) throw new Error('no fiat anchor is configured on this backend');
+      const anchorConfig = await loadAnchorConfig();
+      if (!anchorConfig || !anchorConfig.webAuthEndpoint || !anchorConfig.transferServer) {
+        status.textContent = 'No bank anchor is configured on this deployment.';
+        return;
+      }
 
-      const address = getAddress();
-      const wallet = getWallet();
+      const address = await getAddress();
+      const wallet = await getWallet();
+      if (!address || !wallet) {
+        status.textContent = 'Connect a wallet first.';
+        return;
+      }
 
-      status.textContent = 'Authenticating with the anchor (one signature)…';
+      status.textContent = 'Signing in to the anchor…';
       const jwt = await sep10Auth(anchorConfig, address, wallet, networkPassphrase);
 
-      status.textContent = 'Opening the anchor\'s wi
+      status.textContent = 'Opening the anchor\'s withdrawal page…';
+      const { url, id } = await startInteractiveWithdraw(anchorConfig, jwt, address, assetCode);
+      window.open(url, '_blank', 'noopener');
 
-/* … truncated 1208 chars — edit only what you need near the top … */
+      status.textContent = 'Waiting for you to finish the anchor\'s withdrawal form…';
+      const transaction = await pollTransaction(anchorConfig, jwt, id, (tx) => {
+        status.textContent = `Anchor status: ${tx.status}`;
+      });
+
+      if (transaction.status === 'error' || transaction.status === 'refunded') {
+        status.textContent = `The anchor could not complete this withdrawal (${transaction.status}).`;
+        return;
+      }
+
+      const arbiterSessionToken = await getArbiterSessionToken();
+      const reported = await reportToArbiter({ address, arbiterSessionToken, transaction });
+      if (!reported) {
+        status.textContent = 'Withdrawal reached a payment-ready state, but reporting it to the backend failed — an admin may need to reconcile this manually.';
+      }
+
+      const amount = transaction.amount_in;
+      const beneficiary = transaction.withdraw_anchor_account;
+      const memo = transaction.withdraw_memo;
+      const memoType = transaction.withdraw_memo_type;
+
+      const canAutoRelay =
+        typeof autoRelayWithdrawal === 'function' &&
+        amount &&
+        beneficiary &&
+        Number(amount) > 0 &&
+        Number(amount) <= MAX_AUTO_RELAY_AMOUNT;
+
+      if (canAutoRelay) {
+        const confirmed = window.confirm(
+          `Send ${amount} ${assetCode} to the anchor's collection account?\n\n` +
+          `Destination: ${beneficiary}\n` +
+          (memo ? `Memo (${memoType || 'text'}): ${memo}\n` : '') +
+          '\nThis is a real transfer and cannot be undone.'
+        );
+        if (confirmed) {
+          status.textContent = 'Sending the withdrawal transfer…';
+          try {
+            await autoRelayWithdrawal({ amount, beneficiary, memo });
+            status.textContent = 'Withdrawal sent to the anchor. It will credit your bank account once the anchor processes it.';
+            return;
+          } catch (err) {
+            status.textContent = `Automatic transfer failed (${err.message}). Follow the anchor's instructions below to send it manually.`;
+          }
+        }
+      }
+
+      // Manual fallback: show exactly what the anchor wants the user to send.
+      const lines = [
+        `Send ${amount || '(amount not provided)'} ${assetCode} to the anchor to complete this withdrawal.`,
+        beneficiary ? `Destination: ${beneficiary}` : null,
+        memo ? `Memo (${memoType || 'text'}): ${memo}` : null,
+      ].filter(Boolean);
+      status.textContent = lines.join(' ');
+    } catch (err) {
+      status.textContent = `Withdrawal failed: ${err.message}`;
+    } finally {
+      button.disabled = false;
+    }
+  });
+}

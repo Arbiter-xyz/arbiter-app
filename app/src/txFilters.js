@@ -5,7 +5,7 @@ import { stroopsFromUsdcInput } from './units.js';
 // already-loaded window (most recent 100 rows), not the full history.
 // Server-side filtering is a backend follow-up.
 
-function parseAmount(value) {
+export function parseAmount(value) {
   if (value === undefined || value === null || String(value).trim() === '') return null;
   try {
     return stroopsFromUsdcInput(value);
@@ -16,7 +16,7 @@ function parseAmount(value) {
 
 // <input type="date"> yields "YYYY-MM-DD"; interpret as a local calendar
 // day so "to" is inclusive of the whole day.
-function parseDay(value, endOfDay) {
+export function parseDay(value, endOfDay) {
   if (!value) return null;
   const [y, m, d] = String(value).split('-').map(Number);
   if (!y || !m || !d) return null;

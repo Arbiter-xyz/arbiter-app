@@ -324,6 +324,283 @@ button.secondary {
 }
 
 /* ------------------------------------------------------------------ */
-/* Admin console — a nav-she
+/* Admin console — a nav-shell layout, distinct from the single-column   */
+/* .app pages above: a fixed sidebar grouped by area, and a scrollable   */
+/* content pane for whichever view is selected.                         */
+/* ------------------------------------------------------------------ */
 
-/* … truncated 5741 chars — edit only what you need near the top … */
+.admin-shell {
+  display: flex;
+  min-height: 100vh;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.admin-nav {
+  width: 220px;
+  flex-shrink: 0;
+  border-inline-end: 1px solid var(--border);
+  padding: 1.25rem 0.75rem;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.admin-nav h1 {
+  font-size: 1.05rem;
+  margin: 0 0.5rem 1.25rem;
+}
+
+.admin-nav-group {
+  margin-bottom: 1.1rem;
+}
+
+.admin-nav-group h3 {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 0 0.5rem 0.35rem;
+}
+
+.admin-nav-link {
+  display: block;
+  width: 100%;
+  text-align: start;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--fg);
+  padding: 0.5rem 0.6rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.admin-nav-link:hover {
+  background: color-mix(in srgb, var(--border) 40%, transparent);
+}
+
+.admin-nav-link.active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.admin-content {
+  flex: 1;
+  padding: 1.75rem 2rem 4rem;
+  max-width: 1000px;
+}
+
+.admin-view {
+  display: none;
+}
+
+.admin-view.active {
+  display: block;
+}
+
+.admin-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.admin-stat-grid .panel {
+  margin-top: 0;
+}
+
+.admin-stat-grid strong {
+  display: block;
+  font-size: 1.3rem;
+  margin-top: 0.2rem;
+}
+
+.leaderboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+.leaderboard-table th {
+  text-align: start;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.leaderboard-table td {
+  padding: 0.6rem;
+  border-bottom: 1px dashed var(--border);
+}
+.leaderboard-table tbody tr:hover {
+  background: color-mix(in srgb, var(--border) 25%, transparent);
+}
+.density-compact .leaderboard-table {
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+}
+.density-compact .leaderboard-table th,
+.density-compact .leaderboard-table td {
+  padding: 0.2rem 0.4rem;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.push-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.push-row p {
+  margin: 0.15rem 0 0;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 1rem;
+}
+
+fieldset label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-block: 0.35rem;
+  margin-inline: 0 0.75rem;
+  font-size: 0.9rem;
+}
+
+.timer-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+}
+
+.timer-bar {
+  height: 100%;
+  width: 100%;
+  background: var(--accent);
+  transition: width 0.1s linear;
+}
+
+#answer-form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+#answer-input {
+  flex: 1;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+}
+
+/* Issue #33: marks an unreviewed, dispatched draft answer so a worker can't
+   mistake it for something already sent. Cleared as soon as they edit it. */
+#answer-input.answer-suggested {
+  border-color: var(--accent);
+  background: rgba(91, 76, 240, 0.08);
+}
+
+#log {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+#log li {
+  padding: 0.2rem 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+/* --- Locale picker, install button, offline banner (issues #57-#59) --- */
+.locale-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-block-start: 0.5rem;
+}
+
+#btn-install {
+  margin-inline-start: 0;
+  margin-block-start: 0.5rem;
+}
+
+/* RTL: the timer bar shrinks toward the reading-start edge, matching the
+   mirrored layout. Everything else mirrors via logical properties + dir. */
+[dir='rtl'] .timer-track {
+  direction: rtl;
+}
+
+[dir='rtl'] #withdraw-beneficiary-input,
+[dir='rtl'] #backup-secret {
+  direction: ltr; /* Stellar addresses/keys are always LTR */
+  text-align: end;
+/* Drop zone (#135) — reusable, currently unused. Markup pattern:
+   <label class="drop-zone" data-state="idle|dragover|error">
+     <input type="file" hidden />
+     <span class="drop-zone-title">Drop a file or click to browse</span>
+     <span class="drop-zone-hint">PNG, JPG up to 5 MB</span>
+   </label>
+   Toggle data-state="dragover" from dragenter/dragleave handlers.
+   Uses theme tokens only, so light and dark branches both apply.
+   Demo: app/dropzone-demo.html */
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 1.5rem 1rem;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--fg);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.drop-zone:hover,
+.drop-zone:focus-within {
+  border-color: var(--accent);
+}
+.drop-zone[data-state="dragover"] {
+  border-color: var(--accent);
+  border-style: solid;
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+}
+.drop-zone[data-state="error"] {
+  border-color: #d64545;
+}
+.drop-zone-title {
+  font-weight: 600;
+}
+.drop-zone-hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+}

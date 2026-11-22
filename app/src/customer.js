@@ -26,7 +26,7 @@ const REQUEST_TIMEOUT_MS = 15000;
 const el = {
   login: document.getElementById('panel-login'),
   account: document.getElementById('panel-account'),
-  loginForm: document.getElementById('customer-login-form'),
+  loginForm: document.getElementById('form-customer-login'),
   keyInput: document.getElementById('customer-key-input'),
   btnLogin: document.getElementById('btn-customer-login'),
   loginStatus: document.getElementById('customer-login-status'),
@@ -35,7 +35,7 @@ const el = {
   creditBalance: document.getElementById('credit-balance'),
   creditBalanceStroops: document.getElementById('credit-balance-stroops'),
   btnTopUp: document.getElementById('btn-top-up'),
-  webhookForm: document.getElementById('webhook-form'),
+  webhookForm: document.getElementById('form-webhook'),
   webhookInput: document.getElementById('webhook-url-input'),
   btnWebhookSave: document.getElementById('btn-webhook-save'),
   btnWebhookDelete: document.getElementById('btn-webhook-delete'),
@@ -120,13 +120,19 @@ function isPlausibleWebhookUrl(value) {
 
 async function login() {
   const key = el.keyInput.value.trim();
-  if (!key) return;
-  localStorage.setItem(KEY_STORAGE, key);
-  el.loginStatus.textContent = '';
-  await loadAccount();
+  if (!key || el.btnLogin.disabled) return;
+  el.btnLogin.disabled = true;
+  try {
+    localStorage.setItem(KEY_STORAGE, key);
+    el.loginStatus.textContent = '';
+    await loadAccount();
+  } finally {
+    el.btnLogin.disabled = false;
+  }
 }
 
 async function saveWebhook() {
+  if (el.btnWebhookSave.disabled) return;
   const url = el.webhookInput.value.trim();
   if (!isPlausibleWebhookUrl(url)) {
     el.webhookStatus.textContent = 'Enter a valid https:// webhook URL before saving.';
@@ -155,8 +161,7 @@ async function saveWebhook() {
 }
 
 // #518: the login and webhook rows are now <form>s so Enter submits them.
-// preventDefault keeps the page from navigating; the button click handlers
-// below still work for mouse users.
+// Their buttons are type=submit, so the form submit handler covers clicks too.
 el.loginForm.addEventListener('submit', (event) => {
   event.preventDefault();
   login();
@@ -166,8 +171,6 @@ el.webhookForm.addEventListener('submit', (event) => {
   event.preventDefault();
   saveWebhook();
 });
-
-el.btnLogin.addEventListener('click', login);
 
 el.btnLogout.addEventListener('click', () => {
   localStorage.removeItem(KEY_STORAGE);
@@ -192,8 +195,6 @@ el.btnTopUp.addEventListener('click', async () => {
     el.btnTopUp.disabled = false;
   }
 });
-
-el.btnWebhookSave.addEventListener('click', saveWebhook);
 
 el.btnWebhookDelete.addEventListener('click', async () => {
   if (!currentWebhookId) {

@@ -40,6 +40,7 @@ export function startTour(key, steps) {
   function close() {
     highlighted?.classList.remove('tour-highlight');
     box.remove();
+    document.removeEventListener('keydown', onKeydown);
   }
 
   function onKeydown(e) {

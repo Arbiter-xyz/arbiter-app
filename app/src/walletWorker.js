@@ -48,17 +48,33 @@ const PKCS8_ED25519_PREFIX = Uint8Array.from([
 let rec = null; // { address, state, wrapKey?, iv?, ct?, signKey? }
 let keypair = null; // only while pending-backup, or on browsers without WebCrypto Ed25519
 
-function idb(mode, fn) {
+// Memoize the open() promise so repeated load/save/wipe calls reuse a single
+// connection instead of leaking one per RPC (issue #512). A single long-lived
+// connection also avoids blocking future onupgradeneeded version bumps.
+let dbPromise = null;
+function openDb() {
+  if (!dbPromise) {
+    dbPromise = new Promise((resolve, reject) => {
+      const open = indexedDB.open(DB, 1);
+      open.onupgradeneeded = () => open.result.createObjectStore(STORE);
+      open.onerror = () => {
+        dbPromise = null;
+        reject(open.error);
+      };
+      open.onsuccess = () => resolve(open.result);
+    });
+  }
+  return dbPromise;
+}
+
+async function idb(mode, fn) {
+  const db = await openDb();
   return new Promise((resolve, reject) => {
-    const open = indexedDB.open(DB, 1);
-    open.onupgradeneeded = () => open.result.createObjectStore(STORE);
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => {
-      const tx = open.result.transaction(STORE, mode);
-      const req = fn(tx.objectStore(STORE));
-      tx.oncomplete = () => resolve(req?.result);
-      tx.onerror = () => reject(tx.error);
-    };
+    const tx = db.transaction(STORE, mode);
+    const req = fn(tx.objectStore(STORE));
+    tx.oncomplete = () => resolve(req?.result);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
   });
 }
 const load = () => idb('readonly', (s) => s.get('wallet'));

@@ -76,6 +76,8 @@ export function initI18n() {
     picker.addEventListener('change', () => setLocale(picker.value));
   }
   setLocale(current);
+}
+
 /**
  * Minimal i18n runtime for the worker console / dashboard (issue #8).
  *

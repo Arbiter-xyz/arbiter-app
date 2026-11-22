@@ -184,7 +184,7 @@
           <div class="panel">
             <p>USDC balance: <strong id="treasury-usdc" class="admin-balance">—</strong></p>
             <p>XLM balance: <strong id="treasury-xlm" class="admin-balance">—</strong></p>
-            <p class="muted small">Read live from the treasury account on Stellar.</p>
+            <p class="muted small">Read live from the configured Stellar account.</p>
           </div>
         </section>
 
@@ -193,7 +193,7 @@
           <div class="panel">
             <table class="leaderboard-table">
               <thead>
-                <tr><th scope="col">Payer</th><th scope="col">Tier</th><th scope="col">Status</th><th scope="col">Updated</th></tr>
+                <tr><th scope="col">Payer</th><th scope="col">Tier</th><th scope="col">Limit</th><th scope="col">Verified</th></tr>
               </thead>
               <tbody id="kyc-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
             </table>
@@ -215,8 +215,8 @@
         <section id="view-blockchain" class="admin-view">
           <h2>Blockchain</h2>
           <div class="panel">
-            <p class="muted small">On-chain contract state and recent events.</p>
-            <pre id="blockchain-state" class="muted small">Loading…</pre>
+            <p class="muted small">Contract and network status.</p>
+            <pre id="blockchain-status" class="muted small">Loading…</pre>
           </div>
         </section>
 
@@ -225,9 +225,9 @@
           <div class="panel">
             <table class="leaderboard-table">
               <thead>
-                <tr><th scope="col">Subject</th><th scope="col">Signal</th><th scope="col">Score</th><th scope="col">Updated</th></tr>
+                <tr><th scope="col">Worker</th><th scope="col">Signal</th><th scope="col">Score</th></tr>
               </thead>
-              <tbody id="fraud-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
+              <tbody id="fraud-body"><tr><td colspan="3" class="muted small">Loading…</td></tr></tbody>
             </table>
           </div>
         </section>
