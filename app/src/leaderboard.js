@@ -1,4 +1,4 @@
-import { truncateAddress, formatRatio } from './format.js';
+import { truncateAddress, formatRatio, workerProfileUrl } from './format.js';
 // Deliberately using i18n.js's formatUsdc (not units.js's): this is a
 // user-facing display surface, and i18n.js's implementation is the
 // locale-aware formatter intended for rendered output. units.js's
