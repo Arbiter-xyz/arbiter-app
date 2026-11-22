@@ -2,6 +2,8 @@
 // toHaveScreenshot() pixel diffing — no SaaS. Baselines live in
 // visual/__screenshots__ and are reviewed like code in PRs.
 //
+// Baselines are generated in the CI container so they match the runner's
+// fonts/rendering. See visual/README.md for the update/approval flow.
 // This is the single canonical visual config (issue #233). `npm run visual`
 // and CI both invoke it via `playwright test --config playwright.visual.config.js`.
 // The former app/visual/playwright.config.js was an orphaned duplicate and has
@@ -14,6 +16,9 @@ export default defineConfig({
   snapshotPathTemplate: '{testDir}/__screenshots__/{projectName}/{arg}{ext}',
   fullyParallel: true,
   retries: 0,
+  // Keep diff artifacts (actual/expected/diff) so a deliberate CSS change
+  // fails with an inspectable diff instead of a bare assertion error.
+  preserveOutput: 'always',
   reporter: [['html', { outputFolder: 'playwright-report-visual', open: 'never' }]],
   expect: {
     toHaveScreenshot: { maxDiffPixelRatio: 0.01, animations: 'disabled', caret: 'hide' },

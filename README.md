@@ -201,6 +201,11 @@ executions, transaction links included.)
 <!-- handsoff-issue-227 -->
 - #227: admin.js's renderMatchRatioChart uses undefined SVG_NS
 
+<!-- handsoff-issue-510 -->
+- #510: localWallet.js: delete unused exports, including getLocalWalletSecret()
+
+<!-- handsoff-issue-511 -->
+- #511: main.js: replace the wallet-kit v1 connect code with wireConnectButtons()
 <!-- handsoff-issue-244 -->
 - #244: Review: admin.js's renderMatchRatioChart uses undefined SVG_NS
 <!-- handsoff-issue-219 -->
