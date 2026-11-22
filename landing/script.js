@@ -118,10 +118,14 @@
      time — so this is the real price, not a client-side re-derivation.
      If the endpoint is unreachable we fall back to the static base price
      and label the result as an approximation.
-  ------------------------------------------------------------------- */
-  const pricingGrid = document.querySelector(".pricing-grid");
 
-  if (pricingGrid) {
+     The calculator mounts into .pricing-grid (in index.html's #pricing
+     section), falling back to #pricing itself so a markup change can't
+     leave this block silently dead again.
+  ------------------------------------------------------------------- */
+  const pricingSection = document.querySelector(".pricing-grid") || document.getElementById("pricing");
+
+  if (pricingSection) {
     const TIERS = [
       { id: "instant", label: "Instant", base: 0.05 },
       { id: "standard", label: "Standard", base: 0.25 },
@@ -181,7 +185,7 @@
     calc.appendChild(tierRow);
     calc.appendChild(output);
     calc.appendChild(note);
-    pricingGrid.insertAdjacentElement("afterend", calc);
+    pricingSection.appendChild(calc);
 
     render();
 

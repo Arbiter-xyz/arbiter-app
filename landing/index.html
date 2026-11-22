@@ -244,6 +244,8 @@
         <h2 id="pricing-heading" class="section-heading reveal" data-i18n="nav.pricing">Pricing</h2>
         <p class="section-sub reveal">Pay per question, with a wallet or a card. Price is locked
           in at quote time.</p>
+        <!-- Tier-pricing calculator mount point (landing/script.js); a11y-check.mjs asserts it exists. -->
+        <div class="pricing-grid" id="pricing-grid" aria-live="polite"></div>
         <div class="surge-live reveal" id="surge-live" hidden>
           <div class="surge-head">
             <span>Surge multiplier now: <strong id="surge-now">1.00x</strong></span>
