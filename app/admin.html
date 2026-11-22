@@ -104,12 +104,14 @@
               <button id="tx-filter-reset" type="button">Reset</button>
             </div>
             <p id="tx-filter-summary" class="muted small">Filters apply only to the most recent 100 transactions loaded, not the full history.</p>
-            <table class="leaderboard-table">
-              <thead>
-                <tr><th scope="col">Question</th><th scope="col">Payer</th><th scope="col">Amount</th><th scope="col">Status</th><th scope="col">Outcome</th><th scope="col">Created</th></tr>
-              </thead>
-              <tbody id="tx-body"><tr><td colspan="6" class="muted small">Loading…</td></tr></tbody>
-            </table>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Transactions table, scroll horizontally to see all columns">
+              <table class="leaderboard-table">
+                <thead>
+                  <tr><th scope="col">Question</th><th scope="col">Payer</th><th scope="col">Amount</th><th scope="col">Status</th><th scope="col">Outcome</th><th scope="col">Created</th></tr>
+                </thead>
+                <tbody id="tx-body"><tr><td colspan="6" class="muted small">Loading…</td></tr></tbody>
+              </table>
+            </div>
             <button id="btn-tx-load-more" class="secondary hidden" type="button" style="margin-top: 0.75rem">Load more</button>
           </div>
         </section>
@@ -117,24 +119,28 @@
         <section id="view-workers" class="admin-view">
           <h2>Workers</h2>
           <div class="panel">
-            <table class="leaderboard-table">
-              <thead>
-                <tr><th scope="col">Worker</th><th scope="col">Match ratio</th><th scope="col">Answers</th><th scope="col">Established</th><th scope="col">Stake</th><th scope="col">Owed</th></tr>
-              </thead>
-              <tbody id="workers-body"><tr><td colspan="6" class="muted small">Loading…</td></tr></tbody>
-            </table>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Workers table, scroll horizontally to see all columns">
+              <table class="leaderboard-table">
+                <thead>
+                  <tr><th scope="col">Worker</th><th scope="col">Match ratio</th><th scope="col">Answers</th><th scope="col">Established</th><th scope="col">Stake</th><th scope="col">Owed</th></tr>
+                </thead>
+                <tbody id="workers-body"><tr><td colspan="6" class="muted small">Loading…</td></tr></tbody>
+              </table>
+            </div>
           </div>
         </section>
 
         <section id="view-payers" class="admin-view">
           <h2>Payers</h2>
           <div class="panel">
-            <table class="leaderboard-table">
-              <thead>
-                <tr><th scope="col">Payer</th><th scope="col">Total spend</th><th scope="col">Tracked</th><th scope="col">Settled</th><th scope="col">Success rate</th></tr>
-              </thead>
-              <tbody id="payers-body"><tr><td colspan="5" class="muted small">Loading…</td></tr></tbody>
-            </table>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Payers table, scroll horizontally to see all columns">
+              <table class="leaderboard-table">
+                <thead>
+                  <tr><th scope="col">Payer</th><th scope="col">Total spend</th><th scope="col">Tracked</th><th scope="col">Settled</th><th scope="col">Success rate</th></tr>
+                </thead>
+                <tbody id="payers-body"><tr><td colspan="5" class="muted small">Loading…</td></tr></tbody>
+              </table>
+            </div>
           </div>
         </section>
 
@@ -149,77 +155,84 @@
 
         <section id="view-treasury" class="admin-view">
           <h2>Treasury</h2>
-          <div class="panel" id="treasury-panel">
-            <p class="muted small">Loading…</p>
+          <div class="panel">
+            <p>USDC balance: <strong id="treasury-usdc" class="admin-balance">—</strong></p>
+            <p>XLM balance: <strong id="treasury-xlm" class="admin-balance">—</strong></p>
+            <p class="muted small">Read live from the treasury account on-chain.</p>
           </div>
         </section>
 
         <section id="view-kyc" class="admin-view">
           <h2>KYC &amp; Tiers</h2>
           <div class="panel">
-            <p class="muted small">
-              Self-reported by each user's own browser after completing SEP-12/SEP-24 with the
-              configured anchor — this backend never queries an anchor for another address's
-              status (SEP-10 means only that address's own signature can). Not a live query.
-            </p>
-            <table class="leaderboard-table">
-              <thead><tr><th scope="col">Address</th><th scope="col">Status</th><th scope="col">Tier</th><th scope="col">Reported</th></tr></thead>
-              <tbody id="kyc-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
-            </table>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="KYC and tiers table, scroll horizontally to see all columns">
+              <table class="leaderboard-table">
+                <thead>
+                  <tr><th scope="col">Payer</th><th scope="col">Tier</th><th scope="col">Status</th><th scope="col">Updated</th></tr>
+                </thead>
+                <tbody id="kyc-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
+              </table>
+            </div>
           </div>
         </section>
 
         <section id="view-payouts" class="admin-view">
           <h2>Bank Payouts</h2>
           <div class="panel">
-            <p class="muted small">Self-reported SEP-24 withdrawal history — same caveat as KYC &amp; Tiers above.</p>
-            <table class="leaderboard-table">
-              <thead><tr><th scope="col">Address</th><th scope="col">Amount</th><th scope="col">Status</th><th scope="col">Reported</th></tr></thead>
-              <tbody id="payouts-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
-            </table>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Bank payouts table, scroll horizontally to see all columns">
+              <table class="leaderboard-table">
+                <thead>
+                  <tr><th scope="col">Payer</th><th scope="col">Amount</th><th scope="col">Status</th><th scope="col">Requested</th></tr>
+                </thead>
+                <tbody id="payouts-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
+              </table>
+            </div>
           </div>
         </section>
 
         <section id="view-blockchain" class="admin-view">
           <h2>Blockchain</h2>
-          <div class="panel" id="blockchain-panel"></div>
+          <div class="panel">
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Blockchain events table, scroll horizontally to see all columns">
+              <table class="leaderboard-table">
+                <thead>
+                  <tr><th scope="col">Event</th><th scope="col">Ledger</th><th scope="col">Tx</th><th scope="col">Time</th></tr>
+                </thead>
+                <tbody id="blockchain-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
+              </table>
+            </div>
+          </div>
         </section>
 
         <section id="view-fraud" class="admin-view">
           <h2>Fraud &amp; Trust</h2>
           <div class="panel">
-            <p class="muted small">Match-ratio distribution across established workers.</p>
-            <label class="small" for="fraud-threshold">Flag below (match ratio)</label>
-            <input type="number" id="fraud-threshold" min="0" max="1" step="0.01" />
-            <div id="fraud-chart" class="admin-chart"></div>
-          </div>
-          <div class="panel">
-            <p class="muted small">Workers below the minimum match ratio once established — candidates for review.</p>
-            <table class="leaderboard-table">
-              <thead>
-                <tr><th scope="col">Worker</th><th scope="col">Match ratio</th><th scope="col">Answers</th><th scope="col">Stake</th></tr>
-              </thead>
-              <tbody id="fraud-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
-            </table>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Fraud and trust table, scroll horizontally to see all columns">
+              <table class="leaderboard-table">
+                <thead>
+                  <tr><th scope="col">Worker</th><th scope="col">Signal</th><th scope="col">Score</th><th scope="col">Updated</th></tr>
+                </thead>
+                <tbody id="fraud-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
+              </table>
+            </div>
           </div>
         </section>
 
         <section id="view-audit" class="admin-view">
           <h2>Audit Log</h2>
           <div class="panel">
-            <p class="muted small">Admin actions recorded by the backend (GET /admin/audit), newest first.</p>
-            <table class="leaderboard-table">
-              <thead>
-                <tr><th scope="col">Time</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Detail</th></tr>
-              </thead>
-              <tbody id="audit-body"><tr><td colspan="5" class="muted small">Loading…</td></tr></tbody>
-            </table>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Audit log table, scroll horizontally to see all columns">
+              <table class="leaderboard-table">
+                <thead>
+                  <tr><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Time</th></tr>
+                </thead>
+                <tbody id="audit-body"><tr><td colspan="4" class="muted small">Loading…</td></tr></tbody>
+              </table>
+            </div>
           </div>
         </section>
       </main>
     </div>
-
-    <script type="module" src="/src/a11y.js"></script>
     <script type="module" src="/src/admin.js"></script>
   </body>
 </html>
