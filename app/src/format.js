@@ -16,6 +16,13 @@ export function formatRatio(ratio) {
 
 // Formats a USDC amount (in whole units) for display, e.g. 1234.5 -> "1,234.50".
 // Null/undefined-safe so balance lines render even when a value is missing.
+//
+// This is the canonical formatUsdc for UI rendering (issue #230). It is
+// deliberately chosen over the divergent implementations in units.js and
+// i18n.js: units.js works in base units (6-decimal integers) and i18n.js
+// applies locale-aware currency formatting. Leaderboard stake/activity
+// values arrive as whole-unit numbers, so this whole-unit, null-safe
+// formatter is the correct one to import there.
 // Exported here so consumers (leaderboard.js, admin.js) can import it instead
 // of referencing an undefined global (issue #235).
 export function formatUsdc(amount) {
