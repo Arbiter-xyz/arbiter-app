@@ -83,32 +83,37 @@
      developer-facing page, not decorative. Injected via JS so the
      snippet degrades to plain, manually-selectable text if this fails.
   ------------------------------------------------------------------- */
-  document.querySelectorAll(".terminal").forEach((terminal) => {
-    const bar = terminal.querySelector(".terminal-bar");
-    const codeEl = terminal.querySelector("code");
-    if (!bar || !codeEl || !navigator.clipboard) return;
+  function wireCopyButtons() {
+    document.querySelectorAll(".terminal").forEach((terminal) => {
+      const bar = terminal.querySelector(".terminal-bar");
+      const codeEl = terminal.querySelector("code");
+      if (!bar || !codeEl || !navigator.clipboard) return;
+      if (bar.querySelector(".copy-btn")) return;
 
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "copy-btn";
-    button.textContent = "Copy";
-    button.setAttribute("aria-label", "Copy code to clipboard");
-    bar.appendChild(button);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "copy-btn";
+      button.textContent = "Copy";
+      button.setAttribute("aria-label", "Copy code to clipboard");
+      bar.appendChild(button);
 
-    button.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(codeEl.textContent.trim());
-        button.textContent = "Copied";
-        button.classList.add("copy-btn-done");
-      } catch (err) {
-        button.textContent = "Press ⌘/Ctrl+C";
-      }
-      setTimeout(() => {
-        button.textContent = "Copy";
-        button.classList.remove("copy-btn-done");
-      }, 2000);
+      button.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(codeEl.textContent.trim());
+          button.textContent = "Copied";
+          button.classList.add("copy-btn-done");
+        } catch (err) {
+          button.textContent = "Press ⌘/Ctrl+C";
+        }
+        setTimeout(() => {
+          button.textContent = "Copy";
+          button.classList.remove("copy-btn-done");
+        }, 2000);
+      });
     });
-  });
+  }
+
+  wireCopyButtons();
 
   /* -------------------------------------------------------------------
      Live pricing calculator (#pricing) — lets a visitor pick a tier and
