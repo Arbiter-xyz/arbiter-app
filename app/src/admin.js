@@ -480,6 +480,35 @@ async function renderPayouts() {
   );
 }
 
+async function renderAuditLog() {
+  const tbody = document.getElementById('audit-body');
+  if (!tbody) return;
+  let entries;
+  try {
+    ({ entries } = await fetchAdmin('/admin/audit'));
+  } catch (err) {
+    if (err.message === 'unauthorized') throw err;
+    replaceRows(tbody, [emptyRow(5, 'Audit log unavailable — this backend does not expose GET /admin/audit yet.')]);
+    return;
+  }
+  if (!entries || entries.length === 0) {
+    replaceRows(tbody, [emptyRow(5, 'No admin actions recorded yet.')]);
+    return;
+  }
+  replaceRows(
+    tbody,
+    entries.map((e) =>
+      row([
+        td(e.at ? new Date(e.at).toLocaleString() : '—', { className: 'muted small' }),
+        td(e.actor || '—'),
+        td(e.action || '—'),
+        td(truncateAddress(e.target), { title: e.target || '' }),
+        td(e.detail === undefined ? '—' : typeof e.detail === 'string' ? e.detail : JSON.stringify(e.detail)),
+      ]),
+    ),
+  );
+}
+
 const VIEWS = {
   overview: renderOverview,
   transactions: renderTransactions,
