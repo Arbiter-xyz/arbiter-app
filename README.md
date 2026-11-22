@@ -200,3 +200,6 @@ executions, transaction links included.)
 
 <!-- handsoff-issue-227 -->
 - #227: admin.js's renderMatchRatioChart uses undefined SVG_NS
+
+<!-- handsoff-issue-378 -->
+- #378: EPIC: fix-first punch list — main doesn't build, plus the fraudulent/regressed closures blocking everything else
