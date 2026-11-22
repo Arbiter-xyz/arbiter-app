@@ -26,10 +26,12 @@ export function startTour(key, steps) {
   if (seen(key) || !steps.length) return;
   markSeen(key);
 
+  const titleId = `tour-title-${Math.random().toString(36).slice(2)}`;
   const box = document.createElement('div');
   box.className = 'tour-tip';
   box.setAttribute('role', 'dialog');
   box.setAttribute('aria-live', 'polite');
+  box.setAttribute('aria-labelledby', titleId);
   document.body.append(box);
 
   let i = 0;
@@ -40,6 +42,15 @@ export function startTour(key, steps) {
     box.remove();
   }
 
+  function onKeydown(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    }
+  }
+
+  document.addEventListener('keydown', onKeydown);
+
   function render() {
     const step = steps[i];
     highlighted?.classList.remove('tour-highlight');
@@ -49,20 +60,24 @@ export function startTour(key, steps) {
 
     box.innerHTML = '';
     const h = document.createElement('strong');
+    h.id = titleId;
     h.textContent = step.title;
     const p = document.createElement('p');
     p.textContent = step.text;
     const row = document.createElement('div');
     row.className = 'tour-actions';
     const skip = document.createElement('button');
+    skip.type = 'button';
     skip.className = 'secondary';
     skip.textContent = 'Skip tour';
     skip.onclick = close;
     const next = document.createElement('button');
+    next.type = 'button';
     next.textContent = i === steps.length - 1 ? 'Got it' : `Next (${i + 1}/${steps.length})`;
     next.onclick = () => (++i < steps.length ? render() : close());
     row.append(skip, next);
     box.append(h, p, row);
+    next.focus();
   }
 
   render();
