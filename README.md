@@ -203,3 +203,15 @@ executions, transaction links included.)
 
 <!-- handsoff-issue-219 -->
 - #219: Leadermock.js is an orphaned, stale duplicate of leaderboard.js
+<!-- handsoff-issue-245 -->
+- #245: Review: admin.js's renderTreasury calls balanceFigure, undefined
+<!-- handsoff-issue-371 -->
+- #371: main.js does not parse: duplicate initI18n import with executable statements wedged between import statements
+
+<!-- handsoff-issue-372 -->
+- #372: dashboard.js does not parse: duplicate initI18n import, same pattern as main.js
+
+<!-- handsoff-issue-373 -->
+- #373: i18n.js does not parse: two entire competing i18n implementations concatenated, one missing its closing brace
+<!-- handsoff-issue-378 -->
+- #378: EPIC: fix-first punch list — main doesn't build, plus the fraudulent/regressed closures blocking everything else
