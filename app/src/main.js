@@ -1,23 +1,13 @@
-import {
-  StellarWalletsKit,
-  WalletNetwork,
-  FreighterModule,
-  LobstrModule,
-  xBullModule,
-  HanaModule,
-  AlbedoModule,
-  HotWalletModule,
-  LedgerModule,
-} from '@creit.tech/stellar-wallets-kit';
-import { createWalletKit } from './wallet.js';
+import { Networks } from '@creit.tech/stellar-wallets-kit';
 import { openSecureLocalWallet } from './localWallet.js';
+import { createWalletKit, wireConnectButtons } from './wallet.js';
+import { consumeReferralCode } from './referral.js';
 import { initI18n, t } from './i18n.js';
 import { initA11y } from './a11y.js';
 import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
-import { initI18n, t } from './i18n.js';
 import { initPwa } from './pwa.js';
 import { isNativeShell } from './platform.js';
 
@@ -109,18 +99,6 @@ const state = {
   // downstream needs to know which one is active.
   activeWallet: null,
   address: null,
-  get identity() {
-    return this.identities.get(this.address) || null;
-  },
-  get activeWallet() {
-    return this.identity?.wallet || null;
-  },
-  get sessionToken() {
-    return this.identity?.sessionToken || null;
-  },
-  get sessionExpiresAt() {
-    return this.identity?.sessionExpiresAt || 0;
-  },
   online: false,
   eventSource: null,
   currentQuestion: null,
@@ -282,40 +260,28 @@ startCategoryDemandPolling();
 // let whichever resolves last silently overwrite the other's in-flight
 // state.activeWallet/state.address — guard against that race by disabling
 // both the instant either one starts, and only re-enabling on failure.
-function setConnectButtonsBusy(busy) {
-  el.btnConnect.disabled = busy;
-  el.btnQuickStart.disabled = busy;
-}
-
-el.btnConnect.addEventListener('click', async () => {
-  setConnectButtonsBusy(true);
-  // Extension/deep-link wallets mostly can't open from a wrapped WebView
-  // (issue #56); steer native-shell users to the local quick-start wallet.
-  if (isNativeShell()) log(t('log.inAppWallet'));
-  try {
-    await kit.openModal({
-      onWalletSelected: async (option) => {
-        kit.setWallet(option.id);
-        const { address } = await kit.getAddress();
-        el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
-        await activateWallet(kit, address);
-      },
-      onClosed: (err) => {
-        setConnectButtonsBusy(false);
-        if (err) log(t('log.walletClosed', { error: err.message }));
-      },
-    });
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(t('log.connectFailed', { error: err.message }));
-  }
-});
 // --- Wallet connect (extension) or quick start (local, non-custodial) -----
 // Module list + button wiring live in wallet.js, shared with dashboard.js
 // (issue #19). The one behavioral difference between the two pages — this
 // console shows the backup/reveal panel only for the local quick-start
 // wallet — is handled via the `quickStart` flag onActivated receives,
 // rather than a special case inside the shared helper.
+
+function setConnectButtonsBusy(busy) {
+  if (el.btnConnect) el.btnConnect.disabled = busy;
+  if (el.btnQuickStart) el.btnQuickStart.disabled = busy;
+}
+
+wireConnectButtons({
+  kit,
+  connectButton: el.btnConnect,
+  quickStartButton: null,
+  onActivated: async (wallet, address) => {
+    el.backup.classList.add('hidden');
+    await activateWallet(wallet, address);
+  },
+  onError: log,
+});
 
 el.btnQuickStart.addEventListener('click', async () => {
   setConnectButtonsBusy(true);
@@ -520,10 +486,6 @@ async function hasUsdcTrustline(address) {
   if (res.status === 404) return false; // account doesn't exist on-chain at all yet
   if (!res.ok) throw new Error(`Horizon returned ${res.status}`);
   const account = await res.json();
-  return (account.balances || []).some((b) => b.asset_code === USDC_ASSET_CODE);
-  if (res.status === 404) return false;
-  if (!res.ok) throw new Error(`Horizon returned ${res.status}`);
-  const account = await res.json();
   return (account.balances || []).some(
     (b) => b.asset_code === USDC_ASSET_CODE && b.asset_issuer === USDC_ASSET_ISSUER
   );
@@ -553,10 +515,14 @@ el.btnOnboard.addEventListener('click', async () => {
   el.btnOnboard.disabled = true;
   try {
     log('Building sponsored onboarding transaction…');
+    const referralCode = consumeReferralCode();
     const buildRes = await fetch(`${BACKEND_URL}/sponsor/onboard/build`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address: state.address }),
+      body: JSON.stringify({
+        address: state.address,
+        ...(referralCode ? { referralCode } : {}),
+      }),
     });
     if (!buildRes.ok) throw new Error((await buildRes.json()).error || `build failed: ${buildRes.status}`);
     const { xdr } = await buildRes.json();
@@ -611,7 +577,12 @@ el.btnToggle.addEventListener('click', async () => {
  * expires. This exists because the backend now REQUIRES it for any
  * real-address workerId — see workerAuth.js. */
 async function ensureSession() {
-  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) return state.sessionToken;
+  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) {
+    window.dispatchEvent(
+      new CustomEvent('arbiter:session', { detail: { address: state.address, token: state.sessionToken } }),
+    );
+    return state.sessionToken;
+  }
 
   log('Proving control of your address (one signature)…');
   const challengeRes = await fetch(`${BACKEND_URL}/workers/${state.address}/session/challenge`, { method: 'POST' });
@@ -620,7 +591,7 @@ async function ensureSession() {
 
   const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
     address: state.address,
-    networkPassphrase: WalletNetwork.TESTNET,
+    networkPassphrase: Networks.TESTNET,
   });
 
   const sessionRes = await fetch(`${BACKEND_URL}/workers/${state.address}/session`, {
@@ -632,6 +603,7 @@ async function ensureSession() {
   const { token, expiresAt } = await sessionRes.json();
   state.sessionToken = token;
   state.sessionExpiresAt = expiresAt;
+  window.dispatchEvent(new CustomEvent('arbiter:session', { detail: { address: state.address, token } }));
   log('Session established — you can answer questions as yourself, and only yourself.');
   return token;
   return ensureSharedSession({
@@ -917,7 +889,7 @@ el.stakeForm.addEventListener('submit', async (evt) => {
     const xdr = await buildStakeXdr(state.address, amountStroops);
     const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
       address: state.address,
-      networkPassphrase: WalletNetwork.TESTNET,
+      networkPassphrase: Networks.TESTNET,
     });
     const res = await fetch(`${BACKEND_URL}/sponsor/stake`, {
       method: 'POST',
@@ -931,17 +903,6 @@ el.stakeForm.addEventListener('submit', async (evt) => {
     await refreshEarnings();
   } catch (err) {
     log(`Stake failed: ${err.message}`);
-  } finally {
-    el.btnStake.disabled = false;
-    state.activeWallet = wallet;
-    state.address = address;
-    el.workerAddress.textContent = address;
-    el.connect.classList.add('hidden');
-
-    const trusted = await hasUsdcTrustline(address);
-    showPanel(trusted ? 'online' : 'onboard');
-    if (trusted) startCategoryDemandPolling();
-    log(`Connected ${address}${trusted ? '' : ' — USDC trustline required before going online.'}`);
   } finally {
     el.btnStake.disabled = false;
   }
@@ -962,13 +923,6 @@ if ('serviceWorker' in navigator) {
     .catch((err) => {
       log(`Service worker registration failed (push notifications unavailable): ${err.message}`);
     });
-}
-
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(base64);
-  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
 
 // Issue #21: a page reload used to always show the HTML default "Off" status
