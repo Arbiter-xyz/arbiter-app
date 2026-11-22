@@ -149,7 +149,13 @@ Sandbox-only (`/oracle/sandbox` + poll `/oracle/:jobId`) — no payment, no chai
 
 ```sh
 cd app && npm install && npm run dev      # or: npm run build
+# `npm run check` only syntax-checks src/main.js (`node --check src/main.js`) —
+# it does not cover the other app/src/*.js files (dashboard.js, admin.js,
+# customer.js, worker.js, leaderboard.js, status.js, demo.js, etc.). It's a
+# narrow smoke check, not a project-wide syntax gate.
 cd landing && python3 -m http.server 8123 # static, no build step
+# point landing/ at a local backend (defaults to production if absent):
+cp landing/config.example.js landing/config.js  # then edit ARBITER_API_BASE
 
 cd demo-agent && npm install
 cp .env.example .env
@@ -180,3 +186,44 @@ executions, transaction links included.)
 - **Live demo feed:** `app/demo.html` polls `GET /admin/transactions` and
   `GET /admin/workers` (admin token required) and shows dispatch, answer and
   settlement events as they happen — no changes to the CLI scripts needed.
+
+## Handsoff notes
+
+<!-- handsoff-issue-268 -->
+- #268: Review: main.js's demand-polling interval is never cleared
+
+<!-- handsoff-issue-269 -->
+- #269: Review: main.js's earnings-refresh interval can stack on reconnect
+
+<!-- handsoff-issue-211 -->
+- #211: admin.js's Overview tab — the default view — throws on every load: canView is referenced but defined nowhere
+
+<!-- handsoff-issue-227 -->
+- #227: admin.js's renderMatchRatioChart uses undefined SVG_NS
+
+<!-- handsoff-issue-525 -->
+- #525: Activity heatmap: expose per-day data to screen readers
+
+<!-- handsoff-issue-527 -->
+- #527: Admin KYC and Payouts show "Invalid Date" when reportedAt is missing
+<!-- handsoff-issue-510 -->
+- #510: localWallet.js: delete unused exports, including getLocalWalletSecret()
+
+<!-- handsoff-issue-511 -->
+- #511: main.js: replace the wallet-kit v1 connect code with wireConnectButtons()
+<!-- handsoff-issue-244 -->
+- #244: Review: admin.js's renderMatchRatioChart uses undefined SVG_NS
+<!-- handsoff-issue-219 -->
+- #219: Leadermock.js is an orphaned, stale duplicate of leaderboard.js
+<!-- handsoff-issue-245 -->
+- #245: Review: admin.js's renderTreasury calls balanceFigure, undefined
+<!-- handsoff-issue-371 -->
+- #371: main.js does not parse: duplicate initI18n import with executable statements wedged between import statements
+
+<!-- handsoff-issue-372 -->
+- #372: dashboard.js does not parse: duplicate initI18n import, same pattern as main.js
+
+<!-- handsoff-issue-373 -->
+- #373: i18n.js does not parse: two entire competing i18n implementations concatenated, one missing its closing brace
+<!-- handsoff-issue-378 -->
+- #378: EPIC: fix-first punch list — main doesn't build, plus the fraudulent/regressed closures blocking everything else

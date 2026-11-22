@@ -1,10 +1,16 @@
 // Public worker profile page (issue #86). Reads only already-public,
 // unauthenticated endpoints — no owed balance or session data here.
-import { truncateAddress, formatRatio, workerOgImageUrl } from './format.js';
+import { truncateAddress, formatRatio } from './format.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
 const $ = (id) => document.getElementById(id);
+
+// Build the og:image / twitter:image URL for a worker profile. Kept local to
+// this page since format.js does not export a worker og-image helper.
+function workerOgImageUrl(baseUrl, address) {
+  return `${baseUrl}/og/worker/${encodeURIComponent(address)}.png`;
+}
 
 async function getJson(path) {
   const res = await fetch(`${BACKEND_URL}${path}`);
@@ -35,9 +41,9 @@ async function loadProfile() {
 
   if (rep.status === 'fulfilled') {
     const r = rep.value;
-    const ratio = r.matchRatio ?? (r.totalAnswers ? r.matched / r.totalAnswers : null);
-    $('profile-ratio').textContent = `${formatRatio(ratio)} (${r.matched ?? 0}/${r.totalAnswers ?? 0})`;
-    $('profile-answers').textContent = r.totalAnswers ?? 0;
+    const ratio = r.matchRatio ?? (r.total ? r.matched / r.total : null);
+    $('profile-ratio').textContent = `${formatRatio(ratio)} (${r.matched ?? 0}/${r.total ?? 0})`;
+    $('profile-answers').textContent = r.total ?? 0;
   }
   if (stake.status === 'fulfilled') {
     $('profile-stake').textContent = `${stake.value.stake ?? 0} USDC`;

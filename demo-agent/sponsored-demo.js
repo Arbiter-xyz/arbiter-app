@@ -26,6 +26,11 @@ async function postOracle(body, headers = {}) {
 async function nativeXlmBalance(address) {
   const res = await fetch(`${env.horizonUrl}/accounts/${address}`);
   if (res.status === 404) return '0'; // account doesn't even exist — trivially zero XLM
+  if (!res.ok) {
+    // A non-404 error (outage, rate limit, 5xx, etc.) is NOT the same as a
+    // confirmed-empty account — don't let it silently masquerade as "0".
+    throw new Error(`Horizon balance lookup failed for ${address}: ${res.status} ${res.statusText}`);
+  }
   const account = await res.json();
   const native = account.balances.find((b) => b.asset_type === 'native');
   return native ? native.balance : '0';
