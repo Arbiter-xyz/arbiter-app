@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Arbiter — Worker Profile</title>
     <meta property="og:title" content="Arbiter — Worker Profile" />
-    <meta property="og:description" content="Public track record for a single Arbiter worker." />
-    <meta property="og:image" content="%VITE_BACKEND_URL%/og/leaderboard.png" />
+    <meta property="og:description" content="A worker's public Arbiter track record: rank, match ratio, and on-chain stake." />
+    <!-- Default card; worker.js swaps in the per-worker card URL
+         (?address=…). Crawlers that don't run JS fall back to this one. -->
+    <meta id="og-image" property="og:image" content="%VITE_BACKEND_URL%/og/leaderboard.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="%VITE_BACKEND_URL%/og/leaderboard.png" />
+    <meta id="twitter-image" name="twitter:image" content="%VITE_BACKEND_URL%/og/leaderboard.png" />
     <link rel="stylesheet" href="/src/style.css" />
     <script src="/src/theme.js"></script>
   </head>
@@ -39,5 +41,6 @@
 
     <script type="module" src="/src/a11y.js"></script>
     <script type="module" src="/src/worker.js"></script>
+    <script type="module" src="/src/referral.js"></script>
   </body>
 </html>
