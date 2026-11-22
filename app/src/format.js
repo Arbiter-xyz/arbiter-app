@@ -16,6 +16,8 @@ export function formatRatio(ratio) {
 
 // Formats a USDC amount (in whole units) for display, e.g. 1234.5 -> "1,234.50".
 // Null/undefined-safe so balance lines render even when a value is missing.
+// Exported here so consumers (leaderboard.js, admin.js) can import it instead
+// of referencing an undefined global (issue #235).
 export function formatUsdc(amount) {
   if (amount === null || amount === undefined || Number.isNaN(Number(amount))) {
     return '—';
