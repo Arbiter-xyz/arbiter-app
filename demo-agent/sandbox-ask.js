@@ -13,6 +13,8 @@
 // The --user flag stands in for the Slack/Discord user id so that rate limiting
 // is applied per chat user, not per bot process.
 
+import { pathToFileURL } from "node:url";
+
 const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:4000";
 
 // Per-user rate limiting. Keyed by chat user id so one user cannot exhaust a
@@ -89,11 +91,13 @@ async function main() {
   console.log(reply);
 }
 
-if (require.main === module) {
+// ESM entrypoint check: `require.main === module` is undefined under
+// "type":"module", so compare the invoked script path against this module.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => {
     console.error(err);
     process.exit(1);
   });
 }
 
-module.exports = { handleAsk, checkRateLimit, askSandbox, formatReply };
+export { handleAsk, checkRateLimit, askSandbox, formatReply };

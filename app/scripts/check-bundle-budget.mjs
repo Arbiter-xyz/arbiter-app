@@ -7,7 +7,7 @@
 //   BUDGET_CSS_KB per-chunk CSS limit (default 100)
 // Tighten these as the stellar-sdk code-splitting follow-up lands.
 import { readdirSync, statSync } from 'node:fs';
-import { extname, join, resolve } from 'node:path';
+import { extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(fileURLToPath(import.meta.url), '..', '..');
@@ -17,9 +17,26 @@ const budgets = {
   '.css': Number(process.env.BUDGET_CSS_KB ?? 100) * 1024,
 };
 
+// Recursively collect every file under `dir`, so chunks emitted into
+// subdirectories (e.g. multi-page builds that nest per-entry assets) don't
+// escape the budget check (issue #313).
+function collectFiles(current) {
+  let entries;
+  try {
+    entries = readdirSync(current, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries.flatMap((entry) => {
+    const full = join(current, entry.name);
+    return entry.isDirectory() ? collectFiles(full) : [full];
+  });
+}
+
 let files;
 try {
-  files = readdirSync(dir);
+  statSync(dir);
+  files = collectFiles(dir);
 } catch {
   console.error(`No build output at ${dir}; run "npm run build" first.`);
   process.exit(1);
@@ -27,10 +44,11 @@ try {
 
 const kb = (n) => (n / 1024).toFixed(1) + ' KB';
 let failed = false;
-for (const name of files.sort()) {
+for (const full of files.sort()) {
+  const name = relative(dir, full);
   const limit = budgets[extname(name)];
   if (limit === undefined) continue;
-  const size = statSync(join(dir, name)).size;
+  const size = statSync(full).size;
   const over = size > limit;
   failed ||= over;
   console.log(`${over ? 'FAIL' : 'ok  '} ${name}  ${kb(size)} / ${kb(limit)}`);
