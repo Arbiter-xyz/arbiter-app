@@ -131,7 +131,7 @@ jobs:
         run: npx playwright install --with-deps chromium
         working-directory: app
       # Fails on any unintended pixel diff against committed baselines.
-      # See e2e/README.md "Visual regression" for the approval workflow.
+      # See visual/README.md "Visual regression" for the approval workflow.
       - name: Run visual regression suite
         run: npm run visual
         working-directory: app
