@@ -17,8 +17,25 @@
  *    signatures while it is running, which is the same capability any
  *    extension wallet's content-script bridge has.
  *
+ *  - "locked-fallback": on browsers without WebCrypto Ed25519 the seed
+ *    cannot be imported as a non-extractable key, so the encrypted secret
+ *    is retained and signing happens in-worker. This is WEAKER than
+ *    "locked": the wrapping key is non-extractable, but the seed is still
+ *    recoverable by code running in this worker (e.g. an XSS payload that
+ *    reaches the worker). The UI must disclose this distinction rather than
+ *    presenting it as equivalent to "locked".
+ *
  * The raw secret, when it exists at all, only ever lives in this worker's
  * heap; the page talks to it through the narrow RPC below.
+ *
+ * Persistence note (issue #259): the non-extractable CryptoKey is persisted
+ * by structured-cloning it into IndexedDB and reloaded by init() on the next
+ * session. Per the WebCrypto spec, structured clone of a CryptoKey preserves
+ * its extractable flag and usages, so the "can't be exported after backup"
+ * guarantee survives a restart. This round-trip is only defined for keys
+ * created with extractable=false in a secure context; if a browser ever
+ * failed to restore the key, init() would surface it as a load error rather
+ * than silently downgrading to an exportable key.
  */
 import { Keypair, StrKey, TransactionBuilder } from '@stellar/stellar-sdk';
 
@@ -31,17 +48,33 @@ const PKCS8_ED25519_PREFIX = Uint8Array.from([
 let rec = null; // { address, state, wrapKey?, iv?, ct?, signKey? }
 let keypair = null; // only while pending-backup, or on browsers without WebCrypto Ed25519
 
-function idb(mode, fn) {
+// Memoize the open() promise so repeated load/save/wipe calls reuse a single
+// connection instead of leaking one per RPC (issue #512). A single long-lived
+// connection also avoids blocking future onupgradeneeded version bumps.
+let dbPromise = null;
+function openDb() {
+  if (!dbPromise) {
+    dbPromise = new Promise((resolve, reject) => {
+      const open = indexedDB.open(DB, 1);
+      open.onupgradeneeded = () => open.result.createObjectStore(STORE);
+      open.onerror = () => {
+        dbPromise = null;
+        reject(open.error);
+      };
+      open.onsuccess = () => resolve(open.result);
+    });
+  }
+  return dbPromise;
+}
+
+async function idb(mode, fn) {
+  const db = await openDb();
   return new Promise((resolve, reject) => {
-    const open = indexedDB.open(DB, 1);
-    open.onupgradeneeded = () => open.result.createObjectStore(STORE);
-    open.onerror = () => reject(open.error);
-    open.onsuccess = () => {
-      const tx = open.result.transaction(STORE, mode);
-      const req = fn(tx.objectStore(STORE));
-      tx.oncomplete = () => resolve(req?.result);
-      tx.onerror = () => reject(tx.error);
-    };
+    const tx = db.transaction(STORE, mode);
+    const req = fn(tx.objectStore(STORE));
+    tx.oncomplete = () => resolve(req?.result);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
   });
 }
 const load = () => idb('readonly', (s) => s.get('wallet'));
@@ -84,7 +117,9 @@ async function lock() {
   if (!rec || rec.state !== 'pending-backup') return { state: rec?.state };
   if (!(await ed25519Supported())) {
     // No WebCrypto Ed25519 (older Safari/Firefox): keep the encrypted secret
-    // and in-worker signing, but still refuse further exports.
+    // and in-worker signing, but still refuse further exports. This is
+    // weaker than "locked" — the seed remains recoverable by code in this
+    // worker — so report it distinctly for the UI to disclose.
     rec = { ...rec, state: 'locked-fallback' };
   } else {
     const seed = StrKey.decodeEd25519SecretSeed(keypair.secret());

@@ -28,11 +28,25 @@ export async function uploadAttachment(file, headers = {}) {
   return res.json();
 }
 
+// Resolve the backend origin once. If VITE_BACKEND_URL is unset or relative,
+// `new URL(BACKEND_URL)` throws (no base) — in that case fall back to the
+// current document origin so the trust check still compares against the host
+// actually serving the app instead of silently trusting everything.
+function backendOrigin() {
+  try {
+    return new URL(BACKEND_URL, window.location.href).origin;
+  } catch {
+    return null;
+  }
+}
+
 // Only render images served from our own backend — the URL comes from a
 // payer-supplied question, so never load arbitrary third-party hosts.
 function isTrustedAttachmentUrl(url) {
+  const origin = backendOrigin();
+  if (!origin) return false;
   try {
-    return new URL(url, BACKEND_URL).origin === new URL(BACKEND_URL).origin;
+    return new URL(url, origin).origin === origin;
   } catch {
     return false;
   }
@@ -48,7 +62,7 @@ export function renderQuestionAttachment(question) {
     img.classList.add('hidden');
     return;
   }
-  img.src = new URL(url, BACKEND_URL).href;
+  img.src = new URL(url, backendOrigin()).href;
   img.alt = 'Image attached to this question';
   img.classList.remove('hidden');
 }

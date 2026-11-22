@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
 import { Keypair } from '@stellar/stellar-sdk';
 import { env, submitPaymentDirect, explorerTxLink, pollJob } from './lib/stellar.js';
@@ -10,11 +10,19 @@ const category = process.env.CATEGORY || undefined;
 // Optional image attachment (issue #94): IMAGE=./screenshot.png
 const imagePath = process.env.IMAGE || undefined;
 const IMAGE_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' };
+// Mirrors app/src/attachments.js's browser-side validateAttachment() so this
+// Node-side script enforces the same limit before spending a multipart
+// request, instead of relying solely on the backend to reject it late.
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 
 // Uploads via the separate multipart path, not POST /oracle's JSON body.
 async function uploadImage(path) {
   const type = IMAGE_TYPES[extname(path).toLowerCase()];
   if (!type) throw new Error(`unsupported image type: ${path}`);
+  const { size } = await stat(path);
+  if (size > MAX_IMAGE_BYTES) {
+    throw new Error(`image too large (${size} bytes, max ${MAX_IMAGE_BYTES}): ${path}`);
+  }
   const form = new FormData();
   form.append('image', new Blob([await readFile(path)], { type }), basename(path));
   const res = await fetch(`${env.backendUrl}/attachments`, { method: 'POST', body: form });

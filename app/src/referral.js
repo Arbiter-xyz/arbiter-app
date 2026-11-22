@@ -1,8 +1,12 @@
-// Worker referral links (issues #84, #205).
+// Worker referral links (issue #84).
 //
-// Backend contract (arbiter-backend referrals.js):
-//   POST /workers/:address/referral-code   body: { token }  -> { code }
-//   GET  /workers/:address/referrals?token=<token>          -> { referrer, code, referees, counts: { pending, qualified, disqualified } }
+// Backend contract (arbiter-backend, store.js-backed like Stake/Owed):
+//   POST /workers/:address/referral-code   (body.token)  -> { code }
+//   GET  /workers/:address/referrals       (query.token) -> { referrer, code, referees, counts: { pending, qualified, disqualified } }
+// Attribution happens at sponsored onboarding: the stored ?ref= code is sent
+// as `referralCode` in the POST /sponsor/onboard/build body. Counts are only
+// readable by the referring worker's own session — no public surface.
+// Rewards are reputational only (a visible count); no USDC reward.
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const STORAGE_KEY = 'arbiter.referralCode';
@@ -35,22 +39,25 @@ export function referralLink(code) {
   return `${location.origin}/index.html?ref=${encodeURIComponent(code)}`;
 }
 
-async function fetchReferralSummary(address, token) {
-  const url = new URL(`${BACKEND_URL}/workers/${encodeURIComponent(address)}/referrals`);
-  url.searchParams.set('token', token);
-  const res = await fetch(url);
+// The backend reads the session token from the body (POST) or query (GET),
+// not from an Authorization header.
+async function backendFetch(path, init = {}) {
+  const res = await fetch(`${BACKEND_URL}${path}`, init);
   if (!res.ok) throw new Error(`backend returned ${res.status}`);
   return res.json();
 }
 
-async function createReferralCode(address, token) {
-  const res = await fetch(`${BACKEND_URL}/workers/${encodeURIComponent(address)}/referral-code`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
-  });
-  if (!res.ok) throw new Error(`backend returned ${res.status}`);
-  return res.json();
+// Copies the referral link, falling back to a manual selection when the
+// Clipboard API is unavailable or rejects (e.g. insecure context, denied
+// permission). Exported so the failure path can be unit-tested directly.
+export async function copyReferralLink(input, stats) {
+  try {
+    await navigator.clipboard.writeText(input.value);
+    stats.textContent = 'Link copied to clipboard.';
+  } catch {
+    input.select();
+    stats.textContent = 'Copy failed — link selected, press Ctrl/Cmd+C to copy.';
+  }
 }
 
 // Wires the referral block in the earnings panel. The console dispatches
@@ -66,19 +73,11 @@ export function initReferralPanel() {
   async function refreshStats() {
     if (!session) return;
     try {
-      const data = await fetchReferralSummary(session.address, session.token);
-      const counts = data?.counts || {};
-      const qualified = counts.qualified ?? 0;
-      const pending = counts.pending ?? 0;
-      const disqualified = counts.disqualified ?? 0;
-      const referred = Array.isArray(data?.referees)
-        ? data.referees.length
-        : pending + qualified + disqualified;
-      if (data?.code) {
-        input.value = referralLink(data.code);
-        input.classList.remove('hidden');
-      }
-      stats.textContent = `${referred} referred (${pending} pending · ${qualified} qualified)`;
+      const { referees = [], counts = {} } = await backendFetch(
+        `/workers/${session.address}/referrals?token=${encodeURIComponent(session.token)}`,
+      );
+      const { qualified = 0, pending = 0 } = counts;
+      stats.textContent = `${referees.length} referred · ${qualified} reached established status · ${pending} pending`;
     } catch {
       stats.textContent = '';
     }
@@ -94,15 +93,14 @@ export function initReferralPanel() {
     if (!session) return;
     btn.disabled = true;
     try {
-      const { code } = await createReferralCode(session.address, session.token);
+      const { code } = await backendFetch(`/workers/${session.address}/referral-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: session.token }),
+      });
       input.value = referralLink(code);
       input.classList.remove('hidden');
-      try {
-        await navigator.clipboard.writeText(input.value);
-        stats.textContent = 'Link copied to clipboard.';
-      } catch {
-        input.select();
-      }
+      await copyReferralLink(input, stats);
     } catch (err) {
       stats.textContent = `Could not create referral link: ${err.message}`;
     } finally {

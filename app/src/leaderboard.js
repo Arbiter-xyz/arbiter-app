@@ -1,4 +1,10 @@
 import { truncateAddress, formatRatio } from './format.js';
+// Deliberately using i18n.js's formatUsdc (not units.js's): this is a
+// user-facing display surface, and i18n.js's implementation is the
+// locale-aware formatter intended for rendered output. units.js's
+// variant is for on-chain/base-unit math. See the dx issue tracking the
+// three divergent formatUsdc implementations.
+import { formatUsdc } from './i18n.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 

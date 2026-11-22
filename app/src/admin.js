@@ -25,6 +25,18 @@ document.getElementById('density-toggle').addEventListener('click', () => {
 const LOW_BALANCE_USDC = 100;
 const LOW_BALANCE_XLM = 50;
 
+// Fraud-flag match-ratio cutoff. This used to be a hardcoded constant with
+// no admin-facing config surface; it's now backed by localStorage (same
+// pattern as DENSITY_KEY above) so an operator can tune it per-browser
+// without a redeploy, while still defaulting to the original 0.5 policy.
+const FRAUD_THRESHOLD_KEY = 'arbiter-admin-fraud-threshold';
+const DEFAULT_FRAUD_THRESHOLD = 0.5;
+
+function getFraudThreshold() {
+  const raw = Number(localStorage.getItem(FRAUD_THRESHOLD_KEY));
+  return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : DEFAULT_FRAUD_THRESHOLD;
+}
+
 // Every table below renders data that traces back to caller-controlled
 // input somewhere upstream — a non-address workerId (no auth required,
 // see workerAuth.js::requiresAuth), or the fully self-reported fields
@@ -68,7 +80,7 @@ async function fetchAdmin(path, options = {}) {
     headers: { Authorization: `Bearer ${token}`, ...(options.headers || {}) },
   });
   if (res.status === 401) {
-    localStorage.removeItem(TOKEN_KEY);
+    try { localStorage.removeItem(TOKEN_KEY); } catch { /* storage blocked — nothing stored to clear */ }
     showLogin('That token was rejected — try again.');
     throw new Error('unauthorized');
   }
@@ -378,10 +390,20 @@ function renderMatchRatioChart(container, ratios, flagBelow = 0.5) {
 
 async function renderFraud() {
   const tbody = document.getElementById('fraud-body');
+  const thresholdInput = document.getElementById('fraud-threshold');
+  thresholdInput.value = getFraudThreshold();
+  thresholdInput.onchange = () => {
+    const v = Number(thresholdInput.value);
+    if (Number.isFinite(v) && v >= 0 && v <= 1) {
+      localStorage.setItem(FRAUD_THRESHOLD_KEY, String(v));
+      renderFraud();
+    }
+  };
   const { workers } = await fetchAdmin('/admin/workers');
   renderMatchRatioChart(
     document.getElementById('fraud-chart'),
     workers.filter((w) => w.established && w.matchRatio !== null).map((w) => w.matchRatio),
+    getFraudThreshold(),
   );
   const flagged = workers
     .filter((w) => w.established && w.matchRatio !== null)
@@ -448,195 +470,11 @@ async function renderPayouts() {
   );
 }
 
-// ---------------------------------------------------------------------
-// Worker pool whitelists (issue #36 / #202). arbiter-backend implements
-// private worker pools as a per-payer whitelist authenticated with a payer
-// session token:
-//   GET    /payers/:address/pool?token=...         -> { workers: string[] }
-//   POST   /payers/:address/pool  { token, worker } -> { workers: string[] }
-//   DELETE /payers/:address/pool/:worker?token=...  -> { workers: string[] }
-// ---------------------------------------------------------------------
-
-let selectedPoolPayer = '';
-let currentPoolWorkers = [];
-
-// Mirrors the StrKey.isValidEd25519PublicKey check main.js already uses for
-// the optional withdraw-beneficiary field — reject malformed input before
-// it ever reaches the backend.
-function isValidWorkerAddress(address) {
-  return /^G[A-Z2-7]{55}$/.test(address);
-}
-
-function getSelectedPayerAddress() {
-  const manual = document.getElementById('pool-payer-address')?.value.trim();
-  if (manual) return manual;
-  return document.getElementById('pools-select')?.value.trim() || selectedPoolPayer || '';
-}
-
-function getPayerPoolToken() {
-  return document.getElementById('pool-payer-token')?.value.trim() || localStorage.getItem(TOKEN_KEY) || '';
-}
-
-async function fetchPayerPool(payerAddress, options = {}) {
-  const token = getPayerPoolToken();
-  const method = options.method || 'GET';
-  const query = `?token=${encodeURIComponent(token)}`;
-  const path = options.worker
-    ? `/payers/${encodeURIComponent(payerAddress)}/pool/${encodeURIComponent(options.worker)}${query}`
-    : `/payers/${encodeURIComponent(payerAddress)}/pool${method === 'GET' ? query : ''}`;
-  const res = await fetch(`${BACKEND_URL}${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY) || ''}`,
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-    },
-    ...(options.body ? { body: JSON.stringify(options.body) } : {}),
-  });
-  if (!res.ok) {
-    let message = `backend returned ${res.status}`;
-    try {
-      const body = await res.json();
-      if (body && body.error) message = body.error;
-    } catch {
-      // ignore non-JSON body
-    }
-    throw new Error(message);
-  }
-  return res.json();
-}
-
-async function loadSelectedPayerPool() {
-  const status = document.getElementById('pools-status');
-  const payerAddress = getSelectedPayerAddress();
-  if (!payerAddress) {
-    currentPoolWorkers = [];
-    replaceRows(
-      document.getElementById('pools-body'),
-      [emptyRow(2, 'Select or enter a payer address and session token to load their worker pool.')],
-    );
-    return;
-  }
-  selectedPoolPayer = payerAddress;
-  try {
-    const data = await fetchPayerPool(payerAddress);
-    currentPoolWorkers = data.workers || data.whitelist || [];
-    status.textContent = '';
-    renderPoolWhitelist();
-  } catch (err) {
-    currentPoolWorkers = [];
-    replaceRows(document.getElementById('pools-body'), [emptyRow(2, `Could not load pool: ${err.message}`)]);
-  }
-}
-
-async function renderPools() {
-  const poolsSelect = document.getElementById('pools-select');
-  const { payers } = await fetchAdmin('/admin/payers');
-  const payerList = payers || [];
-  poolsSelect.replaceChildren(
-    ...payerList.map((p) => {
-      const opt = document.createElement('option');
-      opt.value = p.payerAddress;
-      opt.textContent = truncateAddress(p.payerAddress);
-      return opt;
-    }),
-  );
-  if (payerList.length === 0) {
-    selectedPoolPayer = '';
-    replaceRows(document.getElementById('pools-body'), [emptyRow(2, 'No payers recorded yet — enter a payer address above.')]);
-    return;
-  }
-  selectedPoolPayer = payerList[0].payerAddress;
-  poolsSelect.value = selectedPoolPayer;
-  await loadSelectedPayerPool();
-}
-
-function renderPoolWhitelist() {
-  const tbody = document.getElementById('pools-body');
-  if (currentPoolWorkers.length === 0) {
-    replaceRows(tbody, [emptyRow(2, 'No whitelisted workers in this pool yet.')]);
-    return;
-  }
-  replaceRows(
-    tbody,
-    currentPoolWorkers.map((address) => {
-      const btnRemove = document.createElement('button');
-      btnRemove.textContent = 'Remove';
-      btnRemove.className = 'small';
-      btnRemove.addEventListener('click', () => removeFromWhitelist(address));
-      const actionCell = document.createElement('td');
-      actionCell.appendChild(btnRemove);
-      return row([td(address, { title: address }), actionCell]);
-    }),
-  );
-}
-
-document.getElementById('pools-select').addEventListener('change', (evt) => {
-  selectedPoolPayer = evt.target.value;
-  loadSelectedPayerPool();
-});
-
-document.getElementById('btn-pool-load')?.addEventListener('click', () => {
-  loadSelectedPayerPool();
-});
-
-document.getElementById('pool-add-form').addEventListener('submit', async (evt) => {
-  evt.preventDefault();
-  const status = document.getElementById('pools-status');
-  const input = document.getElementById('pool-add-address');
-  const worker = input.value.trim();
-  const payerAddress = getSelectedPayerAddress();
-  if (!payerAddress) {
-    status.textContent = 'No payer selected.';
-    return;
-  }
-  if (!isValidWorkerAddress(worker)) {
-    status.textContent = 'Not a valid Stellar worker address.';
-    return;
-  }
-  if (currentPoolWorkers.includes(worker)) {
-    status.textContent = 'That address is already whitelisted for this pool.';
-    return;
-  }
-  try {
-    const token = getPayerPoolToken();
-    const data = await fetchPayerPool(payerAddress, {
-      method: 'POST',
-      body: { token, worker },
-    });
-    currentPoolWorkers = data.workers || data.whitelist || [];
-    input.value = '';
-    status.textContent = 'Added.';
-    renderPoolWhitelist();
-  } catch (err) {
-    if (err.message !== 'unauthorized') status.textContent = `Could not add address: ${err.message}`;
-  }
-});
-
-async function removeFromWhitelist(worker) {
-  const status = document.getElementById('pools-status');
-  const payerAddress = getSelectedPayerAddress();
-  if (!payerAddress) return;
-  try {
-    const token = getPayerPoolToken();
-    const data = await fetchPayerPool(payerAddress, {
-      method: 'DELETE',
-      worker,
-      body: { token },
-    });
-    currentPoolWorkers = data.workers || data.whitelist || [];
-    status.textContent = 'Removed.';
-    renderPoolWhitelist();
-  } catch (err) {
-    if (err.message !== 'unauthorized') status.textContent = `Could not remove address: ${err.message}`;
-  }
-}
-
 const VIEWS = {
   overview: renderOverview,
   transactions: renderTransactions,
   workers: renderWorkers,
   payers: renderPayers,
-  pools: renderPools,
   fees: renderFees,
   treasury: renderTreasury,
   kyc: renderKyc,
@@ -645,9 +483,17 @@ const VIEWS = {
   fraud: renderFraud,
 };
 
-async function selectView(name) {
-  document.querySelectorAll('.admin-nav-link[data-view]').forEach((el) => el.classList.toggle('active', el.dataset.view === name));
+// `moveFocus` is true only for user-initiated switches (#55), so the initial
+// overview render after login doesn't yank focus away from the page start.
+async function selectView(name, moveFocus = false) {
+  document.querySelectorAll('.admin-nav-link[data-view]').forEach((el) => {
+    const active = el.dataset.view === name;
+    el.classList.toggle('active', active);
+    el.setAttribute('aria-selected', String(active));
+    el.tabIndex = active ? 0 : -1;
+  });
   document.querySelectorAll('.admin-view').forEach((el) => el.classList.toggle('active', el.id === `view-${name}`));
+  if (moveFocus) document.querySelector(`#view-${name} h2`)?.focus();
 
   if (!loaded.has(name)) {
     loaded.add(name);
@@ -660,14 +506,35 @@ async function selectView(name) {
   }
 }
 
-document.querySelectorAll('.admin-nav-link[data-view]').forEach((el) => {
-  el.addEventListener('click', () => selectView(el.dataset.view));
+// Tab semantics (#54) with a roving tabindex (#55): Tab enters the tablist
+// once, arrow keys / Home / End move between views, Enter/Space activates.
+const navTabs = [...document.querySelectorAll('.admin-nav-link[data-view]')];
+navTabs.forEach((el, i) => {
+  el.setAttribute('role', 'tab');
+  el.setAttribute('aria-controls', `view-${el.dataset.view}`);
+  document.getElementById(`view-${el.dataset.view}`)?.setAttribute('role', 'tabpanel');
+  el.addEventListener('click', () => selectView(el.dataset.view, true));
+  el.addEventListener('keydown', (e) => {
+    const next = { ArrowDown: i + 1, ArrowRight: i + 1, ArrowUp: i - 1, ArrowLeft: i - 1, Home: 0, End: navTabs.length - 1 }[e.key];
+    if (next === undefined) return;
+    e.preventDefault();
+    const target = navTabs[(next + navTabs.length) % navTabs.length];
+    navTabs.forEach((t) => (t.tabIndex = t === target ? 0 : -1));
+    target.focus();
+  });
 });
+document.querySelectorAll('.admin-view h2').forEach((h) => (h.tabIndex = -1));
 
-document.getElementById('btn-admin-login').addEventListener('click', () => {
+document.getElementById('admin-login-form').addEventListener('submit', (e) => {
+  e.preventDefault();
   const token = document.getElementById('admin-token-input').value.trim();
   if (!token) return;
-  localStorage.setItem(TOKEN_KEY, token);
+  try {
+    localStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    showLogin("Couldn't save the token — browser storage is blocked or full. Allow site data and try again.");
+    return;
+  }
   showShell();
   selectView('overview');
 });
@@ -675,7 +542,7 @@ document.getElementById('btn-admin-login').addEventListener('click', () => {
 // Issue #17: this console holds a real, privileged bearer token — give it
 // an in-app way to end that session, instead of the token persisting in
 // localStorage forever with no way to clear it short of devtools.
-document.getElementById('btn-admin-logout').addEventListener('click', () => {
+document.getElementById('btn-admin-logout')?.addEventListener('click', () => {
   localStorage.removeItem(TOKEN_KEY);
   loaded.clear(); // so a previously-loaded view is refetched, not shown stale, next login
   showLogin();
