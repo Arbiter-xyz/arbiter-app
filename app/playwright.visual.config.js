@@ -4,10 +4,15 @@
 //
 // Baselines are generated in the CI container so they match the runner's
 // fonts/rendering. See visual/README.md for the update/approval flow.
+// This is the single canonical visual config (issue #233). `npm run visual`
+// and CI both invoke it via `playwright test --config playwright.visual.config.js`.
+// The former app/visual/playwright.config.js was an orphaned duplicate and has
+// been removed so there is no drift in what the visual suite covers.
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './visual',
+  testMatch: '**/*.visual.spec.js',
   snapshotPathTemplate: '{testDir}/__screenshots__/{projectName}/{arg}{ext}',
   fullyParallel: true,
   retries: 0,
