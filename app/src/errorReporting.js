@@ -25,7 +25,7 @@ const PATTERNS = [
   /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, // JWTs
   /\b[0-9a-f]{64}\b/gi, // hex keys / hashes
 ];
-const SENSITIVE_KEY = /secret|token|authorization|password|seed|mnemonic|private|kyc|cookie|address|pubkey/i;
+const SENSITIVE_KEY = /secret|token|authorization|password|seed|mnemonic|private|kyc|cookie|address|pubkey|apikey|api_key/i;
 
 export function scrubString(value) {
   return PATTERNS.reduce((s, re) => s.replace(re, '[redacted]'), String(value));

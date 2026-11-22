@@ -31,6 +31,7 @@ export const BLOCKED_SELECTORS = [
   '#payouts-body',
   // checkout.js — revealed plaintext API key on the fiat/API-key checkout
   '#apikey-reveal-input',
+  '#apikey-reveal',
   // Every secret-bearing field id, shared with errorReporting.js (#198)
   ...SENSITIVE_FIELD_IDS.map((id) => `#${id}`),
 ];

@@ -24,6 +24,7 @@ import { isNativeShell } from './platform.js';
 initI18n();
 initPwa();
 import { renderFencedCode } from './codeBlocks.js';
+import { enrollBiometricUnlock, authorizeSecretReveal } from './biometricUnlock.js';
 import { ensureSession as ensureSharedSession } from './session.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
@@ -339,6 +340,7 @@ function showBackupPanel() {
   el.backupSecret.value = '••••••••••••••••••••••••••••••••••••••••••••••••••';
   el.backupSecret.type = 'password';
   el.backupCopyStatus.textContent = '';
+  enrollBiometricUnlock().catch(() => {});
   // Quick-start users only: the one step with irreversible financial risk.
   startTour('arbiter_tour_backup_seen', [
     {
@@ -351,7 +353,14 @@ function showBackupPanel() {
 
 el.btnRevealSecret.addEventListener('click', async () => {
   const revealed = el.backupSecret.type === 'password';
-  if (revealed) el.backupSecret.value = (await state.localWallet?.exportSecret()) || '';
+  if (revealed) {
+    const unlocked = await authorizeSecretReveal();
+    if (!unlocked) {
+      el.backupCopyStatus.textContent = 'Biometric verification was cancelled or failed.';
+      return;
+    }
+    el.backupSecret.value = (await state.localWallet?.exportSecret()) || '';
+  }
   el.backupSecret.type = revealed ? 'text' : 'password';
   el.btnRevealSecret.textContent = t(revealed ? 'backup.hide' : 'backup.reveal');
   el.btnRevealSecret.setAttribute('aria-pressed', String(revealed));
@@ -369,6 +378,11 @@ el.btnBackupDone.addEventListener('click', async () => {
 });
 
 el.btnCopySecret.addEventListener('click', async () => {
+  const unlocked = await authorizeSecretReveal();
+  if (!unlocked) {
+    el.backupCopyStatus.textContent = 'Biometric verification was cancelled or failed.';
+    return;
+  }
   const secret = await state.localWallet?.exportSecret();
   if (!secret) return;
   try {
