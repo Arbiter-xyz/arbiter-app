@@ -14,6 +14,11 @@ export function formatRatio(ratio) {
   return ratio === null || ratio === undefined ? '—' : `${(ratio * 100).toFixed(1)}%`;
 }
 
+// Public profile URL for a worker (issue #86).
+export function workerProfileUrl(id) {
+  return `/worker.html?address=${encodeURIComponent(id)}`;
+}
+
 // Formats a USDC amount (in whole units) for display, e.g. 1234.5 -> "1,234.50".
 // Null/undefined-safe so balance lines render even when a value is missing.
 //
