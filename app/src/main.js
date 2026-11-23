@@ -984,11 +984,6 @@ if (el.btnEnablePush) {
 
       state.pushSubscription = subscription;
       el.pushStatus.textContent = 'On — you may get notified for longer-timeout questions.';
-        body: JSON.stringify({ subscription: subscription.toJSON(), categories: selectedCategories(), token }),
-      });
-      if (!res.ok) throw new Error((await res.json()).error || `subscribe failed: ${res.status}`);
-
-      el.pushStatus.textContent = 'On — you may get notified for longer-timeout questions.';
       el.btnEnablePush.textContent = 'Enabled';
       log('Push notifications enabled.');
     } catch (err) {
