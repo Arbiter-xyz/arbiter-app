@@ -146,3 +146,8 @@ node ask.js "What is the capital of France?"           # real on-chain flow
 
 Verified live against a real deployed contract on Stellar testnet — see
 `demo-agent/README.md` for the full walkthrough.
+
+## Handsoff notes
+
+<!-- handsoff-issue-505 -->
+- #505: README: remove the "Handsoff notes" appendix of issue titles
