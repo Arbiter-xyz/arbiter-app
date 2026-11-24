@@ -81,7 +81,20 @@ async function startInteractiveWithdraw(anchorConfig, jwt, address, assetCode) {
   return res.json(); // { type: 'interactive_customer_info_needed', url, id }
 }
 
-async function pollTransaction(anchorConfig, jwt, id, onUpdate) {
+// SEP-24 statuses that end the flow — either payment-ready or unrecoverable.
+// Polling past one of these only ends in a misleading generic timeout.
+const TERMINAL_STATUSES = new Set([
+  'pending_user_transfer_start',
+  'completed',
+  'error',
+  'refunded',
+  'expired',
+  'no_market',
+  'too_small',
+  'too_large',
+]);
+
+export async function pollTransaction(anchorConfig, jwt, id, onUpdate) {
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   let lastStatus = null;
 
@@ -89,13 +102,18 @@ async function pollTransaction(anchorConfig, jwt, id, onUpdate) {
     const url = new URL(`${anchorConfig.transferServer}/transaction`);
     url.searchParams.set('id', id);
     const res = await fetch(url, { headers: { Authorization: `Bearer ${jwt}` } });
+    // A 4xx (other than rate limiting) won't fix itself — e.g. an expired
+    // SEP-10 JWT. Fail now instead of silently retrying for five minutes.
+    if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+      throw new Error(`anchor rejected the transaction poll (${res.status})`);
+    }
     if (res.ok) {
       const { transaction } = await res.json();
       if (transaction.status !== lastStatus) {
         lastStatus = transaction.status;
         onUpdate(transaction);
       }
-      if (['pending_user_transfer_start', 'completed', 'error', 'refunded'].includes(transaction.status)) {
+      if (TERMINAL_STATUSES.has(transaction.status)) {
         return transaction;
       }
     }
@@ -222,7 +240,7 @@ export function initBankWithdraw({ button, status, getAddress, getWallet, getArb
         status.textContent = `Anchor status: ${tx.status}`;
       });
 
-      if (transaction.status === 'error' || transaction.status === 'refunded') {
+      if (['error', 'refunded', 'expired', 'no_market', 'too_small', 'too_large'].includes(transaction.status)) {
         status.textContent = `The anchor could not complete this withdrawal (${transaction.status}).`;
         return;
       }

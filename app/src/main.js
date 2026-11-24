@@ -8,6 +8,7 @@ import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
+import { dndPayload, inDndWindow } from './dnd.js';
 import { initPwa } from './pwa.js';
 import { isNativeShell } from './platform.js';
 
@@ -978,16 +979,11 @@ if (el.btnEnablePush) {
       const res = await fetch(`${BACKEND_URL}/workers/${state.address}/push-subscribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscription: subscription.toJSON(), categories: selectedCategories(), dnd: dndPayload(), token }),
+        body: JSON.stringify({ subscription: subscription.toJSON(), categories: selectedCategories(), dnd: dndPayload(dndPrefs), token }),
       });
       if (!res.ok) throw new Error((await res.json()).error || `subscribe failed: ${res.status}`);
 
       state.pushSubscription = subscription;
-      el.pushStatus.textContent = 'On — you may get notified for longer-timeout questions.';
-        body: JSON.stringify({ subscription: subscription.toJSON(), categories: selectedCategories(), token }),
-      });
-      if (!res.ok) throw new Error((await res.json()).error || `subscribe failed: ${res.status}`);
-
       el.pushStatus.textContent = 'On — you may get notified for longer-timeout questions.';
       el.btnEnablePush.textContent = 'Enabled';
       log('Push notifications enabled.');
@@ -1092,17 +1088,17 @@ function showDesktopNotification({ questionId, question }) {
 }
 
 function alertNewQuestion(q) {
-  if (inDndWindow()) return;
+  if (inDndWindow(dndPrefs)) return;
   playAlertSound();
   vibrateAlert();
   showDesktopNotification(q);
 }
 
 // --- Do-not-disturb hours (issue #66) ----------------------------------------
-// Entered in local time, sent to the backend as UTC "HH:MM" because it has
-// no notion of a worker's timezone. The same window also silences the
-// in-tab alerts above. Saving re-sends the existing push subscription so
-// the window stays editable after the initial subscribe.
+// Entered in local time; dnd.js sends the local window plus its IANA zone so a
+// DST change can't shift the stored window. The same window also silences the
+// in-tab alerts above. Saving re-sends the existing push subscription so the
+// window stays editable after the initial subscribe.
 
 const DND_PREFS_KEY = 'arbiter.dndPrefs';
 const dndPrefs = loadJson(DND_PREFS_KEY, { enabled: false, start: '00:00', end: '07:00' });
@@ -1110,35 +1106,17 @@ el.dndEnabled.checked = dndPrefs.enabled;
 el.dndStart.value = dndPrefs.start;
 el.dndEnd.value = dndPrefs.end;
 
-function minutesOf(hhmm) {
-  const [h, m] = hhmm.split(':').map(Number);
-  return h * 60 + m;
-}
-
-function localToUtc(hhmm) {
-  const mins = (((minutesOf(hhmm) + new Date().getTimezoneOffset()) % 1440) + 1440) % 1440;
-  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
-}
-
-function dndPayload() {
-  if (!dndPrefs.enabled) return null;
-  return { startUtc: localToUtc(dndPrefs.start), endUtc: localToUtc(dndPrefs.end) };
-}
-
-function inDndWindow() {
-  if (!dndPrefs.enabled) return false;
-  const now = new Date();
-  const cur = now.getHours() * 60 + now.getMinutes();
-  const start = minutesOf(dndPrefs.start);
-  const end = minutesOf(dndPrefs.end);
-  // A window like 22:00 → 07:00 wraps past midnight.
-  return start <= end ? cur >= start && cur < end : cur >= start || cur < end;
-}
-
 el.btnDndSave.addEventListener('click', async () => {
+  const start = el.dndStart.value || '00:00';
+  const end = el.dndEnd.value || '07:00';
+  if (el.dndEnabled.checked && start === end) {
+    // inDndWindow() can never match a zero-length window.
+    el.dndStatus.textContent = 'Start and end times must be different.';
+    return;
+  }
   dndPrefs.enabled = el.dndEnabled.checked;
-  dndPrefs.start = el.dndStart.value || '00:00';
-  dndPrefs.end = el.dndEnd.value || '07:00';
+  dndPrefs.start = start;
+  dndPrefs.end = end;
   saveJson(DND_PREFS_KEY, dndPrefs);
   el.dndStatus.textContent = 'Saved in this browser.';
 
@@ -1149,7 +1127,7 @@ el.btnDndSave.addEventListener('click', async () => {
     const res = await fetch(`${BACKEND_URL}/workers/${state.address}/push-subscribe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subscription: state.pushSubscription.toJSON(), categories: selectedCategories(), dnd: dndPayload(), token }),
+      body: JSON.stringify({ subscription: state.pushSubscription.toJSON(), categories: selectedCategories(), dnd: dndPayload(dndPrefs), token }),
     });
     if (!res.ok) throw new Error((await res.json()).error || `update failed: ${res.status}`);
     el.dndStatus.textContent = 'Saved — push notifications respect this window.';
