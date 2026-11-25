@@ -183,10 +183,10 @@ self.addEventListener('notificationclick', (event) => {
           return false;
         }
       };
-      const console = clients.find((c) => 'focus' in c && isConsole(c));
-      if (console) {
-        if (questionId && 'navigate' in console) return console.navigate(target).then((c) => (c || console).focus());
-        return console.focus();
+      const consoleClient = clients.find((c) => 'focus' in c && isConsole(c));
+      if (consoleClient) {
+        if (questionId && 'navigate' in consoleClient) return consoleClient.navigate(target).then((c) => (c || consoleClient).focus());
+        return consoleClient.focus();
       }
       // No console tab is open — open a new window rather than hijacking an
       // unrelated page.

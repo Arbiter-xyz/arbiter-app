@@ -20,6 +20,22 @@ export default [
       'no-unused-vars': 'warn',
     },
   },
+  // sw.js is a service worker that also hosts a speculative Chrome extension
+  // bridge (issue #91). The bridge guards every use with `typeof chrome`
+  // but ESLint's no-undef still flags the bare `chrome` identifier unless
+  // we declare it here. Using globals.webextensions is narrower than adding
+  // `chrome` to the site-wide globals — it only applies to this file.
+  {
+    files: ['public/sw.js'],
+    languageOptions: {
+      sourceType: 'script',
+      globals: {
+        ...globals.browser,
+        ...globals.serviceworker,
+        ...globals.webextensions,
+      },
+    },
+  },
   {
     ignores: ['dist/**', 'storybook-static/**', 'playwright-report/**', 'test-results/**'],
   },
