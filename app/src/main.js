@@ -51,6 +51,10 @@ const el = {
   answerForm: document.getElementById('answer-form'),
   answerInput: document.getElementById('answer-input'),
   answerSuggestedBadge: document.getElementById('answer-suggested-badge'),
+  answerCount: document.getElementById('answer-count'),
+  btnRestoreDraft: document.getElementById('btn-restore-draft'),
+  btnPracticeToggle: document.getElementById('btn-practice-toggle'),
+  practiceStatus: document.getElementById('practice-status'),
   btnAnswer: document.getElementById('btn-answer'),
   owedAmount: document.getElementById('owed-amount'),
   stakeAmount: document.getElementById('stake-amount'),
@@ -107,6 +111,7 @@ const state = {
   sessionExpiresAt: 0,
   pushSubscription: null,
   lastDraft: null,
+  practice: false,
 };
 
 const notify = createNotificationCenter({ mount: document.querySelector('header'), storageKey: 'arbiter-worker-notifications' });
@@ -235,9 +240,26 @@ function clearCategoryDemand() {
   }
 }
 
+// Set once the backend reports the endpoint missing (404): polling stops
+// and the heatmap stays hidden for the rest of the session (#489).
+let demandUnavailable = false;
+
+function stopCategoryDemandPolling() {
+  if (demandRefreshHandle) clearInterval(demandRefreshHandle);
+  demandRefreshHandle = null;
+}
+
 async function refreshCategoryDemand() {
+  if (demandUnavailable || document.hidden) return;
   try {
     const res = await fetch(`${BACKEND_URL}/categories/demand`);
+    if (res.status === 404) {
+      demandUnavailable = true;
+      stopCategoryDemandPolling();
+      clearCategoryDemand();
+      document.querySelectorAll('#category-demand').forEach((n) => n.classList.add('hidden'));
+      return;
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     renderCategoryDemand(data.demand || {});
@@ -248,13 +270,17 @@ async function refreshCategoryDemand() {
   }
 }
 
+// Only started once the online panel is shown — never from the connect panel.
 function startCategoryDemandPolling() {
-  if (demandRefreshHandle) return;
+  if (demandRefreshHandle || demandUnavailable) return;
   refreshCategoryDemand();
   demandRefreshHandle = setInterval(refreshCategoryDemand, DEMAND_REFRESH_MS);
 }
 
-startCategoryDemandPolling();
+document.addEventListener('visibilitychange', () => {
+  if (!demandRefreshHandle) return;
+  if (!document.hidden) refreshCategoryDemand();
+});
 
 // A user clicking both connect options in quick succession could otherwise
 // let whichever resolves last silently overwrite the other's in-flight
@@ -499,9 +525,6 @@ async function routeAfterConnect() {
       refreshEarnings();
       setInterval(refreshEarnings, 20_000);
       startCategoryDemandPolling();
-      startCategoryDemandPolling();
-      refreshEarnings();
-      setInterval(refreshEarnings, 20_000);
     }
   } catch (err) {
     log(`Trustline check failed (${err.message}) — assuming onboarding is needed`);
@@ -695,6 +718,9 @@ function onQuestionReceived({ questionId, question, expiresInMs }) {
   el.answerInput.value = '';
   el.answerInput.disabled = false;
   el.btnAnswer.disabled = false;
+  updateAnswerCount();
+  state.lastDraft = loadDraft(questionId);
+  el.btnRestoreDraft.classList.toggle('hidden', !state.lastDraft);
   el.question.classList.remove('hidden');
   log(`New question dispatched: "${question}"`);
   startCountdown(expiresInMs);
@@ -731,11 +757,80 @@ function stopCountdown() {
   }
 }
 
+// --- Answer counter + per-question draft (#487) ---------------------------
+
+const ANSWER_MAX_LEN = 400; // matches the input's maxlength
+const DRAFT_KEY_PREFIX = 'arbiter.draft.';
+
+function updateAnswerCount() {
+  el.answerCount.textContent = `${el.answerInput.value.length} / ${ANSWER_MAX_LEN}`;
+}
+
+function loadDraft(questionId) {
+  try {
+    return localStorage.getItem(DRAFT_KEY_PREFIX + questionId) || null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft(questionId, text) {
+  try {
+    if (text) localStorage.setItem(DRAFT_KEY_PREFIX + questionId, text);
+    else localStorage.removeItem(DRAFT_KEY_PREFIX + questionId);
+  } catch {
+    // storage blocked — drafts just won't persist
+  }
+}
+
+el.answerInput.addEventListener('input', () => {
+  updateAnswerCount();
+  const q = state.currentQuestion;
+  if (q && !q.practice) saveDraft(q.questionId, el.answerInput.value);
+});
+
+el.btnRestoreDraft.addEventListener('click', () => {
+  if (!state.lastDraft) return;
+  el.answerInput.value = state.lastDraft.slice(0, ANSWER_MAX_LEN);
+  updateAnswerCount();
+  el.btnRestoreDraft.classList.add('hidden');
+  el.answerInput.focus();
+});
+
+// --- Practice mode (#486): client-only sample question, no network --------
+
+const PRACTICE_QUESTION = 'Practice: Is the sky blue on a clear day? (yes / no)';
+
+function setPracticeMode(on) {
+  state.practice = on;
+  el.btnPracticeToggle.setAttribute('aria-pressed', String(on));
+  el.practiceStatus.textContent = t(on ? 'practice.on' : 'practice.off');
+  if (on) {
+    onQuestionReceived({ questionId: 'practice', question: PRACTICE_QUESTION, expiresInMs: 60_000 });
+    state.currentQuestion.practice = true;
+  } else if (state.currentQuestion?.practice) {
+    state.currentQuestion = null;
+    stopCountdown();
+    el.question.classList.add('hidden');
+  }
+}
+
+el.btnPracticeToggle.addEventListener('click', () => setPracticeMode(!state.practice));
+
 el.answerForm.addEventListener('submit', async (evt) => {
   evt.preventDefault();
   const q = state.currentQuestion;
   const answer = el.answerInput.value.trim();
   if (!q || !answer) return;
+
+  if (q.practice) {
+    // Never touches /app/answer, the chain, stake, or reputation.
+    log(`Practice answer recorded locally: "${answer}" (not submitted)`);
+    el.btnAnswer.disabled = true;
+    el.answerInput.disabled = true;
+    stopCountdown();
+    return;
+  }
 
   el.btnAnswer.disabled = true;
   el.answerInput.disabled = true;
@@ -753,6 +848,7 @@ el.answerForm.addEventListener('submit', async (evt) => {
       throw new Error(`unexpected status ${res.status}`);
     } else {
       log(`Answer submitted: "${answer}"`);
+      saveDraft(q.questionId, '');
     }
   } catch (err) {
     log(`Answer submission failed: ${err.message}`);

@@ -304,9 +304,8 @@
         <p id="question-text"></p>
         <p id="answer-suggested-badge" class="muted small hidden">Suggested — edit or replace before submitting</p>
         <form id="answer-form">
-          <input id="answer-input" type="text" data-i18n-placeholder="question.placeholder" placeholder="Type your answer…" autocomplete="off" />
+          <input id="answer-input" type="text" data-i18n-placeholder="question.placeholder" placeholder="Type your answer…" autocomplete="off" maxlength="400" />
           <label for="answer-input" class="sr-only" data-i18n="question.answer">Your answer</label>
-          <input id="answer-input" type="text" placeholder="Type your answer…" autocomplete="off" data-i18n-attr="placeholder:question.placeholder" />
           <button id="btn-answer" type="submit" data-i18n="question.submit">Submit answer</button>
         </form>
         <div class="answer-tools">
