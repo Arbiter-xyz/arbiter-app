@@ -1,5 +1,7 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import { resolve } from 'node:path';
+
+let backendUrl = 'http://localhost:4000';
 
 export default defineConfig({
   // The wallets-kit dependency chain references Node's `global` at import
@@ -9,6 +11,18 @@ export default defineConfig({
   define: {
     global: 'globalThis',
   },
+  plugins: [{
+    name: 'backend-url-html-fallback',
+    configResolved(config) {
+      backendUrl = loadEnv(config.mode, config.root, '').VITE_BACKEND_URL || backendUrl;
+    },
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        return html.split('%VITE_BACKEND_URL%').join(backendUrl);
+      },
+    },
+  }],
   server: {
     port: 5173,
   },
