@@ -1199,10 +1199,13 @@ function renderActivityHeatmap(days) {
 
 async function refreshActivityHeatmap() {
   try {
-    const res = await fetch(`${BACKEND_URL}/workers/${state.address}/activity?days=${ACTIVITY_WEEKS * 7}`);
+    const res = await fetch(`${BACKEND_URL}/workers/${state.address}/analytics?days=${ACTIVITY_WEEKS * 7}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const { days } = await res.json();
-    renderActivityHeatmap(Array.isArray(days) ? days : []);
+    const { daily } = await res.json();
+    const days = Array.isArray(daily)
+      ? daily.map((d) => ({ date: d.date, answers: d.answered || 0, matched: d.matched || 0 }))
+      : [];
+    renderActivityHeatmap(days);
   } catch {
     el.activityGrid.replaceChildren();
     el.activityStatus.textContent = 'Activity history is not available from this server yet.';
