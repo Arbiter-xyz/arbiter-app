@@ -118,17 +118,6 @@ export function createNotificationCenter({ mount, storageKey }) {
     render();
   }
 
-  // Issue #271: surface the status channel's per-tab fallback (no
-  // navigator.locks) so users can tell "shared push" from "per-tab" mode.
-  function setChannelMode(mode) {
-    const perTab = mode === 'per-tab';
-    bell.classList.toggle('notif-per-tab', perTab);
-    bell.title = perTab
-      ? 'Live updates are per-tab (cross-tab sync unavailable in this browser)'
-      : 'Live updates are shared across tabs';
-    bell.setAttribute('aria-label', perTab ? 'Notifications (per-tab live updates)' : 'Notifications');
-  }
-
   function destroy() {
     bell.removeEventListener('click', onBellClick);
     clearBtn.removeEventListener('click', onClearClick);
@@ -139,5 +128,5 @@ export function createNotificationCenter({ mount, storageKey }) {
   }
 
   render();
-  return { push, setChannelMode, destroy };
+  return { push, destroy };
 }
