@@ -1,4 +1,5 @@
 import { truncateAddress, formatRatio } from './format.js';
+import { formatStroopsUsdc, fraudCandidates } from './adminData.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';
@@ -159,7 +160,7 @@ function renderTransactionRow(t) {
   return row([
     td(truncateAddress(String(t.questionId)), { title: t.questionId }),
     td(truncateAddress(t.payer), { title: t.payer || '' }),
-    td(`${t.amountStroops ? (Number(t.amountStroops) / 1e7).toFixed(2) : '—'} USDC`),
+    td(`${formatStroopsUsdc(t.amountStroops)} USDC`),
     statusCell,
     td(t.outcome || '—'),
     td(t.createdAt ? new Date(t.createdAt).toLocaleString() : '—', { className: 'muted small' }),
@@ -415,11 +416,9 @@ async function renderFraud() {
     workers.filter((w) => w.established && w.matchRatio !== null).map((w) => w.matchRatio),
     getFraudThreshold(),
   );
-  const flagged = workers
-    .filter((w) => w.established && w.matchRatio !== null)
-    .sort((a, b) => a.matchRatio - b.matchRatio);
+  const flagged = fraudCandidates(workers, getFraudThreshold());
   if (flagged.length === 0) {
-    replaceRows(tbody, [emptyRow(4, 'No established workers yet.')]);
+    replaceRows(tbody, [emptyRow(4, 'No established workers below the threshold.')]);
     return;
   }
   replaceRows(

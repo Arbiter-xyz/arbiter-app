@@ -77,6 +77,8 @@
   "dash.loadFailed": "No se pudieron cargar las preguntas: {error}",
   "dash.confidence": "confianza {value}",
   "status.pending": "en curso",
+  "status.awaiting_workers": "esperando trabajadores",
+  "status.reconciling": "en conciliación",
   "status.resolved": "resuelta",
   "status.refunded": "reembolsada",
   "online.statusAll": "en línea — todos los temas",
