@@ -1,4 +1,6 @@
 import { truncateAddress, formatRatio } from './format.js';
+import { safeGet, safeSet, safeRemove } from './storage.js';
+import { snapshotViews } from './viewReset.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';
@@ -21,10 +23,10 @@ function applyDensity(compact) {
   }
 }
 
-applyDensity(localStorage.getItem(DENSITY_KEY) === 'compact');
+applyDensity(safeGet(DENSITY_KEY) === 'compact');
 document.getElementById('density-toggle')?.addEventListener('click', () => {
   const compact = !document.getElementById('admin-shell')?.classList.contains('density-compact');
-  localStorage.setItem(DENSITY_KEY, compact ? 'compact' : 'comfortable');
+  safeSet(DENSITY_KEY, compact ? 'compact' : 'comfortable');
   applyDensity(compact);
 });
 
@@ -43,7 +45,7 @@ const FRAUD_THRESHOLD_KEY = 'arbiter-admin-fraud-threshold';
 const DEFAULT_FRAUD_THRESHOLD = 0.5;
 
 function getFraudThreshold() {
-  const raw = Number(localStorage.getItem(FRAUD_THRESHOLD_KEY));
+  const raw = Number(safeGet(FRAUD_THRESHOLD_KEY));
   return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : DEFAULT_FRAUD_THRESHOLD;
 }
 
@@ -52,7 +54,7 @@ function getFraudThreshold() {
 // see workerAuth.js::requiresAuth), or the fully self-reported fields
 // POST /anchor/report accepts from any session holder (status/tier/
 // amount/assetCode, rendered in the KYC/Payouts views below). This is the
-// admin console, holding a privileged bearer token in localStorage — the
+// admin console, holding a privileged bearer token in sessionStorage — the
 // one page where an innerHTML-based stored XSS would matter most. Built
 // with createElement/textContent throughout instead.
 function td(text, { className, title } = {}) {
@@ -84,13 +86,15 @@ function replaceRows(tbody, rows) {
 // `options` follows fetch()'s own shape (method/headers/body) — passing none
 // preserves every existing GET-only call site's behavior exactly.
 async function fetchAdmin(path, options = {}) {
-  const token = localStorage.getItem(TOKEN_KEY);
+  const token = safeGet(TOKEN_KEY, 'session');
   const res = await fetch(`${BACKEND_URL}${path}`, {
     ...options,
     headers: { Authorization: `Bearer ${token}`, ...(options.headers || {}) },
   });
   if (res.status === 401) {
-    try { localStorage.removeItem(TOKEN_KEY); } catch { /* storage blocked — nothing stored to clear */ }
+    safeRemove(TOKEN_KEY, 'session');
+    loaded.clear();
+    restoreViews(); // #453: don't leave the rejected session's data in the DOM
     showLogin('That token was rejected — try again.');
     throw new Error('unauthorized');
   }
@@ -124,6 +128,8 @@ function showShell() {
 // ---------------------------------------------------------------------
 
 const loaded = new Set();
+// Captured before any view renders: the markup each view starts with.
+const restoreViews = snapshotViews(document, '.admin-view');
 
 async function renderOverview() {
   const canFees = canView('fees');
@@ -405,7 +411,7 @@ async function renderFraud() {
   thresholdInput.onchange = () => {
     const v = Number(thresholdInput.value);
     if (Number.isFinite(v) && v >= 0 && v <= 1) {
-      localStorage.setItem(FRAUD_THRESHOLD_KEY, String(v));
+      safeSet(FRAUD_THRESHOLD_KEY, String(v));
       renderFraud();
     }
   };
@@ -533,7 +539,7 @@ function canView(name) {
 // ---------------------------------------------------------------------
 
 async function loadRole() {
-  const token = localStorage.getItem(TOKEN_KEY);
+  const token = safeGet(TOKEN_KEY, 'session');
   let role = null;
   try {
     const res = await fetch(`${BACKEND_URL}/admin/whoami`, { headers: { Authorization: `Bearer ${token}` } });
@@ -556,7 +562,7 @@ async function loadRole() {
 
 function loadLayout() {
   try {
-    const saved = JSON.parse(localStorage.getItem(LAYOUT_KEY));
+    const saved = JSON.parse(safeGet(LAYOUT_KEY));
     return { order: saved?.order || [], hidden: saved?.hidden || [] };
   } catch {
     return { order: [], hidden: [] };
@@ -564,7 +570,7 @@ function loadLayout() {
 }
 
 function saveLayout(layout) {
-  localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+  safeSet(LAYOUT_KEY, JSON.stringify(layout));
 }
 
 function navLinks() {
@@ -635,7 +641,7 @@ function renderCustomizePanel() {
   reset.className = 'admin-nav-customize';
   reset.textContent = 'Reset to default';
   reset.addEventListener('click', () => {
-    localStorage.removeItem(LAYOUT_KEY);
+    safeRemove(LAYOUT_KEY);
     window.location.reload();
   });
   panel.replaceChildren(...rows, reset);
@@ -708,9 +714,7 @@ document.getElementById('admin-login-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const token = document.getElementById('admin-token-input').value.trim();
   if (!token) return;
-  try {
-    localStorage.setItem(TOKEN_KEY, token);
-  } catch {
+  if (!safeSet(TOKEN_KEY, token, 'session')) {
     showLogin("Couldn't save the token — browser storage is blocked or full. Allow site data and try again.");
     return;
   }
@@ -719,14 +723,22 @@ document.getElementById('admin-login-form').addEventListener('submit', (e) => {
 
 // Issue #17: this console holds a real, privileged bearer token — give it
 // an in-app way to end that session, instead of the token persisting in
-// localStorage forever with no way to clear it short of devtools.
+// browser storage forever with no way to clear it short of devtools.
+// #453: logging out also puts every view back to its pre-login markup
+// ("Loading…" rows, "—" figures), so the previous session's KYC, payout,
+// worker and treasury data doesn't stay readable in the DOM.
 document.getElementById('btn-admin-logout')?.addEventListener('click', () => {
-  localStorage.removeItem(TOKEN_KEY);
+  safeRemove(TOKEN_KEY, 'session');
   loaded.clear(); // so a previously-loaded view is refetched, not shown stale, next login
+  restoreViews();
   showLogin();
 });
 
-if (localStorage.getItem(TOKEN_KEY)) {
+// #454: the token lives in sessionStorage now. Clear any copy an older build
+// left in localStorage, where it would have survived browser restarts.
+safeRemove(TOKEN_KEY);
+
+if (safeGet(TOKEN_KEY, 'session')) {
   enterConsole();
 } else {
   showLogin();
