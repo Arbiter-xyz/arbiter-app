@@ -1,10 +1,8 @@
-import { truncateAddress, formatRatio, workerProfileUrl } from './format.js';
-// Deliberately using i18n.js's formatUsdc (not units.js's): this is a
-// user-facing display surface, and i18n.js's implementation is the
-// locale-aware formatter intended for rendered output. units.js's
-// variant is for on-chain/base-unit math. See the dx issue tracking the
-// three divergent formatUsdc implementations.
-import { formatUsdc } from './i18n.js';
+import { truncateAddress, formatRatio, workerProfileUrl, formatUsdc } from './format.js';
+// formatUsdc comes from format.js, which documents it as the canonical
+// whole-unit formatter for leaderboard values (#230). The leaderboard used
+// i18n.js's version, but i18n.js currently fails to evaluate (it declares
+// `en` twice), which stopped this page loading at all (#461).
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
@@ -62,8 +60,19 @@ async function loadLeaderboard() {
     tbody.innerHTML = '';
     leaderboard.forEach((row, i) => tbody.appendChild(renderRow(row, i + 1)));
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="5" class="muted small">Failed to load: ${err.message}</td></tr>`;
+    // #463: the message can quote response text, so it's set as text, never HTML.
+    tbody.replaceChildren(messageRow(`Failed to load: ${err.message}`));
   }
+}
+
+function messageRow(text) {
+  const tr = document.createElement('tr');
+  const td = document.createElement('td');
+  td.colSpan = 5;
+  td.className = 'muted small';
+  td.textContent = text;
+  tr.appendChild(td);
+  return tr;
 }
 
 // Public, unauthenticated activity feed (issue #78). Consumes the
@@ -156,6 +165,16 @@ export function mountLeaderboard(root) {
   const refreshBtn = root.querySelector('#btn-refresh');
   if (refreshBtn) refreshBtn.addEventListener('click', loadLeaderboard);
 
+  loadLeaderboard();
+  initActivityFeed();
+}
+
+// #461: the standalone leaderboard.html already has the table in its markup
+// and nothing calls mountLeaderboard there, so start it here. In the app
+// shell the table doesn't exist until mountLeaderboard creates it, so this
+// does nothing on import.
+if (typeof document !== 'undefined' && document.getElementById('leaderboard-body')) {
+  document.getElementById('btn-refresh')?.addEventListener('click', loadLeaderboard);
   loadLeaderboard();
   initActivityFeed();
 }

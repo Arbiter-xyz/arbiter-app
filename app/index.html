@@ -91,7 +91,9 @@
               <div class="muted small">Credit balance</div>
               <strong id="apikey-balance">—</strong>
             </div>
-            <button id="btn-apikey-topup" class="secondary" type="button">Top up</button>
+            <!-- #459: top-ups need the API key as a Bearer token, which the
+                 account page sends; this panel has no authenticated session. -->
+            <a id="link-apikey-topup" class="button secondary" href="/customer.html">Top up on your account page</a>
           </div>
           <p class="muted small" id="apikey-account-status"></p>
         </div>
