@@ -16,6 +16,15 @@
 // Auth: `Authorization: Bearer ak_live_…` (the API key itself), same scheme
 // as the admin console's bearer token.
 
+import { initErrorReporting } from './errorReporting.js';
+import { initSessionReplay } from './sessionReplay.js';
+
+// Client-side telemetry (issues #106/#107) — no-op unless configured;
+// the API-key gate and reveal fields are covered by errorReporting.js's
+// scrubbers and sessionReplay.js's block/mask selector lists.
+initErrorReporting('customer');
+initSessionReplay({ page: 'customer' });
+
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const KEY_STORAGE = 'arbiter-customer-api-key';
 // #283: a hung backend connection previously left buttons disabled forever
@@ -26,6 +35,7 @@ const REQUEST_TIMEOUT_MS = 15000;
 const el = {
   login: document.getElementById('panel-login'),
   account: document.getElementById('panel-account'),
+  loginForm: document.getElementById('form-customer-login'),
   keyInput: document.getElementById('customer-key-input'),
   btnLogin: document.getElementById('btn-customer-login'),
   loginStatus: document.getElementById('customer-login-status'),
@@ -34,10 +44,15 @@ const el = {
   creditBalance: document.getElementById('credit-balance'),
   creditBalanceStroops: document.getElementById('credit-balance-stroops'),
   btnTopUp: document.getElementById('btn-top-up'),
+  webhookForm: document.getElementById('form-webhook'),
   webhookInput: document.getElementById('webhook-url-input'),
   btnWebhookSave: document.getElementById('btn-webhook-save'),
   btnWebhookDelete: document.getElementById('btn-webhook-delete'),
   webhookStatus: document.getElementById('webhook-status'),
+  webhookSecretRow: document.getElementById('webhook-secret-row'),
+  webhookSecret: document.getElementById('webhook-secret'),
+  btnWebhookSecretCopy: document.getElementById('btn-webhook-secret-copy'),
+  webhookSecretCopyStatus: document.getElementById('webhook-secret-copy-status'),
   log: document.getElementById('log'),
 };
 
@@ -116,12 +131,72 @@ function isPlausibleWebhookUrl(value) {
   }
 }
 
-el.btnLogin.addEventListener('click', async () => {
+async function login() {
   const key = el.keyInput.value.trim();
-  if (!key) return;
-  localStorage.setItem(KEY_STORAGE, key);
-  el.loginStatus.textContent = '';
-  await loadAccount();
+  if (!key || el.btnLogin.disabled) return;
+  el.btnLogin.disabled = true;
+  try {
+    localStorage.setItem(KEY_STORAGE, key);
+    el.loginStatus.textContent = '';
+    await loadAccount();
+  } finally {
+    el.btnLogin.disabled = false;
+  }
+}
+
+async function saveWebhook() {
+  if (el.btnWebhookSave.disabled) return;
+  const url = el.webhookInput.value.trim();
+  if (!isPlausibleWebhookUrl(url)) {
+    el.webhookStatus.textContent = 'Enter a valid https:// webhook URL before saving.';
+    return;
+  }
+  el.btnWebhookSave.disabled = true;
+  try {
+    const previousId = currentWebhookId;
+    const created = await fetchCustomer('/webhooks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, description: 'Settlement webhook (customer page)' }),
+    });
+    currentWebhookId = created.id;
+    if (created.secret) {
+      el.webhookSecret.value = created.secret;
+      el.webhookSecretRow.hidden = false;
+      el.webhookSecretCopyStatus.textContent = '';
+    }
+    // Replace rather than accumulate: drop the one this page was showing.
+    if (previousId) await fetchCustomer(`/webhooks/${encodeURIComponent(previousId)}`, { method: 'DELETE' });
+    el.webhookStatus.textContent = `Saved — Arbiter will call ${url} on settlement.`;
+    log('Webhook saved.');
+  } catch (err) {
+    if (err.message !== 'unauthorized') el.webhookStatus.textContent = `Could not save webhook: ${err.message}`;
+  } finally {
+    el.btnWebhookSave.disabled = false;
+  }
+}
+
+// #518: the login and webhook rows are now <form>s so Enter submits them.
+// Their buttons are type=submit, so the form submit handler covers clicks too.
+el.loginForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  login();
+});
+
+el.webhookForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  saveWebhook();
+});
+
+el.btnWebhookSecretCopy.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(el.webhookSecret.value);
+    el.webhookSecretCopyStatus.textContent = 'Signing secret copied.';
+  } catch (err) {
+    el.webhookSecret.focus();
+    el.webhookSecret.select();
+    el.webhookSecretCopyStatus.textContent = `Could not copy: ${err.message}. Select and copy the secret manually.`;
+  }
 });
 
 el.btnLogout.addEventListener('click', () => {
@@ -145,34 +220,6 @@ el.btnTopUp.addEventListener('click', async () => {
     if (err.message !== 'unauthorized') log(`Could not start checkout: ${err.message}`);
   } finally {
     el.btnTopUp.disabled = false;
-  }
-});
-
-el.btnWebhookSave.addEventListener('click', async () => {
-  const url = el.webhookInput.value.trim();
-  if (!isPlausibleWebhookUrl(url)) {
-    el.webhookStatus.textContent = 'Enter a valid https:// webhook URL before saving.';
-    return;
-  }
-  el.btnWebhookSave.disabled = true;
-  try {
-    const previousId = currentWebhookId;
-    const created = await fetchCustomer('/webhooks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, description: 'Settlement webhook (customer page)' }),
-    });
-    currentWebhookId = created.id;
-    // Replace rather than accumulate: drop the one this page was showing.
-    if (previousId) await fetchCustomer(`/webhooks/${encodeURIComponent(previousId)}`, { method: 'DELETE' });
-    el.webhookStatus.textContent = created.secret
-      ? `Saved — Arbiter will call ${url} on settlement. Signing secret (shown once): ${created.secret}`
-      : `Saved — Arbiter will call ${url} on settlement.`;
-    log('Webhook saved.');
-  } catch (err) {
-    if (err.message !== 'unauthorized') el.webhookStatus.textContent = `Could not save webhook: ${err.message}`;
-  } finally {
-    el.btnWebhookSave.disabled = false;
   }
 });
 

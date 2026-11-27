@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Arbiter — Customer Account</title>
     <link rel="stylesheet" href="/src/style.css" />
+    <script src="/src/theme.js"></script>
   </head>
   <body>
     <main class="app">
@@ -23,16 +24,19 @@
       <section id="panel-login" class="panel">
         <h2>Sign in</h2>
         <p class="muted small">Paste the API key you received at checkout to continue.</p>
-        <div class="row">
-          <input
-            id="customer-key-input"
-            type="password"
-            placeholder="API key"
-            style="flex: 1; padding: 0.5rem 0.7rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)"
-          />
-          <button id="btn-customer-login">Enter</button>
-        </div>
-        <p id="customer-login-status" class="muted small"></p>
+        <form id="form-customer-login">
+          <label for="customer-key-input" class="sr-only">API key</label>
+          <div class="row">
+            <input
+              id="customer-key-input"
+              type="password"
+              placeholder="API key"
+              style="flex: 1; padding: 0.5rem 0.7rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)"
+            />
+            <button id="btn-customer-login" type="submit">Enter</button>
+          </div>
+        </form>
+        <p id="customer-login-status" class="muted small" role="status" aria-live="polite"></p>
       </section>
 
       <section id="panel-account" class="panel hidden">
@@ -59,17 +63,26 @@
             Register a URL and Arbiter calls it when a dispatched question settles, instead of you
             polling for status.
           </p>
-          <div class="row">
-            <input
-              id="webhook-url-input"
-              type="url"
-              placeholder="https://example.com/webhooks/arbiter"
-              style="flex: 1; padding: 0.5rem 0.7rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)"
-            />
-            <button id="btn-webhook-save">Save</button>
-            <button id="btn-webhook-delete" class="secondary" type="button">Remove</button>
+          <form id="form-webhook">
+            <label for="webhook-url-input" class="sr-only">Webhook URL</label>
+            <div class="row">
+              <input
+                id="webhook-url-input"
+                type="url"
+                placeholder="https://example.com/webhooks/arbiter"
+                style="flex: 1; padding: 0.5rem 0.7rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)"
+              />
+              <button id="btn-webhook-save" type="submit">Save</button>
+              <button id="btn-webhook-delete" class="secondary" type="button">Remove</button>
+            </div>
+          </form>
+          <p id="webhook-status" class="muted small" role="status" aria-live="polite"></p>
+          <div id="webhook-secret-row" class="row" hidden>
+            <label for="webhook-secret" class="sr-only">Webhook signing secret</label>
+            <input id="webhook-secret" type="text" readonly aria-label="Webhook signing secret" style="flex: 1; padding: 0.5rem 0.7rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)" />
+            <button id="btn-webhook-secret-copy" class="secondary" type="button">Copy secret</button>
           </div>
-          <p id="webhook-status" class="muted small"></p>
+          <p id="webhook-secret-copy-status" class="muted small" role="status" aria-live="polite"></p>
         </section>
       </section>
 

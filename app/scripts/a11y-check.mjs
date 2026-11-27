@@ -39,6 +39,26 @@ for (const locale of ['en', 'ar']) {
   }
   await context.close();
 }
+
+// Smoke check (issue #379): the landing pricing calculator in landing/script.js
+// only renders when a `.pricing-grid` container exists in the markup. Fail CI
+// if the script's target selector and the landing HTML diverge again.
+{
+  const context = await browser.newContext({ locale: 'en' });
+  const page = await context.newPage();
+  const landingUrl = `${landing}/index.html`;
+  await page.goto(landingUrl, { waitUntil: 'networkidle' }).catch(() => page.goto(landingUrl));
+  const pricingGrid = await page.$('.pricing-grid');
+  if (!pricingGrid) {
+    failures++;
+    console.error(`✗ ${landingUrl} — missing .pricing-grid container required by landing/script.js pricing calculator`);
+  } else {
+    console.log(`✓ ${landingUrl} — .pricing-grid present`);
+  }
+  await page.close();
+  await context.close();
+}
+
 await browser.close();
 if (failures) {
   console.error(`\n${failures} accessibility violation(s).`);

@@ -35,6 +35,8 @@ export default {
   'earnings.accrued': 'Accrued (withdrawable)',
   'earnings.withdraw': 'Withdraw',
   'earnings.payout': 'Payout address (optional — defaults to your own)',
+  'earnings.memo': 'Memo (optional — required by some exchanges)',
+  'earnings.memoHint': 'If your exchange requires a memo, enter it, or funds may be lost.',
   'earnings.staked': 'Staked bond',
   'earnings.amount': 'Stake amount in USDC',
   'earnings.stake': 'Stake',
