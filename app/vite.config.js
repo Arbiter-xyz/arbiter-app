@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite';
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 let backendUrl = 'http://localhost:4000';
 
@@ -66,6 +67,7 @@ export default defineConfig({
           return undefined;
         },
       },
+      },
     },
-  },
+  };
 });

@@ -1,4 +1,13 @@
 import { truncateAddress, formatRatio } from './format.js';
+import { initErrorReporting } from './errorReporting.js';
+import { initSessionReplay } from './sessionReplay.js';
+
+// Client-side telemetry (issues #106/#107). Session replay on this page
+// additionally requires VITE_SESSION_REPLAY_ADMIN=true (enforced inside
+// initSessionReplay), and the admin token itself is a blocked/masked
+// selector — see sessionReplay.js and errorReporting.js.
+initErrorReporting('admin');
+initSessionReplay({ page: 'admin' });
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';

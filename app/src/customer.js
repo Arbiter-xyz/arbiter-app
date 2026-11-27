@@ -16,6 +16,15 @@
 // Auth: `Authorization: Bearer ak_live_…` (the API key itself), same scheme
 // as the admin console's bearer token.
 
+import { initErrorReporting } from './errorReporting.js';
+import { initSessionReplay } from './sessionReplay.js';
+
+// Client-side telemetry (issues #106/#107) — no-op unless configured;
+// the API-key gate and reveal fields are covered by errorReporting.js's
+// scrubbers and sessionReplay.js's block/mask selector lists.
+initErrorReporting('customer');
+initSessionReplay({ page: 'customer' });
+
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const KEY_STORAGE = 'arbiter-customer-api-key';
 // #283: a hung backend connection previously left buttons disabled forever
