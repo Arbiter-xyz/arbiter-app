@@ -1,5 +1,6 @@
 // Client-side search/status filter for the buyer dashboard's question list.
 // Pure (no DOM) so it can be reused and tested without a browser.
+// Covered by questionFilter.test.js (see issue #242).
 
 /** Same three states the dashboard badges show — see describeStatus(). */
 export function questionStatus(q) {

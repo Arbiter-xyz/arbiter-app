@@ -7,6 +7,8 @@
 // once (there is no "show key again" by design — see the warning copy
 // already in index.html).
 
+import { takeQueryParam } from './queryParam.js';
+
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
 const el = {
@@ -23,8 +25,9 @@ const el = {
 
   account: document.getElementById('apikey-account'),
   balance: document.getElementById('apikey-balance'),
-  btnTopUp: document.getElementById('btn-apikey-topup'),
   accountStatus: document.getElementById('apikey-account-status'),
+  // #459: "Top up" is a link to customer.html, which sends the API key as a
+  // Bearer token. There is deliberately no unauthenticated checkout here.
 };
 
 function setCheckoutStatus(message) {
@@ -35,13 +38,15 @@ function setCheckoutStatus(message) {
 // for the resulting API key rather than assuming it's already mintable from
 // the URL — the key is only ever handed over once, server-side.
 async function maybeResumeFromRedirect() {
-  const params = new URLSearchParams(window.location.search);
-  const sessionId = params.get('apikey_session');
+  // #460: strip the id from the address bar and history as soon as it's
+  // read, so a reload doesn't repeat the lookup and it doesn't leak via
+  // history or Referer.
+  const sessionId = takeQueryParam('apikey_session');
   if (!sessionId) return;
 
   setCheckoutStatus('Finishing checkout…');
   try {
-    const res = await fetch(`${BACKEND_URL}/billing/checkout/${sessionId}`);
+    const res = await fetch(`${BACKEND_URL}/billing/checkout/${encodeURIComponent(sessionId)}`);
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `checkout lookup failed: ${res.status}`);
     const { apiKey, creditBalance } = await res.json();
     if (apiKey) revealApiKey(apiKey);
@@ -67,25 +72,24 @@ el.checkoutForm.addEventListener('submit', async (evt) => {
   el.btnCheckout.disabled = true;
   setCheckoutStatus('Starting checkout…');
   try {
-    const email = el.email.value.trim();
     const amount = Number(el.amount.value);
-    if (!email) throw new Error('email is required');
     if (!Number.isFinite(amount) || amount <= 0) throw new Error('top-up amount must be a positive number');
 
     const res = await fetch(`${BACKEND_URL}/billing/checkout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      // #458: arbiter-backend's POST /billing/checkout reads `amountUsd` and
+      // returns `{ checkoutUrl }`; it doesn't read an email.
       body: JSON.stringify({
-        email,
-        amountUsdc: amount,
+        amountUsd: amount,
         successUrl: `${window.location.origin}${window.location.pathname}?apikey_session={CHECKOUT_SESSION_ID}`,
         cancelUrl: window.location.href,
       }),
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `checkout failed: ${res.status}`);
-    const { url } = await res.json();
-    if (!url) throw new Error('checkout session had no redirect url');
-    window.location.href = url;
+    const { checkoutUrl } = await res.json();
+    if (!checkoutUrl) throw new Error('checkout session had no redirect url');
+    window.location.href = checkoutUrl;
   } catch (err) {
     setCheckoutStatus(`Could not start checkout: ${err.message}`);
   } finally {
@@ -99,29 +103,6 @@ el.btnCopy.addEventListener('click', async () => {
     el.copyStatus.textContent = 'Copied.';
   } catch (err) {
     el.copyStatus.textContent = `Could not copy: ${err.message}`;
-  }
-});
-
-el.btnTopUp.addEventListener('click', async () => {
-  el.btnTopUp.disabled = true;
-  el.accountStatus.textContent = '';
-  try {
-    const res = await fetch(`${BACKEND_URL}/billing/checkout`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        successUrl: window.location.href,
-        cancelUrl: window.location.href,
-      }),
-    });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `checkout failed: ${res.status}`);
-    const { url } = await res.json();
-    if (!url) throw new Error('checkout session had no redirect url');
-    window.location.href = url;
-  } catch (err) {
-    el.accountStatus.textContent = `Could not start top-up: ${err.message}`;
-  } finally {
-    el.btnTopUp.disabled = false;
   }
 });
 

@@ -13,6 +13,10 @@ export default [
       globals: {
         ...globals.browser,
         ...globals.node,
+        // Injected at build/dev time by vite.config.js's `define` from
+        // app/package.json's compatibleBackendVersion (issue #150) — not a
+        // runtime global, so ESLint must not flag its uses as no-undef.
+        COMPATIBLE_BACKEND_VERSION: 'readonly',
       },
     },
     rules: {

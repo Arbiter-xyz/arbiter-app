@@ -29,6 +29,20 @@ jobs:
       # Audits the built dist/ (index.html + dashboard.html) against the
       # budgets in app/lighthouserc.json; fails on any assertion regression.
       # No live backend is needed: pages render their connect/empty states.
+      #
+      # Root cause of the red run on main: @lhci/cli@0.14.0's bundled Chrome
+      # launcher fails on the ubuntu-latest runner image (no usable Chrome
+      # binary / sandbox), so autorun errored out before any audit ran. We
+      # install a known-good Chrome and point LHCI at it explicitly, and run
+      # Chrome with --no-sandbox (required in the containerized runner).
+      - name: Install Chrome for Lighthouse
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+        id: setup-chrome
       - name: Run Lighthouse CI
         run: npx --yes @lhci/cli@0.14.0 autorun --config=./lighthouserc.json
         working-directory: app
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+          LHCI_CHROME_FLAGS: --no-sandbox --headless=new --disable-gpu --disable-dev-shm-usage
