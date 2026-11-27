@@ -1,43 +1,15 @@
 import { defineConfig, loadEnv } from 'vite';
 import { resolve } from 'node:path';
-import { readFileSync } from 'node:fs';
-
-let backendUrl = 'http://localhost:4000';
-
-// Origins referenced by the per-page Content-Security-Policy meta tags.
-// Third-party origins are only allowed when the matching integration is
-// configured, so an app with no Crisp/Sentry/PostHog can't be exfiltrated to
-// them by an injected script.
-function cspOrigins(env) {
-  const origins = [
-    env.VITE_BACKEND_URL || 'http://localhost:4000',
-    env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org',
-    env.VITE_SOROBAN_RPC_URL || 'https://soroban-testnet.stellar.org',
-  ];
-  const scriptOrigins = [];
-  if (env.VITE_CRISP_WEBSITE_ID) {
-    // support.js injects Crisp's loader as an external script.
-    scriptOrigins.push('https://client.crisp.chat');
-    origins.push('https://client.crisp.chat');
-  }
-  if (env.VITE_SENTRY_DSN) {
-    try {
-      origins.push(new URL(env.VITE_SENTRY_DSN).origin);
-    } catch {
-      // A malformed DSN must not break the build; Sentry will fail open too.
-    }
-  }
-  if (env.VITE_SESSION_REPLAY_POSTHOG_KEY) {
-    origins.push(env.VITE_SESSION_REPLAY_HOST || 'https://us.i.posthog.com');
-  }
-  return {
-    connect: [...new Set(origins)].join(' '),
-    script: scriptOrigins.join(' '),
-  };
-}
+import {
+  resolveBackendUrl,
+  htmlEnvFallbackPlugin,
+  verifyNoUnreplacedHtmlEnvPlugin,
+} from './src/htmlEnvFallback.js';
 
 export default defineConfig(({ mode }) => {
-  const csp = cspOrigins(loadEnv(mode, __dirname, 'VITE_'));
+  const env = loadEnv(mode, process.cwd(), '');
+  const backendUrl = resolveBackendUrl(env, process.env);
+
   return {
     // The wallets-kit dependency chain references Node's `global` at import
     // time. Without this polyfill the production build silently breaks every
@@ -46,21 +18,13 @@ export default defineConfig(({ mode }) => {
     define: {
       global: 'globalThis',
     },
-    plugins: [
-      {
-        name: 'app-csp-origins',
-        // Each HTML entry contains a static CSP meta tag with a single
-        // placeholder; fill it from env at build and dev time alike.
-        transformIndexHtml(html) {
-          return html
-            .replaceAll('%%CSP_ORIGINS%%', csp.connect)
-            .replaceAll('%%CSP_SCRIPT_ORIGINS%%', csp.script);
-        },
-      },
-    ],
     server: {
       port: 5173,
     },
+    plugins: [
+      htmlEnvFallbackPlugin(backendUrl),
+      verifyNoUnreplacedHtmlEnvPlugin(),
+    ],
     build: {
       rollupOptions: {
         // Multi-page build: the worker console (index.html) and the
