@@ -24,7 +24,6 @@ function markSeen(key) {
  */
 export function startTour(key, steps) {
   if (seen(key) || !steps.length) return;
-  markSeen(key);
 
   const titleId = `tour-title-${Math.random().toString(36).slice(2)}`;
   const box = document.createElement('div');
@@ -37,7 +36,8 @@ export function startTour(key, steps) {
   let i = 0;
   let highlighted = null;
 
-  function close() {
+  function close(completed) {
+    if (completed) markSeen(key);
     highlighted?.classList.remove('tour-highlight');
     box.remove();
     document.removeEventListener('keydown', onKeydown);
@@ -71,11 +71,11 @@ export function startTour(key, steps) {
     skip.type = 'button';
     skip.className = 'secondary';
     skip.textContent = 'Skip tour';
-    skip.onclick = close;
+    skip.onclick = () => close(true);
     const next = document.createElement('button');
     next.type = 'button';
     next.textContent = i === steps.length - 1 ? 'Got it' : `Next (${i + 1}/${steps.length})`;
-    next.onclick = () => (++i < steps.length ? render() : close());
+    next.onclick = () => (++i < steps.length ? render() : close(true));
     row.append(skip, next);
     box.append(h, p, row);
     next.focus();

@@ -42,6 +42,8 @@ export default {
   'earnings.accrued': 'المستحق (قابل للسحب)',
   'earnings.withdraw': 'سحب',
   'earnings.payout': 'عنوان الدفع (اختياري — افتراضيًا عنوانك)',
+  'earnings.memo': 'مذكرة (اختيارية — تلزم بعض المنصات)',
+  'earnings.memoHint': 'إذا كانت منصتك تتطلب مذكرة، أدخلها، وإلا فقدان الأموال.',
   'earnings.staked': 'الضمان المودَع',
   'earnings.amount': 'مبلغ الضمان بعملة USDC',
   'earnings.stake': 'إيداع',

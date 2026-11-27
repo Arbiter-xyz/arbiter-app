@@ -16,6 +16,16 @@ initPwa();
 import { renderFencedCode } from './codeBlocks.js';
 import { enrollBiometricUnlock, authorizeSecretReveal } from './biometricUnlock.js';
 import { ensureSession as ensureSharedSession } from './session.js';
+import { initErrorReporting } from './errorReporting.js';
+import { initSessionReplay } from './sessionReplay.js';
+
+// Client-side telemetry (issues #106/#107). Both are no-ops unless the
+// matching env var is set at build time, and both scrub/mask sensitive
+// fields before anything leaves the browser (sendDefaultPii: false,
+// beforeSend scrubbers in errorReporting.js; named block/mask selector
+// lists in sessionReplay.js).
+initErrorReporting('main');
+initSessionReplay({ page: 'main' });
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
@@ -74,6 +84,7 @@ const el = {
   btnWithdrawBank: document.getElementById('btn-withdraw-bank'),
   bankWithdrawStatus: document.getElementById('bank-withdraw-status'),
   withdrawBeneficiaryInput: document.getElementById('withdraw-beneficiary-input'),
+  withdrawMemoInput: document.getElementById('withdraw-memo-input'),
   stakeForm: document.getElementById('stake-form'),
   stakeInput: document.getElementById('stake-input'),
   btnStake: document.getElementById('btn-stake'),
@@ -111,13 +122,18 @@ const state = {
 
 const notify = createNotificationCenter({ mount: document.querySelector('header'), storageKey: 'arbiter-worker-notifications' });
 
-/** Activity-log entry; also mirrored into the header bell (issue #133). */
-function log(message) {
-  const li = document.createElement('li');
-  const time = new Date().toLocaleTimeString();
-  li.textContent = `[${time}] ${message}`;
-  el.log.prepend(li);
-  notify(message);
+/** Activity-log entry; also mirrored into the header bell (issue #133),
+ * except for content passed with a separate `notification` text (#465). */
+const activityLog = createActivityLog({
+  write(line) {
+    const li = document.createElement('li');
+    li.textContent = line;
+    el.log.prepend(li);
+  },
+  notify,
+});
+function log(message, options) {
+  activityLog(message, options);
 }
 
 // --- Backend API version check (issue #150) -------------------------------
@@ -170,6 +186,11 @@ async function checkBackendVersion() {
     // the existing request paths already surface connectivity problems.
   }
 }
+
+// Run exactly once on startup (issue #150). Fire-and-forget: the check is
+// best-effort and never blocks app usage, and a mismatch only shows the
+// non-blocking banner above.
+checkBackendVersion();
 
 function showPanel(name) {
   for (const key of ['connect', 'onboard', 'online']) {
@@ -696,7 +717,8 @@ function onQuestionReceived({ questionId, question, expiresInMs }) {
   el.answerInput.disabled = false;
   el.btnAnswer.disabled = false;
   el.question.classList.remove('hidden');
-  log(`New question dispatched: "${question}"`);
+  // #465: the bell persists to localStorage, so it gets the id, not the text.
+  log(`New question dispatched: "${question}"`, { notification: `New question dispatched (id ${questionId})` });
   startCountdown(expiresInMs);
   alertNewQuestion({ questionId, question });
 }
@@ -752,7 +774,7 @@ el.answerForm.addEventListener('submit', async (evt) => {
     } else if (!res.ok) {
       throw new Error(`unexpected status ${res.status}`);
     } else {
-      log(`Answer submitted: "${answer}"`);
+      log(`Answer submitted: "${answer}"`, { notification: `Answer submitted for question ${q.questionId}` });
     }
   } catch (err) {
     log(`Answer submission failed: ${err.message}`);
@@ -793,16 +815,52 @@ function renderTrackRecord({ matched, total, matchRatio }) {
   el.trackRecordSummary.textContent = `${matched}/${total} answers matched consensus (${pct}%)`;
 }
 
+// --- Withdraw memo validation (issue #478) --------------------------------
+// The payout-address field invites exchange deposit addresses, and most
+// exchanges credit deposits by memo — a withdraw_to() without the required
+// memo can strand the whole accrued balance. The single optional memo input
+// accepts either shape Stellar allows on a classic transaction:
+//   - all-digit input → MEMO_ID (what an exchange's numeric deposit tag
+//     maps to on Stellar), validated to fit a u64;
+//   - anything else  → MEMO_TEXT, validated to fit the 28-byte limit.
+// Anything else is rejected here, before the transaction is built or signed.
+
+const U64_MAX = 18446744073709551615n;
+const TEXT_MEMO_MAX_BYTES = 28; // Stellar's memo.text byte limit
+
+function parseWithdrawMemo(raw) {
+  if (/^\d+$/.test(raw)) {
+    const id = BigInt(raw);
+    if (id > U64_MAX) throw new Error('memo id must fit in a u64 (0 – 18446744073709551615)');
+    return { type: 'id', value: id.toString() };
+  }
+  const bytes = new TextEncoder().encode(raw).length;
+  if (bytes > TEXT_MEMO_MAX_BYTES) {
+    throw new Error(`memo text must be ${TEXT_MEMO_MAX_BYTES} bytes or fewer (entered ${bytes})`);
+  }
+  return { type: 'text', value: raw };
+}
+
 el.btnWithdraw.addEventListener('click', async () => {
   el.btnWithdraw.disabled = true;
   try {
     // Optional — leave blank to withdraw to your own address (the common
     // case). Fill it in to route the payout elsewhere (an exchange deposit
     // address, a cold wallet) without ever holding the funds at the signing
-    // key first.
+    // key first. Exchange deposit addresses usually require the memo below
+    // to credit the deposit — see the helper copy next to the input.
     const beneficiary = el.withdrawBeneficiaryInput.value.trim();
     if (beneficiary && !StrKey.isValidEd25519PublicKey(beneficiary)) {
       throw new Error('payout address is not a valid Stellar public key');
+    }
+
+    // Optional memo (issue #478): validated up front, before any network
+    // call or signing. A memo without a payout address has no destination
+    // to attribute, so reject it rather than silently dropping it.
+    const memoRaw = (el.withdrawMemoInput?.value || '').trim();
+    const memo = memoRaw ? parseWithdrawMemo(memoRaw) : undefined;
+    if (memo && !beneficiary) {
+      throw new Error('a withdraw memo needs a payout address — add one, or clear the memo');
     }
 
     const owedRes = await fetch(`${BACKEND_URL}/workers/${state.address}/owed`);
@@ -812,7 +870,7 @@ el.btnWithdraw.addEventListener('click', async () => {
 
     log('Building withdraw transaction…');
     const xdr = beneficiary
-      ? await buildWithdrawToXdr(state.address, beneficiary, owedStroops)
+      ? await buildWithdrawToXdr(state.address, beneficiary, owedStroops, memo)
       : await buildWithdrawXdr(state.address, owedStroops);
     const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
       address: state.address,

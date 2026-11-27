@@ -57,8 +57,12 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
+          // #467: only a successful page may replace the cached copy; a 404/5xx
+          // from a bad deploy must not become the offline fallback.
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
+          }
           return res;
         })
         .catch(() => caches.match(request).then((hit) => hit || caches.match('/index.html'))),
@@ -66,8 +70,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Hashed build assets, styles, icons: cache-first, populated on first use.
-  if (/\.(js|css|png|svg|json|woff2?)$/.test(url.pathname)) {
+  // Hashed build assets in /assets/ (Vite output) and icons: cache-first, populated on first use.
+  // Other same-origin resources (e.g. /flags.json, /manifest.json) go to network.
+  if (/^\/assets\/.*\.(js|css|png|svg|woff2?)$/.test(url.pathname) || /^\/icons\/.*\.(png|svg)$/.test(url.pathname)) {
     event.respondWith(
       caches.match(request).then(
         (hit) =>

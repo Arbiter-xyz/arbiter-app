@@ -15,19 +15,50 @@ reported API version rather than kept in lockstep by hand (see #150).
 Pre-split history and the round-by-round build narrative live in the
 archived [`arbiter`](https://github.com/rudeus112266/arbiter) repo.
 
+## PR backlog triage (#385)
+
+As of 2026-11-10 there were 9 open PRs, nearly all in a CONFLICTING
+mergeable state. Each has an explicit disposition below so the queue
+reflects reality rather than an unmaintained project. When a PR is
+resolved, update its row here in the same PR that merges or closes it.
+
+| PR | Disposition | Reason |
+| --- | --- | --- |
+| #330 | actively being worked | Load-bearing; touches onboarding/landing flow — highest-leverage path to real users. Rebase and merge first. |
+| #329 | actively being worked | Load-bearing; touches onboarding/landing flow. Rebase after #330. |
+| #328 | actively being worked | Load-bearing; touches onboarding/landing flow. Rebase after #329. |
+| #226 | closed-as-superseded | Speculative; superseded by the unified app shell work (#143–#147). |
+| #225 | closed-as-superseded | Speculative; superseded by the unified app shell work (#143–#147). |
+| #224 | closed-as-superseded | Speculative; superseded by the unified app shell work (#143–#147). |
+| #223 | closed-as-superseded | Speculative; superseded by the unified app shell work (#143–#147). |
+| #222 | closed-as-superseded | Speculative; superseded by the unified app shell work (#143–#147). |
+| #175 | closed-as-superseded | Stale; no longer applies after the monorepo split and #150 version pinning. |
+
+Priority order: onboarding/landing PRs (#330, #329, #328) first, then
+close the superseded rest with the reasons above. This table is the
+source of truth for the acceptance criteria on #385.
+
 ## Backend compatibility
 
 This app and `arbiter-backend` are deployed independently, so they can
 drift out of sync. To catch that early, the app declares the backend API
-version it was built against as `COMPATIBLE_BACKEND_VERSION` (in
-`app/package.json`), and on load fetches the backend's `GET /health`
-(via `VITE_BACKEND_URL`) to read the version string it reports.
+version it was built against as `compatibleBackendVersion` in
+`app/package.json`. `app/vite.config.js` injects that value as the
+build-time constant `COMPATIBLE_BACKEND_VERSION` (overridable per build
+with `VITE_COMPATIBLE_BACKEND_VERSION`, see `app/.env.example`). On load,
+the worker console (`app/src/main.js`) fetches the backend's `GET /health`
+(via `VITE_BACKEND_URL`) and compares the version string it reports
+(`apiVersion`, falling back to `version`) against that constant.
 
 - **Match** — nothing happens; the app runs normally.
 - **Mismatch** — the app shows a visible, non-blocking banner naming both
   versions. It does **not** block or gate usage: HTTP APIs are forgiving,
   and most mismatches won't actually break anything, so the notice only
   informs (developer or end user) that the two are out of sync.
+- **No version reported** — if `/health` carries neither `apiVersion` nor
+  `version`, there is nothing to compare and the check stays silent.
+  `arbiter-backend` does not report either field today, so until it does
+  the check is effectively a no-op — not a pass, just an absent signal.
 
 This mirrors `arbiter-backend`'s own pin against `arbiter-contract`: the
 version is declared in one place and checked at runtime, rather than
