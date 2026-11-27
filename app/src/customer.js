@@ -45,6 +45,10 @@ const el = {
   btnWebhookSave: document.getElementById('btn-webhook-save'),
   btnWebhookDelete: document.getElementById('btn-webhook-delete'),
   webhookStatus: document.getElementById('webhook-status'),
+  webhookSecretRow: document.getElementById('webhook-secret-row'),
+  webhookSecret: document.getElementById('webhook-secret'),
+  btnWebhookSecretCopy: document.getElementById('btn-webhook-secret-copy'),
+  webhookSecretCopyStatus: document.getElementById('webhook-secret-copy-status'),
   log: document.getElementById('log'),
 };
 
@@ -152,11 +156,14 @@ async function saveWebhook() {
       body: JSON.stringify({ url, description: 'Settlement webhook (customer page)' }),
     });
     currentWebhookId = created.id;
+    if (created.secret) {
+      el.webhookSecret.value = created.secret;
+      el.webhookSecretRow.hidden = false;
+      el.webhookSecretCopyStatus.textContent = '';
+    }
     // Replace rather than accumulate: drop the one this page was showing.
     if (previousId) await fetchCustomer(`/webhooks/${encodeURIComponent(previousId)}`, { method: 'DELETE' });
-    el.webhookStatus.textContent = created.secret
-      ? `Saved — Arbiter will call ${url} on settlement. Signing secret (shown once): ${created.secret}`
-      : `Saved — Arbiter will call ${url} on settlement.`;
+    el.webhookStatus.textContent = `Saved — Arbiter will call ${url} on settlement.`;
     log('Webhook saved.');
   } catch (err) {
     if (err.message !== 'unauthorized') el.webhookStatus.textContent = `Could not save webhook: ${err.message}`;
@@ -175,6 +182,17 @@ el.loginForm.addEventListener('submit', (event) => {
 el.webhookForm.addEventListener('submit', (event) => {
   event.preventDefault();
   saveWebhook();
+});
+
+el.btnWebhookSecretCopy.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(el.webhookSecret.value);
+    el.webhookSecretCopyStatus.textContent = 'Signing secret copied.';
+  } catch (err) {
+    el.webhookSecret.focus();
+    el.webhookSecret.select();
+    el.webhookSecretCopyStatus.textContent = `Could not copy: ${err.message}. Select and copy the secret manually.`;
+  }
 });
 
 el.btnLogout.addEventListener('click', () => {
