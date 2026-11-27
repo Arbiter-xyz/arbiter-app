@@ -14,6 +14,7 @@
     "lint": "eslint .",
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
+    "e2e:onboarding": "playwright test e2e/onboarding.spec.js",
     "e2e:report": "playwright show-report",
     "visual": "playwright test -c playwright.visual.config.js",
     "visual:update": "playwright test -c playwright.visual.config.js --update-snapshots"

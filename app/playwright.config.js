@@ -15,4 +15,16 @@ export default defineConfig({
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
       },
+  projects: [
+    {
+      name: 'onboarding-smoke',
+      testMatch: /onboarding\.spec\.js/,
+      use: { baseURL: process.env.E2E_BASE_URL || `http://localhost:${PORT}` },
+    },
+    {
+      name: 'chromium',
+      testIgnore: /onboarding\.spec\.js/,
+      use: { baseURL: process.env.E2E_BASE_URL || `http://localhost:${PORT}` },
+    },
+  ],
 });
