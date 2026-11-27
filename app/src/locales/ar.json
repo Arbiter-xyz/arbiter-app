@@ -84,6 +84,8 @@
   "dash.loadFailed": "تعذّر تحميل الأسئلة: {error}",
   "dash.confidence": "الثقة {value}",
   "status.pending": "قيد التنفيذ",
+  "status.awaiting_workers": "بانتظار العمّال",
+  "status.reconciling": "قيد المطابقة",
   "status.resolved": "محسوم",
   "status.refunded": "مسترد"
 }

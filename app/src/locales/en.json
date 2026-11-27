@@ -84,6 +84,8 @@
   "dash.loadFailed": "Could not load questions: {error}",
   "dash.confidence": "confidence {value}",
   "status.pending": "in progress",
+  "status.awaiting_workers": "awaiting workers",
+  "status.reconciling": "reconciling",
   "status.resolved": "resolved",
   "status.refunded": "refunded"
 }

@@ -3,6 +3,7 @@ import { createWalletKit, wireConnectButtons } from './wallet.js';
 import { subscribeQuestionStatus } from './statusChannel.js';
 import { initI18n, onLocaleChange, t, formatUsdc, formatNumber } from './i18n.js';
 import { renderMarkdown } from './markdown.js';
+import { describeStatus } from './questionStatus.js';
 import { renderFencedCode } from './codeBlocks.js';
 import { createStarButton } from './starredQuestions.js';
 import { createNotificationCenter } from './notifications.js';
@@ -332,7 +333,7 @@ function renderQuestionItem(q) {
   }
 
   const badge = document.createElement('span');
-  const { label, cls } = describeStatus(q);
+  const { label, cls } = describeStatus(q, t);
   badge.className = `badge ${cls}`;
   badge.textContent = label;
 
@@ -431,16 +432,6 @@ function renderCancelControls(q, cancellableUntil = q.cancellableUntil ?? q.canc
   });
 
   return wrap;
-}
-
-function describeStatus(q) {
-  if (q.status !== 'settled') return { label: t('status.pending'), cls: 'badge-pending' };
-  if (q.status !== 'settled') {
-    const key = q.status === 'awaiting_workers' || q.status === 'reconciling' ? q.status : 'pending';
-    return { label: t(`status.${key}`), cls: 'badge-pending' };
-  }
-  if (q.outcome === 'resolved') return { label: t('status.resolved'), cls: 'badge-resolved' };
-  return { label: t('status.refunded'), cls: 'badge-refunded' };
 }
 
 // --- First-visit walkthrough (issue #61) ----------------------------------
