@@ -56,10 +56,22 @@ does not implement any Ledger-specific code beyond wiring the adapter from
 `@creit.tech/stellar-wallets-kit`, so there is no additional app-side mitigation to document
 here beyond "the transaction review UX must match what the Ledger screen shows."
 
+## Page Content-Security-Policy
+
+Every built entry page (`index`, `dashboard`, `leaderboard`, `worker`, `admin`, `customer`)
+ships a `<meta http-equiv="Content-Security-Policy">` in its `<head>`. Vite substitutes the
+allowed origins at build time: `default-src 'self'; script-src 'self' …; connect-src 'self' …;
+img-src 'self' data: …; style-src 'self' 'unsafe-inline'; worker-src 'self'; object-src 'none';
+base-uri 'none'`. The connect list always contains the backend, Horizon and Soroban RPC origins;
+Crisp, Sentry and PostHog origins are added only when their matching `VITE_*` integration is
+configured. `script-src 'self'` blocks inline scripts, and `worker-src 'self'` keeps the signer
+worker on-origin. Server-side response headers are out of scope (no hosting config in this repo).
+
 ## Residual risk (honest limits)
 - A live XSS can still *use* the key (sign) — as it could with any extension wallet's page
-  bridge. Mitigate with CSP and transaction review UX; hardware wallets remain recommended for
-  large balances.
+  bridge. CSP (above) blocks inline-script injection and limits where injected code can send
+  data, but a script already running on the origin can still request a signature; pair it with
+  transaction review UX. Hardware wallets remain recommended for large balances.
 - Clearing site data after locking destroys the key; the user's backup (secret copy or Shamir
   shares) is the only recovery path. The UI makes this explicit before locking.
 - The extension build (`createOrLoadLocalWallet(storage)` with `chrome.storage.local`) keeps
