@@ -16,16 +16,12 @@
 // Auth: `Authorization: Bearer ak_live_…` (the API key itself), same scheme
 // as the admin console's bearer token.
 
-import { initErrorReporting } from './errorReporting.js';
-import { initSessionReplay } from './sessionReplay.js';
-
-// Client-side telemetry (issues #106/#107) — no-op unless configured;
-// the API-key gate and reveal fields are covered by errorReporting.js's
-// scrubbers and sessionReplay.js's block/mask selector lists.
-initErrorReporting('customer');
-initSessionReplay({ page: 'customer' });
+import { takeQueryParam } from './queryParam.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+// #456: after a successful checkout, re-fetch the balance once more after
+// this long, since it's credited by the payment webhook, not the redirect.
+const CHECKOUT_REFRESH_MS = 5000;
 const KEY_STORAGE = 'arbiter-customer-api-key';
 // #283: a hung backend connection previously left buttons disabled forever
 // with no escape path. Mirror status.js's AbortController timeout so every
@@ -242,8 +238,22 @@ el.btnWebhookDelete.addEventListener('click', async () => {
   }
 });
 
+// #456: Top up's successUrl/cancelUrl bring the user back with
+// ?checkout=success|cancel. Read it once, drop it from the URL, and tell the
+// user what happened.
+const CHECKOUT_MESSAGES = {
+  success: 'Payment received — your balance updates once the provider confirms it.',
+  cancel: 'Checkout cancelled — you have not been charged.',
+};
+const checkoutResult = takeQueryParam('checkout');
+const checkoutMessage = CHECKOUT_MESSAGES[checkoutResult];
+if (checkoutMessage) {
+  log(checkoutMessage);
+}
+
 if (localStorage.getItem(KEY_STORAGE)) {
   loadAccount();
+  if (checkoutResult === 'success') setTimeout(loadAccount, CHECKOUT_REFRESH_MS);
 } else {
-  showLogin();
+  showLogin(checkoutMessage || '');
 }
