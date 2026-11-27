@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' %%CSP_SCRIPT_ORIGINS%%; connect-src 'self' %%CSP_ORIGINS%%; img-src 'self' data: %%CSP_ORIGINS%%; style-src 'self' 'unsafe-inline'; worker-src 'self'; object-src 'none'; base-uri 'none'" />
     <title>Arbiter — Customer Account</title>
     <link rel="stylesheet" href="/src/style.css" />
     <script src="/src/theme.js"></script>
