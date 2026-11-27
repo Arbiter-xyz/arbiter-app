@@ -25,8 +25,9 @@ const el = {
 
   account: document.getElementById('apikey-account'),
   balance: document.getElementById('apikey-balance'),
-  btnTopUp: document.getElementById('btn-apikey-topup'),
   accountStatus: document.getElementById('apikey-account-status'),
+  // #459: "Top up" is a link to customer.html, which sends the API key as a
+  // Bearer token. There is deliberately no unauthenticated checkout here.
 };
 
 function setCheckoutStatus(message) {
@@ -102,29 +103,6 @@ el.btnCopy.addEventListener('click', async () => {
     el.copyStatus.textContent = 'Copied.';
   } catch (err) {
     el.copyStatus.textContent = `Could not copy: ${err.message}`;
-  }
-});
-
-el.btnTopUp.addEventListener('click', async () => {
-  el.btnTopUp.disabled = true;
-  el.accountStatus.textContent = '';
-  try {
-    const res = await fetch(`${BACKEND_URL}/billing/checkout`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        successUrl: window.location.href,
-        cancelUrl: window.location.href,
-      }),
-    });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `checkout failed: ${res.status}`);
-    const { checkoutUrl } = await res.json();
-    if (!checkoutUrl) throw new Error('checkout session had no redirect url');
-    window.location.href = checkoutUrl;
-  } catch (err) {
-    el.accountStatus.textContent = `Could not start top-up: ${err.message}`;
-  } finally {
-    el.btnTopUp.disabled = false;
   }
 });
 

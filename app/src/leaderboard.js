@@ -1,10 +1,8 @@
-import { truncateAddress, formatRatio, workerProfileUrl } from './format.js';
-// Deliberately using i18n.js's formatUsdc (not units.js's): this is a
-// user-facing display surface, and i18n.js's implementation is the
-// locale-aware formatter intended for rendered output. units.js's
-// variant is for on-chain/base-unit math. See the dx issue tracking the
-// three divergent formatUsdc implementations.
-import { formatUsdc } from './i18n.js';
+import { truncateAddress, formatRatio, workerProfileUrl, formatUsdc } from './format.js';
+// formatUsdc comes from format.js, which documents it as the canonical
+// whole-unit formatter for leaderboard values (#230). The leaderboard used
+// i18n.js's version, but i18n.js currently fails to evaluate (it declares
+// `en` twice), which stopped this page loading at all (#461).
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
@@ -62,8 +60,19 @@ async function loadLeaderboard() {
     tbody.innerHTML = '';
     leaderboard.forEach((row, i) => tbody.appendChild(renderRow(row, i + 1)));
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="5" class="muted small">Failed to load: ${err.message}</td></tr>`;
+    // #463: the message can quote response text, so it's set as text, never HTML.
+    tbody.replaceChildren(messageRow(`Failed to load: ${err.message}`));
   }
+}
+
+function messageRow(text) {
+  const tr = document.createElement('tr');
+  const td = document.createElement('td');
+  td.colSpan = 5;
+  td.className = 'muted small';
+  td.textContent = text;
+  tr.appendChild(td);
+  return tr;
 }
 
 // Public, unauthenticated activity feed (issue #78). Consumes the
@@ -160,74 +169,12 @@ export function mountLeaderboard(root) {
   initActivityFeed();
 }
 
-// --- Accessibility controls for the standalone leaderboard.html (#488) ---
-// Handles data-font-decrease / data-font-increase / data-contrast-toggle.
-// style.css already provides html { font-size: calc(100% * var(--font-scale)) }
-// and :root[data-theme='high-contrast'] palette; we only need to wire the
-// buttons and persist choices across reloads.
-
-const FONT_STEP = 0.1;
-const FONT_MIN  = 0.7;
-const FONT_MAX  = 1.5;
-
-function initAccessibilityControls() {
-  const decreaseBtn  = document.querySelector('[data-font-decrease]');
-  const increaseBtn  = document.querySelector('[data-font-increase]');
-  const statusOutput = document.querySelector('[data-font-status]');
-  const contrastBtn  = document.querySelector('[data-contrast-toggle]');
-
-  if (!decreaseBtn && !increaseBtn && !contrastBtn) return;
-
-  // --- Font scale ---
-  const savedScale = parseFloat(localStorage.getItem('fontScale') || '1');
-  let scale = Number.isFinite(savedScale) ? Math.min(FONT_MAX, Math.max(FONT_MIN, savedScale)) : 1;
-
-  function applyScale(value) {
-    scale = value;
-    document.documentElement.style.setProperty('--font-scale', scale);
-    localStorage.setItem('fontScale', scale);
-    if (statusOutput) statusOutput.textContent = `${Math.round(scale * 100)}% text size`;
-    if (decreaseBtn) decreaseBtn.disabled = scale <= FONT_MIN;
-    if (increaseBtn) increaseBtn.disabled = scale >= FONT_MAX;
-  }
-
-  applyScale(scale);
-
-  if (decreaseBtn) {
-    decreaseBtn.addEventListener('click', () => {
-      applyScale(parseFloat(Math.max(FONT_MIN, scale - FONT_STEP).toFixed(1)));
-    });
-  }
-
-  if (increaseBtn) {
-    increaseBtn.addEventListener('click', () => {
-      applyScale(parseFloat(Math.min(FONT_MAX, scale + FONT_STEP).toFixed(1)));
-    });
-  }
-
-  // --- High contrast toggle ---
-  if (contrastBtn) {
-    const savedContrast = localStorage.getItem('highContrast') === 'true';
-    let contrastOn = savedContrast;
-
-    function applyContrast(on) {
-      contrastOn = on;
-      document.documentElement.setAttribute('data-theme', on ? 'high-contrast' : '');
-      contrastBtn.setAttribute('aria-pressed', String(on));
-      localStorage.setItem('highContrast', String(on));
-    }
-
-    applyContrast(contrastOn);
-
-    contrastBtn.addEventListener('click', () => applyContrast(!contrastOn));
-  }
-}
-
-// Only run on the standalone page; mountLeaderboard() covers the app-shell route.
-if (document.querySelector('[data-font-decrease], [data-contrast-toggle]')) {
-  document.addEventListener('DOMContentLoaded', () => {
-    loadLeaderboard();
-    initActivityFeed();
-    initAccessibilityControls();
-  });
+// #461: the standalone leaderboard.html already has the table in its markup
+// and nothing calls mountLeaderboard there, so start it here. In the app
+// shell the table doesn't exist until mountLeaderboard creates it, so this
+// does nothing on import.
+if (typeof document !== 'undefined' && document.getElementById('leaderboard-body')) {
+  document.getElementById('btn-refresh')?.addEventListener('click', loadLeaderboard);
+  loadLeaderboard();
+  initActivityFeed();
 }
