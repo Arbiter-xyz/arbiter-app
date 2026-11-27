@@ -122,13 +122,18 @@ const state = {
 
 const notify = createNotificationCenter({ mount: document.querySelector('header'), storageKey: 'arbiter-worker-notifications' });
 
-/** Activity-log entry; also mirrored into the header bell (issue #133). */
-function log(message) {
-  const li = document.createElement('li');
-  const time = new Date().toLocaleTimeString();
-  li.textContent = `[${time}] ${message}`;
-  el.log.prepend(li);
-  notify(message);
+/** Activity-log entry; also mirrored into the header bell (issue #133),
+ * except for content passed with a separate `notification` text (#465). */
+const activityLog = createActivityLog({
+  write(line) {
+    const li = document.createElement('li');
+    li.textContent = line;
+    el.log.prepend(li);
+  },
+  notify,
+});
+function log(message, options) {
+  activityLog(message, options);
 }
 
 // --- Backend API version check (issue #150) -------------------------------
@@ -712,7 +717,8 @@ function onQuestionReceived({ questionId, question, expiresInMs }) {
   el.answerInput.disabled = false;
   el.btnAnswer.disabled = false;
   el.question.classList.remove('hidden');
-  log(`New question dispatched: "${question}"`);
+  // #465: the bell persists to localStorage, so it gets the id, not the text.
+  log(`New question dispatched: "${question}"`, { notification: `New question dispatched (id ${questionId})` });
   startCountdown(expiresInMs);
   alertNewQuestion({ questionId, question });
 }
@@ -768,7 +774,7 @@ el.answerForm.addEventListener('submit', async (evt) => {
     } else if (!res.ok) {
       throw new Error(`unexpected status ${res.status}`);
     } else {
-      log(`Answer submitted: "${answer}"`);
+      log(`Answer submitted: "${answer}"`, { notification: `Answer submitted for question ${q.questionId}` });
     }
   } catch (err) {
     log(`Answer submission failed: ${err.message}`);
