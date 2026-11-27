@@ -477,3 +477,7 @@ el.connect.addEventListener(
 
 // --- Live support chat (issue #62) ----------------------------------------
 initSupportChat('payer');
+
+window.addEventListener('arbiter:usdc-precision-changed', () => {
+  if (state.lastData) render(state.lastData);
+});

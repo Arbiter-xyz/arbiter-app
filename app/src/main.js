@@ -712,7 +712,7 @@ function goOffline() {
 
 function onQuestionReceived({ questionId, question, expiresInMs }) {
   state.currentQuestion = { questionId, deadlineAt: Date.now() + expiresInMs };
-  el.questionText.textContent = question;
+  renderFencedCode(el.questionText, question);
   el.answerInput.value = '';
   el.answerInput.disabled = false;
   el.btnAnswer.disabled = false;
