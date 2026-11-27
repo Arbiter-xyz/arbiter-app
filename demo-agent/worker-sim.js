@@ -44,10 +44,13 @@ const withdrawIntervalMs = Number(process.env.WITHDRAW_INTERVAL_MS || 30_000);
  * /app/answer; the plain test-string workerId convenience (no
  * WORKER_SECRET) still needs no auth at all. */
 let sessionToken = null;
+let sessionExpiresAt = 0;
+const SESSION_REFRESH_MARGIN_MS = 60_000;
 
 async function ensureSession() {
   if (!workerKeypair) return null; // plain test-string id — no auth required or possible
-  if (sessionToken) return sessionToken;
+  if (sessionToken && Date.now() < sessionExpiresAt - SESSION_REFRESH_MARGIN_MS) return sessionToken;
+  sessionToken = null;
 
   const challengeRes = await fetch(`${env.backendUrl}/workers/${workerId}/session/challenge`, { method: 'POST' });
   if (!challengeRes.ok) throw new Error(`session challenge failed: ${challengeRes.status} ${await challengeRes.text()}`);
@@ -62,8 +65,10 @@ async function ensureSession() {
     body: JSON.stringify({ signedXdr: tx.toXDR() }),
   });
   if (!sessionRes.ok) throw new Error(`session establish failed: ${sessionRes.status} ${await sessionRes.text()}`);
-  const { token } = await sessionRes.json();
+  const { token, expiresAt } = await sessionRes.json();
   sessionToken = token;
+  const exp = typeof expiresAt === 'number' ? expiresAt : Date.parse(expiresAt);
+  sessionExpiresAt = Number.isFinite(exp) ? exp : Infinity;
   console.log(`[${workerId}] session established (proved control of this address)`);
   return token;
 }
@@ -72,11 +77,19 @@ async function answerQuestion(payload) {
   const { questionId, question } = JSON.parse(payload);
   console.log(`[${workerId}] question ${questionId}: "${question}" — answering "${fixedAnswer}"`);
 
-  const res = await fetch(`${env.backendUrl}/app/answer`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ questionId, workerId, answer: fixedAnswer, token: sessionToken }),
-  });
+  const submit = async () =>
+    fetch(`${env.backendUrl}/app/answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ questionId, workerId, answer: fixedAnswer, token: await ensureSession() }),
+    });
+
+  let res = await submit();
+  if (res.status === 401 && workerKeypair) {
+    // Session expired or was dropped server-side: re-authenticate once and retry.
+    sessionToken = null;
+    res = await submit();
+  }
 
   if (res.status === 409) {
     console.log(`[${workerId}] question ${questionId} was already closed/expired by the time we answered`);

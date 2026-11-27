@@ -199,12 +199,7 @@ el.btnRefresh.addEventListener('click', async () => {
   if (!state.channel) return;
   el.btnRefresh.disabled = true;
   try {
-    const token = await ensureSession();
-    const res = await fetch(`${BACKEND_URL}/payers/${state.address}/questions?token=${encodeURIComponent(token)}`);
-    if (!res.ok) throw new Error(`unexpected status ${res.status}`);
-    const data = await res.json();
-    render(data);
-    log(t('dash.loaded', { count: data.questions.length, total: data.totalTracked }));
+    // resync() fetches the snapshot once and renders it via onSnapshot.
     await state.channel.resync();
   } catch (err) {
     log(t('dash.loadFailed', { error: err.message }));
