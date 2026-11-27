@@ -3,15 +3,23 @@ import { createWalletKit, wireConnectButtons } from './wallet.js';
 import { subscribeQuestionStatus } from './statusChannel.js';
 import { initI18n, onLocaleChange, t, formatUsdc, formatNumber } from './i18n.js';
 import { renderMarkdown } from './markdown.js';
+import { describeStatus } from './questionStatus.js';
 import { renderFencedCode } from './codeBlocks.js';
 import { createStarButton } from './starredQuestions.js';
 import { createNotificationCenter } from './notifications.js';
 import { ensureSession as ensureSharedSession } from './session.js';
 import { startTour } from './tour.js';
 import { initSupportChat, setSupportWallet } from './support.js';
+import { initErrorReporting } from './errorReporting.js';
+import { initSessionReplay } from './sessionReplay.js';
+
+// Client-side telemetry (issues #106/#107) — no-op unless configured;
+// PII stays out via errorReporting.js's scrubbers and sessionReplay.js's
+// block/mask selector lists.
+initErrorReporting('dashboard');
+initSessionReplay({ page: 'dashboard' });
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
-const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
 
 // See wallet.js for the module list and the connect/quick-start button
 // wiring shared with main.js (issue #19).
@@ -192,12 +200,7 @@ el.btnRefresh.addEventListener('click', async () => {
   if (!state.channel) return;
   el.btnRefresh.disabled = true;
   try {
-    const token = await ensureSession();
-    const res = await fetch(`${BACKEND_URL}/payers/${state.address}/questions?token=${encodeURIComponent(token)}`);
-    if (!res.ok) throw new Error(`unexpected status ${res.status}`);
-    const data = await res.json();
-    render(data);
-    log(t('dash.loaded', { count: data.questions.length, total: data.totalTracked }));
+    // resync() fetches the snapshot once and renders it via onSnapshot.
     await state.channel.resync();
   } catch (err) {
     log(t('dash.loadFailed', { error: err.message }));
@@ -330,7 +333,7 @@ function renderQuestionItem(q) {
   }
 
   const badge = document.createElement('span');
-  const { label, cls } = describeStatus(q);
+  const { label, cls } = describeStatus(q, t);
   badge.className = `badge ${cls}`;
   badge.textContent = label;
 
@@ -431,16 +434,6 @@ function renderCancelControls(q, cancellableUntil = q.cancellableUntil ?? q.canc
   return wrap;
 }
 
-function describeStatus(q) {
-  if (q.status !== 'settled') return { label: t('status.pending'), cls: 'badge-pending' };
-  if (q.status !== 'settled') {
-    const key = q.status === 'awaiting_workers' || q.status === 'reconciling' ? q.status : 'pending';
-    return { label: t(`status.${key}`), cls: 'badge-pending' };
-  }
-  if (q.outcome === 'resolved') return { label: t('status.resolved'), cls: 'badge-resolved' };
-  return { label: t('status.refunded'), cls: 'badge-refunded' };
-}
-
 // --- First-visit walkthrough (issue #61) ----------------------------------
 // Payers expect a "login"; this page is not one. Explain the read-only,
 // address-keyed model and the status badges once, on first connect.
@@ -470,3 +463,7 @@ el.connect.addEventListener(
 
 // --- Live support chat (issue #62) ----------------------------------------
 initSupportChat('payer');
+
+window.addEventListener('arbiter:usdc-precision-changed', () => {
+  if (state.lastData) render(state.lastData);
+});

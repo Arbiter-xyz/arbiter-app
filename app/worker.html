@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' %%CSP_SCRIPT_ORIGINS%%; connect-src 'self' %%CSP_ORIGINS%%; img-src 'self' data: %%CSP_ORIGINS%%; style-src 'self' 'unsafe-inline'; worker-src 'self'; object-src 'none'; base-uri 'none'" />
     <title>Arbiter — Worker Profile</title>
     <meta property="og:title" content="Arbiter — Worker Profile" />
     <meta property="og:description" content="A worker's public Arbiter track record: rank, match ratio, and on-chain stake." />
@@ -12,7 +13,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta id="twitter-image" name="twitter:image" content="%VITE_BACKEND_URL%/og/leaderboard.png" />
     <link rel="stylesheet" href="/src/style.css" />
-    <script src="/src/theme.js"></script>
+    <script type="module" src="/src/theme.js"></script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to main content</a>

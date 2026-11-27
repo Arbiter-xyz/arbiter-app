@@ -57,8 +57,12 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
+          // #467: only a successful page may replace the cached copy; a 404/5xx
+          // from a bad deploy must not become the offline fallback.
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
+          }
           return res;
         })
         .catch(() => caches.match(request).then((hit) => hit || caches.match('/index.html'))),
@@ -66,8 +70,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Hashed build assets, styles, icons: cache-first, populated on first use.
-  if (/\.(js|css|png|svg|json|woff2?)$/.test(url.pathname)) {
+  // Hashed build assets in /assets/ (Vite output) and icons: cache-first, populated on first use.
+  // Other same-origin resources (e.g. /flags.json, /manifest.json) go to network.
+  if (/^\/assets\/.*\.(js|css|png|svg|woff2?)$/.test(url.pathname) || /^\/icons\/.*\.(png|svg)$/.test(url.pathname)) {
     event.respondWith(
       caches.match(request).then(
         (hit) =>
@@ -145,20 +150,17 @@ self.addEventListener('push', (event) => {
   }
   const title = payload.tier ? `${payload.title} · ${payload.tier}` : payload.title;
 
+  // Show exactly one notification (the rich version with preview and actions)
+  // and relay to any open tabs, all tracked by a single waitUntil (issue #466).
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      icon: payload.icon,
-      badge: payload.badge,
-      tag: payload.questionId ? `question-${payload.questionId}` : undefined,
-      renotify: !!payload.questionId,
-      actions: payload.questionId ? [{ action: 'open', title: 'Answer now' }] : [],
-      data: { questionId: payload.questionId },
-    }),
     Promise.all([
-      self.registration.showNotification(payload.title, {
-        body: payload.body,
+      self.registration.showNotification(title, {
+        body,
+        icon: payload.icon,
+        badge: payload.badge,
         tag: payload.questionId ? `question-${payload.questionId}` : undefined,
+        renotify: !!payload.questionId,
+        actions: payload.questionId ? [{ action: 'open', title: 'Answer now' }] : [],
         data: { questionId: payload.questionId },
       }),
       // Also feed any open tab's in-app notification center (issue #133).
@@ -175,11 +177,24 @@ self.addEventListener('notificationclick', (event) => {
   const target = questionId ? `/?question=${encodeURIComponent(questionId)}` : '/';
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      const existing = clients.find((c) => 'focus' in c);
-      if (existing) {
-        if (questionId && 'navigate' in existing) return existing.navigate(target).then((c) => (c || existing).focus());
-        return existing.focus();
+      // Prefer a worker-console tab (URL path is / or /index.html) so we never
+      // navigate away from an unrelated page such as the admin or buyer
+      // dashboard (issue #476).
+      const isConsole = (c) => {
+        try {
+          const path = new URL(c.url).pathname;
+          return path === '/' || path === '/index.html';
+        } catch {
+          return false;
+        }
+      };
+      const consoleClient = clients.find((c) => 'focus' in c && isConsole(c));
+      if (consoleClient) {
+        if (questionId && 'navigate' in consoleClient) return consoleClient.navigate(target).then((c) => (c || consoleClient).focus());
+        return consoleClient.focus();
       }
+      // No console tab is open — open a new window rather than hijacking an
+      // unrelated page.
       return self.clients.openWindow(target);
     }),
   );

@@ -13,11 +13,31 @@ export default [
       globals: {
         ...globals.browser,
         ...globals.node,
+        // Injected at build/dev time by vite.config.js's `define` from
+        // app/package.json's compatibleBackendVersion (issue #150) — not a
+        // runtime global, so ESLint must not flag its uses as no-undef.
+        COMPATIBLE_BACKEND_VERSION: 'readonly',
       },
     },
     rules: {
       'no-undef': 'error',
       'no-unused-vars': 'warn',
+    },
+  },
+  // sw.js is a service worker that also hosts a speculative Chrome extension
+  // bridge (issue #91). The bridge guards every use with `typeof chrome`
+  // but ESLint's no-undef still flags the bare `chrome` identifier unless
+  // we declare it here. Using globals.webextensions is narrower than adding
+  // `chrome` to the site-wide globals — it only applies to this file.
+  {
+    files: ['public/sw.js'],
+    languageOptions: {
+      sourceType: 'script',
+      globals: {
+        ...globals.browser,
+        ...globals.serviceworker,
+        ...globals.webextensions,
+      },
     },
   },
   {

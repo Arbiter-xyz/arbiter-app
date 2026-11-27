@@ -15,51 +15,63 @@ reported API version rather than kept in lockstep by hand (see #150).
 Pre-split history and the round-by-round build narrative live in the
 archived [`arbiter`](https://github.com/rudeus112266/arbiter) repo.
 
+## PR backlog triage (#385)
+
+As of 2026-11-10 there were 9 open PRs, nearly all in a CONFLICTING
+mergeable state. Each has an explicit disposition below so the queue
+reflects reality rather than an unmaintained project. When a PR is
+resolved, update its row here in the same PR that merges or closes it.
+
+| PR | Disposition | Reason |
+| --- | --- | --- |
+| #330 | actively being worked | Load-bearing; touches onboarding/landing flow — highest-leverage path to real users. Rebase and merge first. |
+| #329 | actively being worked | Load-bearing; touches onboarding/landing flow. Rebase after #330. |
+| #328 | actively being worked | Load-bearing; touches onboarding/landing flow. Rebase after #329. |
+| #226 | closed-as-superseded | Speculative; superseded by the unified app shell work (#143–#147). |
+| #225 | closed-as-superseded | Speculative; superseded by the unified app shell work (#143–#147). |
+| #224 | closed-as-superseded | Speculative; superseded by the unified app shell work (#143–#147). |
+| #223 | closed-as-superseded | Speculative; superseded by the unified app shell work (#143–#147). |
+| #222 | closed-as-superseded | Speculative; superseded by the unified app shell work (#143–#147). |
+| #175 | closed-as-superseded | Stale; no longer applies after the monorepo split and #150 version pinning. |
+
+Priority order: onboarding/landing PRs (#330, #329, #328) first, then
+close the superseded rest with the reasons above. This table is the
+source of truth for the acceptance criteria on #385.
+
 ## Backend compatibility
 
 This app and `arbiter-backend` are deployed independently, so they can
 drift out of sync. To catch that early, the app declares the backend API
-version it was built against as `COMPATIBLE_BACKEND_VERSION` (in
-`app/package.json`), and on load fetches the backend's `GET /health`
-(via `VITE_BACKEND_URL`) to read the version string it reports.
+version it was built against as `compatibleBackendVersion` in
+`app/package.json`. `app/vite.config.js` injects that value as the
+build-time constant `COMPATIBLE_BACKEND_VERSION` (overridable per build
+with `VITE_COMPATIBLE_BACKEND_VERSION`, see `app/.env.example`). On load,
+the worker console (`app/src/main.js`) fetches the backend's `GET /health`
+(via `VITE_BACKEND_URL`) and compares the version string it reports
+(`apiVersion`, falling back to `version`) against that constant.
 
 - **Match** — nothing happens; the app runs normally.
 - **Mismatch** — the app shows a visible, non-blocking banner naming both
   versions. It does **not** block or gate usage: HTTP APIs are forgiving,
   and most mismatches won't actually break anything, so the notice only
   informs (developer or end user) that the two are out of sync.
+- **No version reported** — if `/health` carries neither `apiVersion` nor
+  `version`, there is nothing to compare and the check stays silent.
+  `arbiter-backend` does not report either field today, so until it does
+  the check is effectively a no-op — not a pass, just an absent signal.
 
 This mirrors `arbiter-backend`'s own pin against `arbiter-contract`: the
 version is declared in one place and checked at runtime, rather than
 assumed to stay in lockstep by hand.
 
-## Cross-repo integration harness
+## Cross-repo integration harness (planned)
 
 Each of the three split repos (contract/backend/app) has its own CI, but
 nothing exercises them *together* — an interface change (a new contract
 method, a changed backend response shape) can pass all three repos' CI
-independently while silently breaking the real integrated system. The
-`e2e/` directory is the home for a harness that closes that gap from the
-consumer's side.
-
-`e2e/docker-compose.integration.yml` deploys the real stack together:
-
-- **contract** — `arbiter-contract` checked out at the version pinned in
-  `e2e/versions.env` (`CONTRACT_REF`), built and deployed to a local
-  Soroban sandbox.
-- **backend** — `arbiter-backend` checked out at its pinned-compatible
-  version (`BACKEND_REF`, per arbiter-backend#163), pointed at the
-  deployed contract and reporting its API version on `GET /health`.
-- **app** — this repo's `app/` built against the backend, with
-  `COMPATIBLE_BACKEND_VERSION` (per #150) asserted against the backend's
-  reported version before the lifecycle test runs.
-
-`e2e/integration/lifecycle.test.js` runs one full paid-question lifecycle
-against that real integrated stack — **payment → dispatch → reconcile →
-settle** — so an interface-breaking change fails loudly here rather than
-at deploy time. It is wired into this repo's CI (`.github/workflows/`),
-which brings up the compose stack, waits for the backend health check,
-and runs the lifecycle test.
+independently while silently breaking the real integrated system. A
+harness that closes that gap from the consumer's side is planned but not
+yet implemented; see #152.
 
 ## Frontend surfaces
 
@@ -94,7 +106,7 @@ into dependency-ordered work:
 app/          # Vite worker console (index.html) + buyer dashboard (dashboard.html)
 landing/      # static marketing site + live "try it now" sandbox widget
 demo-agent/   # headless buyer/worker/proof scripts (ask.js, worker-sim.js, sponsored-demo.js)
-e2e/          # browser click-through harness + cross-repo integration harness
+e2e/          # browser click-through harness
 ```
 
 ## Notable pieces
@@ -165,69 +177,12 @@ cd demo-agent && npm install
 cp .env.example .env
 node sandbox-ask.js "What year did Stellar launch?"   # zero setup
 node ask.js "What is the capital of France?"           # real on-chain flow
-
-# cross-repo integration harness (real contract + backend + app together)
-docker compose -f e2e/docker-compose.integration.yml up --build --abort-on-container-exit
 ```
 
-Verified live against a real deployed contract on Stellar testnet. (That
-run predates this repo's split; see "Round 6" in the archived
-[`arbiter`](https://github.com/rudeus112266/arbiter) monorepo README for
-the full run — real `ask.js`/`worker-sim.js`/`sponsored-demo.js`
-executions, transaction links included.)
-
-## Local stack, widget & demo feed
-
-- **One-command stack (Docker Compose, sandbox only):** with
-  [arbiter-backend](https://github.com/Arbiter-xyz/arbiter-backend) cloned as a
-  sibling (`../arbiter-backend`, or set `BACKEND_CONTEXT`), run
-  `docker compose up --build` to start the backend plus two `worker-sim.js`
-  workers, then `docker compose run --rm ask "What is 6 x 7?"` to push a sandbox
-  question through to settlement. Secrets come from `.env` files only.
-- **Embeddable widget:** `landing/widget.js` — add `<div data-arbiter-widget></div>`
-  and `<script src=".../widget.js" data-api-base="https://your-backend"></script>`
-  to any page. Sandbox only: no payment, no chain, no signup.
-- **Live demo feed:** `app/demo.html` polls `GET /admin/transactions` and
-  `GET /admin/workers` (admin token required) and shows dispatch, answer and
-  settlement events as they happen — no changes to the CLI scripts needed.
+Verified live against a real deployed contract on Stellar testnet — see
+`demo-agent/README.md` for the full walkthrough.
 
 ## Handsoff notes
 
-<!-- handsoff-issue-268 -->
-- #268: Review: main.js's demand-polling interval is never cleared
-
-<!-- handsoff-issue-269 -->
-- #269: Review: main.js's earnings-refresh interval can stack on reconnect
-
-<!-- handsoff-issue-211 -->
-- #211: admin.js's Overview tab — the default view — throws on every load: canView is referenced but defined nowhere
-
-<!-- handsoff-issue-227 -->
-- #227: admin.js's renderMatchRatioChart uses undefined SVG_NS
-
-<!-- handsoff-issue-525 -->
-- #525: Activity heatmap: expose per-day data to screen readers
-
-<!-- handsoff-issue-527 -->
-- #527: Admin KYC and Payouts show "Invalid Date" when reportedAt is missing
-<!-- handsoff-issue-510 -->
-- #510: localWallet.js: delete unused exports, including getLocalWalletSecret()
-
-<!-- handsoff-issue-511 -->
-- #511: main.js: replace the wallet-kit v1 connect code with wireConnectButtons()
-<!-- handsoff-issue-244 -->
-- #244: Review: admin.js's renderMatchRatioChart uses undefined SVG_NS
-<!-- handsoff-issue-219 -->
-- #219: Leadermock.js is an orphaned, stale duplicate of leaderboard.js
-<!-- handsoff-issue-245 -->
-- #245: Review: admin.js's renderTreasury calls balanceFigure, undefined
-<!-- handsoff-issue-371 -->
-- #371: main.js does not parse: duplicate initI18n import with executable statements wedged between import statements
-
-<!-- handsoff-issue-372 -->
-- #372: dashboard.js does not parse: duplicate initI18n import, same pattern as main.js
-
-<!-- handsoff-issue-373 -->
-- #373: i18n.js does not parse: two entire competing i18n implementations concatenated, one missing its closing brace
-<!-- handsoff-issue-378 -->
-- #378: EPIC: fix-first punch list — main doesn't build, plus the fraudulent/regressed closures blocking everything else
+<!-- handsoff-issue-505 -->
+- #505: README: remove the "Handsoff notes" appendix of issue titles

@@ -165,7 +165,7 @@ function renderTransactionRow(t) {
   return row([
     td(truncateAddress(String(t.questionId)), { title: t.questionId }),
     td(truncateAddress(t.payer), { title: t.payer || '' }),
-    td(`${t.amountStroops ? (Number(t.amountStroops) / 1e7).toFixed(2) : '—'} USDC`),
+    td(`${formatStroopsUsdc(t.amountStroops)} USDC`),
     statusCell,
     td(t.outcome || '—'),
     td(t.createdAt ? new Date(t.createdAt).toLocaleString() : '—', { className: 'muted small' }),
@@ -404,7 +404,14 @@ function renderMatchRatioChart(container, ratios, flagBelow = 0.5) {
   container.replaceChildren(svg);
 }
 
+let fraudWorkersCache = null;
+
 async function renderFraud() {
+  fraudWorkersCache = (await fetchAdmin('/admin/workers')).workers;
+  renderFraudView();
+}
+
+function renderFraudView() {
   const tbody = document.getElementById('fraud-body');
   const thresholdInput = document.getElementById('fraud-threshold');
   thresholdInput.value = getFraudThreshold();
@@ -415,17 +422,15 @@ async function renderFraud() {
       renderFraud();
     }
   };
-  const { workers } = await fetchAdmin('/admin/workers');
+  const workers = fraudWorkersCache || [];
   renderMatchRatioChart(
     document.getElementById('fraud-chart'),
     workers.filter((w) => w.established && w.matchRatio !== null).map((w) => w.matchRatio),
     getFraudThreshold(),
   );
-  const flagged = workers
-    .filter((w) => w.established && w.matchRatio !== null)
-    .sort((a, b) => a.matchRatio - b.matchRatio);
+  const flagged = fraudCandidates(workers, getFraudThreshold());
   if (flagged.length === 0) {
-    replaceRows(tbody, [emptyRow(4, 'No established workers yet.')]);
+    replaceRows(tbody, [emptyRow(4, 'No established workers below the threshold.')]);
     return;
   }
   replaceRows(
