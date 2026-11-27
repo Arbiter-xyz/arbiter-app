@@ -2,31 +2,33 @@ import { defineConfig, loadEnv } from 'vite';
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 
-export default defineConfig(({ mode }) => {
-  // Backend API version this build is compatible with (issue #150).
-  // app/package.json's `compatibleBackendVersion` is the declared source of
-  // truth; VITE_COMPATIBLE_BACKEND_VERSION (env/.env) overrides it per build
-  // so a developer can point a local build at a backend reporting a
-  // different version and still exercise the mismatch banner.
-  const env = loadEnv(mode, __dirname, 'VITE_');
-  const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf8'));
-  const compatibleBackendVersion =
-    env.VITE_COMPATIBLE_BACKEND_VERSION || pkg.compatibleBackendVersion || '1.0.0';
+let backendUrl = 'http://localhost:4000';
 
-  return {
-    // The wallets-kit dependency chain references Node's `global` at import
-    // time. Without this polyfill the production build silently breaks every
-    // wallet-connect click (this was a real bug found via a headless-browser
-    // click-through in the original build, not caught by `vite build` alone).
-    define: {
-      global: 'globalThis',
-      COMPATIBLE_BACKEND_VERSION: JSON.stringify(compatibleBackendVersion),
+export default defineConfig({
+  // The wallets-kit dependency chain references Node's `global` at import
+  // time. Without this polyfill the production build silently breaks every
+  // wallet-connect click (this was a real bug found via a headless-browser
+  // click-through in the original build, not caught by `vite build` alone).
+  define: {
+    global: 'globalThis',
+  },
+  plugins: [{
+    name: 'backend-url-html-fallback',
+    configResolved(config) {
+      backendUrl = loadEnv(config.mode, config.root, '').VITE_BACKEND_URL || backendUrl;
     },
-    server: {
-      port: 5173,
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        return html.split('%VITE_BACKEND_URL%').join(backendUrl);
+      },
     },
-    build: {
-      rollupOptions: {
+  }],
+  server: {
+    port: 5173,
+  },
+  build: {
+    rollupOptions: {
       // Multi-page build: the worker console (index.html) and the
       // read-only buyer dashboard (dashboard.html) are separate front
       // doors for separate audiences, but ship from the same static site.

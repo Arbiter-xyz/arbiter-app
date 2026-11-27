@@ -47,17 +47,3 @@ export function parseFences(value) {
   segments.push({ type: 'text', text: text.slice(cursor) });
   return segments;
 }
-
-/** Render text plus ```fenced``` code without ever assigning untrusted HTML. */
-export function renderFencedCode(target, value) {
-  target.replaceChildren();
-  for (const segment of parseFences(value)) {
-    target.append(
-      segment.type === 'code'
-        ? appendHighlightedCode(segment.code, segment.language)
-        : document.createTextNode(segment.text),
-    );
-  }
-}
-
-// Adjacent and unterminated fences (#318) are pinned in codeBlocks.test.js.

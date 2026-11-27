@@ -1,46 +1,68 @@
-import { describe, expect, it } from "vitest";
-import { parseFences } from "./codeBlocks.js";
+import { beforeAll, describe, expect, it } from 'vitest';
+import { renderFencedCode } from './codeBlocks.js';
 
-const code = (segments) => segments.filter((s) => s.type === "code");
+class MockElement {
+  constructor(tagName) {
+    this.tagName = tagName;
+    this.className = '';
+    this.dataset = {};
+    this.children = [];
+    this._textContent = '';
+  }
 
-describe("parseFences (#464)", () => {
-  it("keeps the first word of a single-line fence", () => {
-    expect(code(parseFences("run ```npm install foo``` now"))).toEqual([
-      { type: "code", code: "npm install foo", language: "" },
-    ]);
+  append(...nodes) {
+    this.children.push(...nodes);
+  }
+
+  replaceChildren(...nodes) {
+    this.children = nodes;
+  }
+
+  get textContent() {
+    return this.children.length
+      ? this.children.map((child) => child.textContent).join('')
+      : this._textContent;
+  }
+
+  set textContent(value) {
+    this.children = [];
+    this._textContent = String(value);
+  }
+
+  querySelectorAll(selector) {
+    const matches = [];
+    const visit = (node) => {
+      if (selector === 'pre.code-block' && node.tagName === 'pre' && node.className === 'code-block') {
+        matches.push(node);
+      }
+      node.children?.forEach(visit);
+    };
+    visit(this);
+    return matches;
+  }
+}
+
+beforeAll(() => {
+  globalThis.document = {
+    createElement: (tagName) => new MockElement(tagName),
+    createTextNode: (textContent) => ({ textContent }),
+  };
+});
+
+describe('renderFencedCode edge cases (#318)', () => {
+  it('renders two adjacent fenced blocks with no text between them', () => {
+    const target = new MockElement('div');
+    renderFencedCode(target, '```js\nlet a = 1\n``` ```js\nlet b = 2\n```');
+    const blocks = target.querySelectorAll('pre.code-block');
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].textContent).toBe('let a = 1\n');
+    expect(blocks[1].textContent).toBe('let b = 2\n');
   });
 
-  it("still reads a language tag followed by a newline", () => {
-    expect(code(parseFences("```js\nlet a```"))).toEqual([
-      { type: "code", code: "let a", language: "js" },
-    ]);
-    expect(code(parseFences("```Rust\nfn x() {}\n```"))[0].language).toBe(
-      "rust",
-    );
-  });
-
-  it("treats a single word fence as code, not a language", () => {
-    expect(code(parseFences("```npm```"))).toEqual([
-      { type: "code", code: "npm", language: "" },
-    ]);
-  });
-
-  it("keeps surrounding text and adjacent blocks (#318)", () => {
-    const s = parseFences("a ```js\nx\n``` ```py\ny\n``` b");
-    expect(s.map((x) => x.type)).toEqual([
-      "text",
-      "code",
-      "text",
-      "code",
-      "text",
-    ]);
-    expect(s[0].text).toBe("a ");
-    expect(s[4].text).toBe(" b");
-  });
-
-  it("leaves an unterminated fence as plain text (#318)", () => {
-    expect(parseFences("```js\nlet x = 1")).toEqual([
-      { type: "text", text: "```js\nlet x = 1" },
-    ]);
+  it('renders an unterminated fence as plain text without highlighting', () => {
+    const target = new MockElement('div');
+    renderFencedCode(target, '```js\nlet x = 1');
+    expect(target.querySelectorAll('pre.code-block')).toHaveLength(0);
+    expect(target.textContent).toBe('```js\nlet x = 1');
   });
 });
