@@ -8,6 +8,7 @@ import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
+import { dndPayload, inDndWindow } from './dnd.js';
 import { initPwa } from './pwa.js';
 import { isNativeShell } from './platform.js';
 
@@ -16,6 +17,16 @@ initPwa();
 import { renderFencedCode } from './codeBlocks.js';
 import { enrollBiometricUnlock, authorizeSecretReveal } from './biometricUnlock.js';
 import { ensureSession as ensureSharedSession } from './session.js';
+import { initErrorReporting } from './errorReporting.js';
+import { initSessionReplay } from './sessionReplay.js';
+
+// Client-side telemetry (issues #106/#107). Both are no-ops unless the
+// matching env var is set at build time, and both scrub/mask sensitive
+// fields before anything leaves the browser (sendDefaultPii: false,
+// beforeSend scrubbers in errorReporting.js; named block/mask selector
+// lists in sessionReplay.js).
+initErrorReporting('main');
+initSessionReplay({ page: 'main' });
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
@@ -51,6 +62,10 @@ const el = {
   answerForm: document.getElementById('answer-form'),
   answerInput: document.getElementById('answer-input'),
   answerSuggestedBadge: document.getElementById('answer-suggested-badge'),
+  answerCount: document.getElementById('answer-count'),
+  btnRestoreDraft: document.getElementById('btn-restore-draft'),
+  btnPracticeToggle: document.getElementById('btn-practice-toggle'),
+  practiceStatus: document.getElementById('practice-status'),
   btnAnswer: document.getElementById('btn-answer'),
   owedAmount: document.getElementById('owed-amount'),
   stakeAmount: document.getElementById('stake-amount'),
@@ -74,6 +89,7 @@ const el = {
   btnWithdrawBank: document.getElementById('btn-withdraw-bank'),
   bankWithdrawStatus: document.getElementById('bank-withdraw-status'),
   withdrawBeneficiaryInput: document.getElementById('withdraw-beneficiary-input'),
+  withdrawMemoInput: document.getElementById('withdraw-memo-input'),
   stakeForm: document.getElementById('stake-form'),
   stakeInput: document.getElementById('stake-input'),
   btnStake: document.getElementById('btn-stake'),
@@ -107,17 +123,23 @@ const state = {
   sessionExpiresAt: 0,
   pushSubscription: null,
   lastDraft: null,
+  practice: false,
 };
 
 const notify = createNotificationCenter({ mount: document.querySelector('header'), storageKey: 'arbiter-worker-notifications' });
 
-/** Activity-log entry; also mirrored into the header bell (issue #133). */
-function log(message) {
-  const li = document.createElement('li');
-  const time = new Date().toLocaleTimeString();
-  li.textContent = `[${time}] ${message}`;
-  el.log.prepend(li);
-  notify(message);
+/** Activity-log entry; also mirrored into the header bell (issue #133),
+ * except for content passed with a separate `notification` text (#465). */
+const activityLog = createActivityLog({
+  write(line) {
+    const li = document.createElement('li');
+    li.textContent = line;
+    el.log.prepend(li);
+  },
+  notify,
+});
+function log(message, options) {
+  activityLog(message, options);
 }
 
 // --- Backend API version check (issue #150) -------------------------------
@@ -170,6 +192,11 @@ async function checkBackendVersion() {
     // the existing request paths already surface connectivity problems.
   }
 }
+
+// Run exactly once on startup (issue #150). Fire-and-forget: the check is
+// best-effort and never blocks app usage, and a mismatch only shows the
+// non-blocking banner above.
+checkBackendVersion();
 
 function showPanel(name) {
   for (const key of ['connect', 'onboard', 'online']) {
@@ -235,9 +262,26 @@ function clearCategoryDemand() {
   }
 }
 
+// Set once the backend reports the endpoint missing (404): polling stops
+// and the heatmap stays hidden for the rest of the session (#489).
+let demandUnavailable = false;
+
+function stopCategoryDemandPolling() {
+  if (demandRefreshHandle) clearInterval(demandRefreshHandle);
+  demandRefreshHandle = null;
+}
+
 async function refreshCategoryDemand() {
+  if (demandUnavailable || document.hidden) return;
   try {
     const res = await fetch(`${BACKEND_URL}/categories/demand`);
+    if (res.status === 404) {
+      demandUnavailable = true;
+      stopCategoryDemandPolling();
+      clearCategoryDemand();
+      document.querySelectorAll('#category-demand').forEach((n) => n.classList.add('hidden'));
+      return;
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     renderCategoryDemand(data.demand || {});
@@ -248,13 +292,17 @@ async function refreshCategoryDemand() {
   }
 }
 
+// Only started once the online panel is shown — never from the connect panel.
 function startCategoryDemandPolling() {
-  if (demandRefreshHandle) return;
+  if (demandRefreshHandle || demandUnavailable) return;
   refreshCategoryDemand();
   demandRefreshHandle = setInterval(refreshCategoryDemand, DEMAND_REFRESH_MS);
 }
 
-startCategoryDemandPolling();
+document.addEventListener('visibilitychange', () => {
+  if (!demandRefreshHandle) return;
+  if (!document.hidden) refreshCategoryDemand();
+});
 
 // A user clicking both connect options in quick succession could otherwise
 // let whichever resolves last silently overwrite the other's in-flight
@@ -499,9 +547,6 @@ async function routeAfterConnect() {
       refreshEarnings();
       setInterval(refreshEarnings, 20_000);
       startCategoryDemandPolling();
-      startCategoryDemandPolling();
-      refreshEarnings();
-      setInterval(refreshEarnings, 20_000);
     }
   } catch (err) {
     log(`Trustline check failed (${err.message}) — assuming onboarding is needed`);
@@ -691,12 +736,16 @@ function goOffline() {
 
 function onQuestionReceived({ questionId, question, expiresInMs }) {
   state.currentQuestion = { questionId, deadlineAt: Date.now() + expiresInMs };
-  el.questionText.textContent = question;
+  renderFencedCode(el.questionText, question);
   el.answerInput.value = '';
   el.answerInput.disabled = false;
   el.btnAnswer.disabled = false;
+  updateAnswerCount();
+  state.lastDraft = loadDraft(questionId);
+  el.btnRestoreDraft.classList.toggle('hidden', !state.lastDraft);
   el.question.classList.remove('hidden');
-  log(`New question dispatched: "${question}"`);
+  // #465: the bell persists to localStorage, so it gets the id, not the text.
+  log(`New question dispatched: "${question}"`, { notification: `New question dispatched (id ${questionId})` });
   startCountdown(expiresInMs);
   alertNewQuestion({ questionId, question });
 }
@@ -731,11 +780,80 @@ function stopCountdown() {
   }
 }
 
+// --- Answer counter + per-question draft (#487) ---------------------------
+
+const ANSWER_MAX_LEN = 400; // matches the input's maxlength
+const DRAFT_KEY_PREFIX = 'arbiter.draft.';
+
+function updateAnswerCount() {
+  el.answerCount.textContent = `${el.answerInput.value.length} / ${ANSWER_MAX_LEN}`;
+}
+
+function loadDraft(questionId) {
+  try {
+    return localStorage.getItem(DRAFT_KEY_PREFIX + questionId) || null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft(questionId, text) {
+  try {
+    if (text) localStorage.setItem(DRAFT_KEY_PREFIX + questionId, text);
+    else localStorage.removeItem(DRAFT_KEY_PREFIX + questionId);
+  } catch {
+    // storage blocked — drafts just won't persist
+  }
+}
+
+el.answerInput.addEventListener('input', () => {
+  updateAnswerCount();
+  const q = state.currentQuestion;
+  if (q && !q.practice) saveDraft(q.questionId, el.answerInput.value);
+});
+
+el.btnRestoreDraft.addEventListener('click', () => {
+  if (!state.lastDraft) return;
+  el.answerInput.value = state.lastDraft.slice(0, ANSWER_MAX_LEN);
+  updateAnswerCount();
+  el.btnRestoreDraft.classList.add('hidden');
+  el.answerInput.focus();
+});
+
+// --- Practice mode (#486): client-only sample question, no network --------
+
+const PRACTICE_QUESTION = 'Practice: Is the sky blue on a clear day? (yes / no)';
+
+function setPracticeMode(on) {
+  state.practice = on;
+  el.btnPracticeToggle.setAttribute('aria-pressed', String(on));
+  el.practiceStatus.textContent = t(on ? 'practice.on' : 'practice.off');
+  if (on) {
+    onQuestionReceived({ questionId: 'practice', question: PRACTICE_QUESTION, expiresInMs: 60_000 });
+    state.currentQuestion.practice = true;
+  } else if (state.currentQuestion?.practice) {
+    state.currentQuestion = null;
+    stopCountdown();
+    el.question.classList.add('hidden');
+  }
+}
+
+el.btnPracticeToggle.addEventListener('click', () => setPracticeMode(!state.practice));
+
 el.answerForm.addEventListener('submit', async (evt) => {
   evt.preventDefault();
   const q = state.currentQuestion;
   const answer = el.answerInput.value.trim();
   if (!q || !answer) return;
+
+  if (q.practice) {
+    // Never touches /app/answer, the chain, stake, or reputation.
+    log(`Practice answer recorded locally: "${answer}" (not submitted)`);
+    el.btnAnswer.disabled = true;
+    el.answerInput.disabled = true;
+    stopCountdown();
+    return;
+  }
 
   el.btnAnswer.disabled = true;
   el.answerInput.disabled = true;
@@ -753,6 +871,7 @@ el.answerForm.addEventListener('submit', async (evt) => {
       throw new Error(`unexpected status ${res.status}`);
     } else {
       log(`Answer submitted: "${answer}"`);
+      saveDraft(q.questionId, '');
     }
   } catch (err) {
     log(`Answer submission failed: ${err.message}`);
@@ -793,16 +912,52 @@ function renderTrackRecord({ matched, total, matchRatio }) {
   el.trackRecordSummary.textContent = `${matched}/${total} answers matched consensus (${pct}%)`;
 }
 
+// --- Withdraw memo validation (issue #478) --------------------------------
+// The payout-address field invites exchange deposit addresses, and most
+// exchanges credit deposits by memo — a withdraw_to() without the required
+// memo can strand the whole accrued balance. The single optional memo input
+// accepts either shape Stellar allows on a classic transaction:
+//   - all-digit input → MEMO_ID (what an exchange's numeric deposit tag
+//     maps to on Stellar), validated to fit a u64;
+//   - anything else  → MEMO_TEXT, validated to fit the 28-byte limit.
+// Anything else is rejected here, before the transaction is built or signed.
+
+const U64_MAX = 18446744073709551615n;
+const TEXT_MEMO_MAX_BYTES = 28; // Stellar's memo.text byte limit
+
+function parseWithdrawMemo(raw) {
+  if (/^\d+$/.test(raw)) {
+    const id = BigInt(raw);
+    if (id > U64_MAX) throw new Error('memo id must fit in a u64 (0 – 18446744073709551615)');
+    return { type: 'id', value: id.toString() };
+  }
+  const bytes = new TextEncoder().encode(raw).length;
+  if (bytes > TEXT_MEMO_MAX_BYTES) {
+    throw new Error(`memo text must be ${TEXT_MEMO_MAX_BYTES} bytes or fewer (entered ${bytes})`);
+  }
+  return { type: 'text', value: raw };
+}
+
 el.btnWithdraw.addEventListener('click', async () => {
   el.btnWithdraw.disabled = true;
   try {
     // Optional — leave blank to withdraw to your own address (the common
     // case). Fill it in to route the payout elsewhere (an exchange deposit
     // address, a cold wallet) without ever holding the funds at the signing
-    // key first.
+    // key first. Exchange deposit addresses usually require the memo below
+    // to credit the deposit — see the helper copy next to the input.
     const beneficiary = el.withdrawBeneficiaryInput.value.trim();
     if (beneficiary && !StrKey.isValidEd25519PublicKey(beneficiary)) {
       throw new Error('payout address is not a valid Stellar public key');
+    }
+
+    // Optional memo (issue #478): validated up front, before any network
+    // call or signing. A memo without a payout address has no destination
+    // to attribute, so reject it rather than silently dropping it.
+    const memoRaw = (el.withdrawMemoInput?.value || '').trim();
+    const memo = memoRaw ? parseWithdrawMemo(memoRaw) : undefined;
+    if (memo && !beneficiary) {
+      throw new Error('a withdraw memo needs a payout address — add one, or clear the memo');
     }
 
     const owedRes = await fetch(`${BACKEND_URL}/workers/${state.address}/owed`);
@@ -812,7 +967,7 @@ el.btnWithdraw.addEventListener('click', async () => {
 
     log('Building withdraw transaction…');
     const xdr = beneficiary
-      ? await buildWithdrawToXdr(state.address, beneficiary, owedStroops)
+      ? await buildWithdrawToXdr(state.address, beneficiary, owedStroops, memo)
       : await buildWithdrawXdr(state.address, owedStroops);
     const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
       address: state.address,
@@ -978,16 +1133,11 @@ if (el.btnEnablePush) {
       const res = await fetch(`${BACKEND_URL}/workers/${state.address}/push-subscribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subscription: subscription.toJSON(), categories: selectedCategories(), dnd: dndPayload(), token }),
+        body: JSON.stringify({ subscription: subscription.toJSON(), categories: selectedCategories(), dnd: dndPayload(dndPrefs), token }),
       });
       if (!res.ok) throw new Error((await res.json()).error || `subscribe failed: ${res.status}`);
 
       state.pushSubscription = subscription;
-      el.pushStatus.textContent = 'On — you may get notified for longer-timeout questions.';
-        body: JSON.stringify({ subscription: subscription.toJSON(), categories: selectedCategories(), token }),
-      });
-      if (!res.ok) throw new Error((await res.json()).error || `subscribe failed: ${res.status}`);
-
       el.pushStatus.textContent = 'On — you may get notified for longer-timeout questions.';
       el.btnEnablePush.textContent = 'Enabled';
       log('Push notifications enabled.');
@@ -1092,17 +1242,17 @@ function showDesktopNotification({ questionId, question }) {
 }
 
 function alertNewQuestion(q) {
-  if (inDndWindow()) return;
+  if (inDndWindow(dndPrefs)) return;
   playAlertSound();
   vibrateAlert();
   showDesktopNotification(q);
 }
 
 // --- Do-not-disturb hours (issue #66) ----------------------------------------
-// Entered in local time, sent to the backend as UTC "HH:MM" because it has
-// no notion of a worker's timezone. The same window also silences the
-// in-tab alerts above. Saving re-sends the existing push subscription so
-// the window stays editable after the initial subscribe.
+// Entered in local time; dnd.js sends the local window plus its IANA zone so a
+// DST change can't shift the stored window. The same window also silences the
+// in-tab alerts above. Saving re-sends the existing push subscription so the
+// window stays editable after the initial subscribe.
 
 const DND_PREFS_KEY = 'arbiter.dndPrefs';
 const dndPrefs = loadJson(DND_PREFS_KEY, { enabled: false, start: '00:00', end: '07:00' });
@@ -1110,35 +1260,17 @@ el.dndEnabled.checked = dndPrefs.enabled;
 el.dndStart.value = dndPrefs.start;
 el.dndEnd.value = dndPrefs.end;
 
-function minutesOf(hhmm) {
-  const [h, m] = hhmm.split(':').map(Number);
-  return h * 60 + m;
-}
-
-function localToUtc(hhmm) {
-  const mins = (((minutesOf(hhmm) + new Date().getTimezoneOffset()) % 1440) + 1440) % 1440;
-  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
-}
-
-function dndPayload() {
-  if (!dndPrefs.enabled) return null;
-  return { startUtc: localToUtc(dndPrefs.start), endUtc: localToUtc(dndPrefs.end) };
-}
-
-function inDndWindow() {
-  if (!dndPrefs.enabled) return false;
-  const now = new Date();
-  const cur = now.getHours() * 60 + now.getMinutes();
-  const start = minutesOf(dndPrefs.start);
-  const end = minutesOf(dndPrefs.end);
-  // A window like 22:00 → 07:00 wraps past midnight.
-  return start <= end ? cur >= start && cur < end : cur >= start || cur < end;
-}
-
 el.btnDndSave.addEventListener('click', async () => {
+  const start = el.dndStart.value || '00:00';
+  const end = el.dndEnd.value || '07:00';
+  if (el.dndEnabled.checked && start === end) {
+    // inDndWindow() can never match a zero-length window.
+    el.dndStatus.textContent = 'Start and end times must be different.';
+    return;
+  }
   dndPrefs.enabled = el.dndEnabled.checked;
-  dndPrefs.start = el.dndStart.value || '00:00';
-  dndPrefs.end = el.dndEnd.value || '07:00';
+  dndPrefs.start = start;
+  dndPrefs.end = end;
   saveJson(DND_PREFS_KEY, dndPrefs);
   el.dndStatus.textContent = 'Saved in this browser.';
 
@@ -1149,7 +1281,7 @@ el.btnDndSave.addEventListener('click', async () => {
     const res = await fetch(`${BACKEND_URL}/workers/${state.address}/push-subscribe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subscription: state.pushSubscription.toJSON(), categories: selectedCategories(), dnd: dndPayload(), token }),
+      body: JSON.stringify({ subscription: state.pushSubscription.toJSON(), categories: selectedCategories(), dnd: dndPayload(dndPrefs), token }),
     });
     if (!res.ok) throw new Error((await res.json()).error || `update failed: ${res.status}`);
     el.dndStatus.textContent = 'Saved — push notifications respect this window.';
@@ -1199,10 +1331,13 @@ function renderActivityHeatmap(days) {
 
 async function refreshActivityHeatmap() {
   try {
-    const res = await fetch(`${BACKEND_URL}/workers/${state.address}/activity?days=${ACTIVITY_WEEKS * 7}`);
+    const res = await fetch(`${BACKEND_URL}/workers/${state.address}/analytics?days=${ACTIVITY_WEEKS * 7}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const { days } = await res.json();
-    renderActivityHeatmap(Array.isArray(days) ? days : []);
+    const { daily } = await res.json();
+    const days = Array.isArray(daily)
+      ? daily.map((d) => ({ date: d.date, answers: d.answered || 0, matched: d.matched || 0 }))
+      : [];
+    renderActivityHeatmap(days);
   } catch {
     el.activityGrid.replaceChildren();
     el.activityStatus.textContent = 'Activity history is not available from this server yet.';

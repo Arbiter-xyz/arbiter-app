@@ -1,17 +1,16 @@
 <!doctype html>
 <html lang="en" data-i18n-doc-title="console.title">
-<!DOCTYPE html>
-<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' %%CSP_SCRIPT_ORIGINS%%; connect-src 'self' %%CSP_ORIGINS%%; img-src 'self' data: %%CSP_ORIGINS%%; style-src 'self' 'unsafe-inline'; worker-src 'self'; object-src 'none'; base-uri 'none'" />
     <title>Arbiter — Worker Console</title>
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#5b4cf0" />
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <link rel="stylesheet" href="/src/style.css" />
-    <script src="/src/theme.js"></script>
+    <script type="module" src="/src/theme.js"></script>
   </head>
   <body>
     <a class="skip-link" href="#main" data-i18n="skip">Skip to main content</a>
@@ -91,7 +90,9 @@
               <div class="muted small">Credit balance</div>
               <strong id="apikey-balance">—</strong>
             </div>
-            <button id="btn-apikey-topup" class="secondary" type="button">Top up</button>
+            <!-- #459: top-ups need the API key as a Bearer token, which the
+                 account page sends; this panel has no authenticated session. -->
+            <a id="link-apikey-topup" class="button secondary" href="/customer.html">Top up on your account page</a>
           </div>
           <p class="muted small" id="apikey-account-status"></p>
         </div>
@@ -258,6 +259,10 @@
         <div class="row" id="withdraw-beneficiary-row">
           <input id="withdraw-beneficiary-input" type="text" placeholder="Payout address (optional — defaults to your own)" aria-label="Payout address (optional — defaults to your own)" data-i18n-attr="placeholder:earnings.payout,aria-label:earnings.payout" />
         </div>
+        <div class="row" id="withdraw-memo-row">
+          <input id="withdraw-memo-input" type="text" placeholder="Memo (optional — required by some exchanges)" aria-label="Withdraw memo (optional)" data-i18n-attr="placeholder:earnings.memo,aria-label:earnings.memo" />
+        </div>
+        <p class="muted small" id="withdraw-memo-hint" data-i18n="earnings.memoHint">If your exchange requires a memo, enter it, or funds may be lost.</p>
         <p class="muted small" id="bank-withdraw-status" role="status" aria-live="polite"></p>
 
         <div class="row" style="margin-top: 0.75rem">
@@ -304,9 +309,8 @@
         <p id="question-text"></p>
         <p id="answer-suggested-badge" class="muted small hidden">Suggested — edit or replace before submitting</p>
         <form id="answer-form">
-          <input id="answer-input" type="text" data-i18n-placeholder="question.placeholder" placeholder="Type your answer…" autocomplete="off" />
+          <input id="answer-input" type="text" data-i18n-placeholder="question.placeholder" placeholder="Type your answer…" autocomplete="off" maxlength="400" />
           <label for="answer-input" class="sr-only" data-i18n="question.answer">Your answer</label>
-          <input id="answer-input" type="text" placeholder="Type your answer…" autocomplete="off" data-i18n-attr="placeholder:question.placeholder" />
           <button id="btn-answer" type="submit" data-i18n="question.submit">Submit answer</button>
         </form>
         <div class="answer-tools">

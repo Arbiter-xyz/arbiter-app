@@ -10,9 +10,16 @@ import { createNotificationCenter } from './notifications.js';
 import { ensureSession as ensureSharedSession } from './session.js';
 import { startTour } from './tour.js';
 import { initSupportChat, setSupportWallet } from './support.js';
+import { initErrorReporting } from './errorReporting.js';
+import { initSessionReplay } from './sessionReplay.js';
+
+// Client-side telemetry (issues #106/#107) — no-op unless configured;
+// PII stays out via errorReporting.js's scrubbers and sessionReplay.js's
+// block/mask selector lists.
+initErrorReporting('dashboard');
+initSessionReplay({ page: 'dashboard' });
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
-const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
 
 // See wallet.js for the module list and the connect/quick-start button
 // wiring shared with main.js (issue #19).
@@ -193,12 +200,7 @@ el.btnRefresh.addEventListener('click', async () => {
   if (!state.channel) return;
   el.btnRefresh.disabled = true;
   try {
-    const token = await ensureSession();
-    const res = await fetch(`${BACKEND_URL}/payers/${state.address}/questions?token=${encodeURIComponent(token)}`);
-    if (!res.ok) throw new Error(`unexpected status ${res.status}`);
-    const data = await res.json();
-    render(data);
-    log(t('dash.loaded', { count: data.questions.length, total: data.totalTracked }));
+    // resync() fetches the snapshot once and renders it via onSnapshot.
     await state.channel.resync();
   } catch (err) {
     log(t('dash.loadFailed', { error: err.message }));
@@ -461,3 +463,7 @@ el.connect.addEventListener(
 
 // --- Live support chat (issue #62) ----------------------------------------
 initSupportChat('payer');
+
+window.addEventListener('arbiter:usdc-precision-changed', () => {
+  if (state.lastData) render(state.lastData);
+});

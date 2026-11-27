@@ -29,6 +29,7 @@
   "online.goOffline": "Go offline",
   "practice.label": "Practice mode",
   "practice.off": "Off — questions you answer are real and count toward your reputation.",
+  "practice.on": "On — showing a sample question. Practice answers are never sent anywhere.",
   "practice.note": "Practice mode is a client-only preview: it shows a sample question so you can try the answer flow without a real payment. Practice answers never touch the chain, your stake, or your reputation (matchRatio / totalAnswers).",
   "categories.legend": "Topics you'll answer (optional — leave all unchecked to answer everything)",
   "cat.math": "Math",
