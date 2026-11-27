@@ -159,3 +159,75 @@ export function mountLeaderboard(root) {
   loadLeaderboard();
   initActivityFeed();
 }
+
+// --- Accessibility controls for the standalone leaderboard.html (#488) ---
+// Handles data-font-decrease / data-font-increase / data-contrast-toggle.
+// style.css already provides html { font-size: calc(100% * var(--font-scale)) }
+// and :root[data-theme='high-contrast'] palette; we only need to wire the
+// buttons and persist choices across reloads.
+
+const FONT_STEP = 0.1;
+const FONT_MIN  = 0.7;
+const FONT_MAX  = 1.5;
+
+function initAccessibilityControls() {
+  const decreaseBtn  = document.querySelector('[data-font-decrease]');
+  const increaseBtn  = document.querySelector('[data-font-increase]');
+  const statusOutput = document.querySelector('[data-font-status]');
+  const contrastBtn  = document.querySelector('[data-contrast-toggle]');
+
+  if (!decreaseBtn && !increaseBtn && !contrastBtn) return;
+
+  // --- Font scale ---
+  const savedScale = parseFloat(localStorage.getItem('fontScale') || '1');
+  let scale = Number.isFinite(savedScale) ? Math.min(FONT_MAX, Math.max(FONT_MIN, savedScale)) : 1;
+
+  function applyScale(value) {
+    scale = value;
+    document.documentElement.style.setProperty('--font-scale', scale);
+    localStorage.setItem('fontScale', scale);
+    if (statusOutput) statusOutput.textContent = `${Math.round(scale * 100)}% text size`;
+    if (decreaseBtn) decreaseBtn.disabled = scale <= FONT_MIN;
+    if (increaseBtn) increaseBtn.disabled = scale >= FONT_MAX;
+  }
+
+  applyScale(scale);
+
+  if (decreaseBtn) {
+    decreaseBtn.addEventListener('click', () => {
+      applyScale(parseFloat(Math.max(FONT_MIN, scale - FONT_STEP).toFixed(1)));
+    });
+  }
+
+  if (increaseBtn) {
+    increaseBtn.addEventListener('click', () => {
+      applyScale(parseFloat(Math.min(FONT_MAX, scale + FONT_STEP).toFixed(1)));
+    });
+  }
+
+  // --- High contrast toggle ---
+  if (contrastBtn) {
+    const savedContrast = localStorage.getItem('highContrast') === 'true';
+    let contrastOn = savedContrast;
+
+    function applyContrast(on) {
+      contrastOn = on;
+      document.documentElement.setAttribute('data-theme', on ? 'high-contrast' : '');
+      contrastBtn.setAttribute('aria-pressed', String(on));
+      localStorage.setItem('highContrast', String(on));
+    }
+
+    applyContrast(contrastOn);
+
+    contrastBtn.addEventListener('click', () => applyContrast(!contrastOn));
+  }
+}
+
+// Only run on the standalone page; mountLeaderboard() covers the app-shell route.
+if (document.querySelector('[data-font-decrease], [data-contrast-toggle]')) {
+  document.addEventListener('DOMContentLoaded', () => {
+    loadLeaderboard();
+    initActivityFeed();
+    initAccessibilityControls();
+  });
+}
