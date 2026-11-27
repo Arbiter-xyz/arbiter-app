@@ -1,5 +1,8 @@
 import { defineConfig, loadEnv } from 'vite';
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+
+let backendUrl = 'http://localhost:4000';
 
 // Origins referenced by the per-page Content-Security-Policy meta tags.
 // Third-party origins are only allowed when the matching integration is
@@ -98,6 +101,7 @@ export default defineConfig(({ mode }) => {
             return undefined;
           },
         },
+      },
       },
     },
   };

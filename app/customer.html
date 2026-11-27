@@ -78,6 +78,12 @@
             </div>
           </form>
           <p id="webhook-status" class="muted small" role="status" aria-live="polite"></p>
+          <div id="webhook-secret-row" class="row" hidden>
+            <label for="webhook-secret" class="sr-only">Webhook signing secret</label>
+            <input id="webhook-secret" type="text" readonly aria-label="Webhook signing secret" style="flex: 1; padding: 0.5rem 0.7rem; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--fg)" />
+            <button id="btn-webhook-secret-copy" class="secondary" type="button">Copy secret</button>
+          </div>
+          <p id="webhook-secret-copy-status" class="muted small" role="status" aria-live="polite"></p>
         </section>
       </section>
 
