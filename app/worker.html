@@ -12,9 +12,11 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta id="twitter-image" name="twitter:image" content="%VITE_BACKEND_URL%/og/leaderboard.png" />
     <link rel="stylesheet" href="/src/style.css" />
+    <script src="/src/theme.js"></script>
   </head>
   <body>
-    <main class="app">
+    <a class="skip-link" href="#main">Skip to main content</a>
+    <main id="main" tabindex="-1" class="app">
       <header>
         <h1>Arbiter <span class="tag">worker profile</span></h1>
         <p class="sub">
@@ -28,15 +30,16 @@
         <p class="muted small" id="profile-status"></p>
         <table class="leaderboard-table">
           <tbody>
-            <tr><th>Rank</th><td id="profile-rank">—</td></tr>
-            <tr><th>Match ratio</th><td id="profile-ratio">—</td></tr>
-            <tr><th>Answers</th><td id="profile-answers">—</td></tr>
-            <tr><th>Stake (verifiable on-chain)</th><td id="profile-stake">—</td></tr>
+            <tr><th scope="row">Rank</th><td id="profile-rank">—</td></tr>
+            <tr><th scope="row">Match ratio</th><td id="profile-ratio">—</td></tr>
+            <tr><th scope="row">Answers</th><td id="profile-answers">—</td></tr>
+            <tr><th scope="row">Stake (verifiable on-chain)</th><td id="profile-stake">—</td></tr>
           </tbody>
         </table>
       </section>
     </main>
 
+    <script type="module" src="/src/a11y.js"></script>
     <script type="module" src="/src/worker.js"></script>
     <script type="module" src="/src/referral.js"></script>
   </body>

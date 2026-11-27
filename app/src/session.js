@@ -9,16 +9,30 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
  * implementation shared by the worker console (main.js) and the buyer
  * dashboard (dashboard.js) — see issue #143. The caller owns the session
  * state and receives updates through `onSession`. This exists because the
- * backend now REQUIRES it for any real-address workerId — see workerAuth.js. */
-export async function ensureSession({ address, activeWallet, sessionToken, sessionExpiresAt, onSession, log }) {
+ * backend now REQUIRES it for any real-address workerId — see workerAuth.js.
+ *
+ * `role` selects the backend route prefix: 'workers' (default, worker
+ * console) or 'payers' (buyer dashboard). `provingMessage` and
+ * `establishedMessage` let each caller keep its own localized log copy. */
+export async function ensureSession({
+  address,
+  activeWallet,
+  sessionToken,
+  sessionExpiresAt,
+  onSession,
+  log,
+  role = 'workers',
+  provingMessage = 'Proving control of your address (one signature)…',
+  establishedMessage = 'Session established — you can answer questions as yourself, and only yourself.',
+}) {
   if (sessionToken && Date.now() < sessionExpiresAt - 60_000) return sessionToken;
 
   if (!activeWallet) {
     throw new Error('No wallet connected — connect a wallet before establishing a session.');
   }
 
-  log('Proving control of your address (one signature)…');
-  const challengeRes = await fetch(`${BACKEND_URL}/workers/${address}/session/challenge`, { method: 'POST' });
+  log(provingMessage);
+  const challengeRes = await fetch(`${BACKEND_URL}/${role}/${address}/session/challenge`, { method: 'POST' });
   if (!challengeRes.ok) throw new Error((await challengeRes.json()).error || 'failed to get session challenge');
   const { xdr } = await challengeRes.json();
 
@@ -27,7 +41,7 @@ export async function ensureSession({ address, activeWallet, sessionToken, sessi
     networkPassphrase: Networks.TESTNET,
   });
 
-  const sessionRes = await fetch(`${BACKEND_URL}/workers/${address}/session`, {
+  const sessionRes = await fetch(`${BACKEND_URL}/${role}/${address}/session`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ signedXdr: signedTxXdr }),
@@ -35,6 +49,6 @@ export async function ensureSession({ address, activeWallet, sessionToken, sessi
   if (!sessionRes.ok) throw new Error((await sessionRes.json()).error || 'failed to establish session');
   const { token, expiresAt } = await sessionRes.json();
   onSession({ token, expiresAt });
-  log('Session established — you can answer questions as yourself, and only yourself.');
+  log(establishedMessage);
   return token;
 }

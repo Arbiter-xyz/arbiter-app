@@ -6,7 +6,7 @@ import { HanaModule } from '@creit.tech/stellar-wallets-kit/modules/hana';
 import { AlbedoModule } from '@creit.tech/stellar-wallets-kit/modules/albedo';
 import { HotWalletModule } from '@creit.tech/stellar-wallets-kit/modules/hotwallet';
 import { LedgerModule } from '@creit.tech/stellar-wallets-kit/modules/ledger';
-import { createOrLoadLocalWallet } from './localWallet.js';
+import { openSecureLocalWallet } from './localWallet.js';
 
 // Shared wallet-connect setup for the worker console (main.js) and the buyer
 // dashboard (dashboard.js) — see issue #19. Both pages need the exact same
@@ -63,8 +63,8 @@ export function createWalletKit() {
  */
 export function wireConnectButtons({ kit, connectButton, quickStartButton, onActivated, onError }) {
   function setBusy(busy) {
-    connectButton.disabled = busy;
-    quickStartButton.disabled = busy;
+    if (connectButton) connectButton.disabled = busy;
+    if (quickStartButton) quickStartButton.disabled = busy;
   }
 
   connectButton.addEventListener('click', async () => {
@@ -81,16 +81,18 @@ export function wireConnectButtons({ kit, connectButton, quickStartButton, onAct
     }
   });
 
-  quickStartButton.addEventListener('click', async () => {
-    setBusy(true);
-    try {
-      const localWallet = createOrLoadLocalWallet();
-      const { address } = await localWallet.getAddress();
-      await onActivated(localWallet, address, { quickStart: true });
-      setBusy(false);
-    } catch (err) {
-      setBusy(false);
-      onError?.(`Quick start failed: ${err.message}`);
-    }
-  });
+  if (quickStartButton) {
+    quickStartButton.addEventListener('click', async () => {
+      setBusy(true);
+      try {
+        const localWallet = await openSecureLocalWallet();
+        const { address } = await localWallet.getAddress();
+        await onActivated(localWallet, address, { quickStart: true });
+        setBusy(false);
+      } catch (err) {
+        setBusy(false);
+        onError?.(`Quick start failed: ${err.message}`);
+      }
+    });
+  }
 }

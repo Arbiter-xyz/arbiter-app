@@ -22,7 +22,8 @@
   "dependencies": {
     "@creit.tech/stellar-wallets-kit": "^2.7.1",
     "@sentry/browser": "^8.0.0",
-    "@stellar/stellar-sdk": "^17.2.1"
+    "@stellar/stellar-sdk": "^17.2.1",
+    "posthog-js": "^1.454.5"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.0",

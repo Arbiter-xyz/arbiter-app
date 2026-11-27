@@ -604,3 +604,9 @@ fieldset label {
   font-size: 0.85rem;
   color: var(--muted);
 }
+
+/* Wide tables scroll inside their panel on narrow screens (focusable region for keyboard users). */
+.table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}

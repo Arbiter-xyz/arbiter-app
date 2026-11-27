@@ -16,6 +16,15 @@
 // Auth: `Authorization: Bearer ak_live_…` (the API key itself), same scheme
 // as the admin console's bearer token.
 
+import { initErrorReporting } from './errorReporting.js';
+import { initSessionReplay } from './sessionReplay.js';
+
+// Client-side telemetry (issues #106/#107) — no-op unless configured;
+// the API-key gate and reveal fields are covered by errorReporting.js's
+// scrubbers and sessionReplay.js's block/mask selector lists.
+initErrorReporting('customer');
+initSessionReplay({ page: 'customer' });
+
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const KEY_STORAGE = 'arbiter-customer-api-key';
 // #283: a hung backend connection previously left buttons disabled forever
@@ -26,6 +35,7 @@ const REQUEST_TIMEOUT_MS = 15000;
 const el = {
   login: document.getElementById('panel-login'),
   account: document.getElementById('panel-account'),
+  loginForm: document.getElementById('form-customer-login'),
   keyInput: document.getElementById('customer-key-input'),
   btnLogin: document.getElementById('btn-customer-login'),
   loginStatus: document.getElementById('customer-login-status'),
@@ -34,6 +44,7 @@ const el = {
   creditBalance: document.getElementById('credit-balance'),
   creditBalanceStroops: document.getElementById('credit-balance-stroops'),
   btnTopUp: document.getElementById('btn-top-up'),
+  webhookForm: document.getElementById('form-webhook'),
   webhookInput: document.getElementById('webhook-url-input'),
   btnWebhookSave: document.getElementById('btn-webhook-save'),
   btnWebhookDelete: document.getElementById('btn-webhook-delete'),
@@ -116,39 +127,21 @@ function isPlausibleWebhookUrl(value) {
   }
 }
 
-el.btnLogin.addEventListener('click', async () => {
+async function login() {
   const key = el.keyInput.value.trim();
-  if (!key) return;
-  localStorage.setItem(KEY_STORAGE, key);
-  el.loginStatus.textContent = '';
-  await loadAccount();
-});
-
-el.btnLogout.addEventListener('click', () => {
-  localStorage.removeItem(KEY_STORAGE);
-  el.keyInput.value = '';
-  showLogin();
-});
-
-el.btnTopUp.addEventListener('click', async () => {
-  el.btnTopUp.disabled = true;
+  if (!key || el.btnLogin.disabled) return;
+  el.btnLogin.disabled = true;
   try {
-    const here = window.location.href.split(/[?#]/)[0];
-    const { checkoutUrl } = await fetchCustomer('/billing/checkout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ successUrl: `${here}?checkout=success`, cancelUrl: `${here}?checkout=cancel` }),
-    });
-    if (!checkoutUrl) throw new Error('checkout session had no redirect url');
-    window.location.href = checkoutUrl;
-  } catch (err) {
-    if (err.message !== 'unauthorized') log(`Could not start checkout: ${err.message}`);
+    localStorage.setItem(KEY_STORAGE, key);
+    el.loginStatus.textContent = '';
+    await loadAccount();
   } finally {
-    el.btnTopUp.disabled = false;
+    el.btnLogin.disabled = false;
   }
-});
+}
 
-el.btnWebhookSave.addEventListener('click', async () => {
+async function saveWebhook() {
+  if (el.btnWebhookSave.disabled) return;
   const url = el.webhookInput.value.trim();
   if (!isPlausibleWebhookUrl(url)) {
     el.webhookStatus.textContent = 'Enter a valid https:// webhook URL before saving.';
@@ -173,6 +166,42 @@ el.btnWebhookSave.addEventListener('click', async () => {
     if (err.message !== 'unauthorized') el.webhookStatus.textContent = `Could not save webhook: ${err.message}`;
   } finally {
     el.btnWebhookSave.disabled = false;
+  }
+}
+
+// #518: the login and webhook rows are now <form>s so Enter submits them.
+// Their buttons are type=submit, so the form submit handler covers clicks too.
+el.loginForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  login();
+});
+
+el.webhookForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  saveWebhook();
+});
+
+el.btnLogout.addEventListener('click', () => {
+  localStorage.removeItem(KEY_STORAGE);
+  el.keyInput.value = '';
+  showLogin();
+});
+
+el.btnTopUp.addEventListener('click', async () => {
+  el.btnTopUp.disabled = true;
+  try {
+    const here = window.location.href.split(/[?#]/)[0];
+    const { checkoutUrl } = await fetchCustomer('/billing/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ successUrl: `${here}?checkout=success`, cancelUrl: `${here}?checkout=cancel` }),
+    });
+    if (!checkoutUrl) throw new Error('checkout session had no redirect url');
+    window.location.href = checkoutUrl;
+  } catch (err) {
+    if (err.message !== 'unauthorized') log(`Could not start checkout: ${err.message}`);
+  } finally {
+    el.btnTopUp.disabled = false;
   }
 });
 

@@ -25,6 +25,7 @@ export function createNotificationCenter({ mount, storageKey }) {
   const badge = wrap.querySelector('.notif-badge');
   const panel = wrap.querySelector('.notif-panel');
   const list = wrap.querySelector('.notif-list');
+  const clearBtn = wrap.querySelector('.notif-clear');
 
   function save() {
     try {
@@ -74,6 +75,10 @@ export function createNotificationCenter({ mount, storageKey }) {
       save();
     }
     render();
+    if (open) {
+      // Issue #524: move focus into the dialog so keyboard users land inside.
+      clearBtn.focus();
+    }
   }
 
   function onBellClick() {
@@ -87,13 +92,21 @@ export function createNotificationCenter({ mount, storageKey }) {
   function onDocumentClick(evt) {
     if (!wrap.contains(evt.target)) setOpen(false);
   }
+  function onKeydown(evt) {
+    // Issue #524: Escape closes the panel and returns focus to the bell.
+    if (evt.key === 'Escape' && !panel.classList.contains('hidden')) {
+      setOpen(false);
+      bell.focus();
+    }
+  }
   function onServiceWorkerMessage(evt) {
     if (evt.data?.type === 'arbiter:notify') push(evt.data.message);
   }
 
   bell.addEventListener('click', onBellClick);
-  wrap.querySelector('.notif-clear').addEventListener('click', onClearClick);
+  clearBtn.addEventListener('click', onClearClick);
   document.addEventListener('click', onDocumentClick);
+  document.addEventListener('keydown', onKeydown);
 
   // Push payloads the service worker relays to open tabs (see sw.js).
   navigator.serviceWorker?.addEventListener('message', onServiceWorkerMessage);
@@ -105,25 +118,15 @@ export function createNotificationCenter({ mount, storageKey }) {
     render();
   }
 
-  // Issue #271: surface the status channel's per-tab fallback (no
-  // navigator.locks) so users can tell "shared push" from "per-tab" mode.
-  function setChannelMode(mode) {
-    const perTab = mode === 'per-tab';
-    bell.classList.toggle('notif-per-tab', perTab);
-    bell.title = perTab
-      ? 'Live updates are per-tab (cross-tab sync unavailable in this browser)'
-      : 'Live updates are shared across tabs';
-    bell.setAttribute('aria-label', perTab ? 'Notifications (per-tab live updates)' : 'Notifications');
-  }
-
   function destroy() {
     bell.removeEventListener('click', onBellClick);
-    wrap.querySelector('.notif-clear').removeEventListener('click', onClearClick);
+    clearBtn.removeEventListener('click', onClearClick);
     document.removeEventListener('click', onDocumentClick);
+    document.removeEventListener('keydown', onKeydown);
     navigator.serviceWorker?.removeEventListener('message', onServiceWorkerMessage);
     wrap.remove();
   }
 
   render();
-  return { push, setChannelMode, destroy };
+  return { push, destroy };
 }

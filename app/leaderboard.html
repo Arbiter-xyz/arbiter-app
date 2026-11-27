@@ -35,27 +35,28 @@
           <button id="btn-refresh" class="secondary">Refresh</button>
         </div>
 
-        <table id="leaderboard-table" class="leaderboard-table">
-          <caption class="sr-only">Workers ranked by match ratio</caption>
-          <thead>
-            <tr>
-              <th scope="col"><span aria-hidden="true">#</span><span class="sr-only">Rank</span></th>
-              <th scope="col">Worker</th>
-              <th scope="col">Match ratio</th>
-              <th scope="col">Answers</th>
-              <th scope="col">Stake (verifiable on-chain)</th>
-            </tr>
-          </thead>
-          <tbody id="leaderboard-body">
-            <tr>
-              <td colspan="5" class="muted small">Loading…</td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Worker leaderboard table, scroll horizontally to see all columns">
+          <table id="leaderboard-table" class="leaderboard-table">
+            <caption class="sr-only">Workers ranked by match ratio</caption>
+            <thead>
+              <tr>
+                <th scope="col"><span aria-hidden="true">#</span><span class="sr-only">Rank</span></th>
+                <th scope="col">Worker</th>
+                <th scope="col">Match ratio</th>
+                <th scope="col">Answers</th>
+                <th scope="col">Stake (verifiable on-chain)</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboard-body">
+              <tr>
+                <td colspan="5" class="muted small">Loading…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
     </main>
 
-    <script type="module" src="/src/a11y.js"></script>
     <script type="module" src="/src/leaderboard.js"></script>
   </body>
 </html>

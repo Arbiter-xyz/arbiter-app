@@ -12,6 +12,12 @@
 // question still open?) which the page already tracks, and doing the submit
 // from the page keeps exactly-once semantics in one place. The SW's job is
 // just to wake the page up at the right moment.
+//
+// Page-side counterpart (issue #239): app/src/main.js registers the
+// 'answer-queue' Background Sync tag when it enqueues an answer, listens for
+// the FLUSH_ANSWER_QUEUE message (acking via the MessageChannel port), and
+// posts RETRY_ANSWER_QUEUE for browsers without Background Sync. If you change
+// the message types or tag here, update that handler too.
 
 const ANSWER_SYNC_TAG = 'answer-queue';
 
@@ -51,8 +57,12 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
+          // #467: only a successful page may replace the cached copy; a 404/5xx
+          // from a bad deploy must not become the offline fallback.
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
+          }
           return res;
         })
         .catch(() => caches.match(request).then((hit) => hit || caches.match('/index.html'))),
@@ -60,8 +70,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Hashed build assets, styles, icons: cache-first, populated on first use.
-  if (/\.(js|css|png|svg|json|woff2?)$/.test(url.pathname)) {
+  // Hashed build assets in /assets/ (Vite output) and icons: cache-first, populated on first use.
+  // Other same-origin resources (e.g. /flags.json, /manifest.json) go to network.
+  if (/^\/assets\/.*\.(js|css|png|svg|woff2?)$/.test(url.pathname) || /^\/icons\/.*\.(png|svg)$/.test(url.pathname)) {
     event.respondWith(
       caches.match(request).then(
         (hit) =>
@@ -180,53 +191,36 @@ self.addEventListener('notificationclick', (event) => {
 });
 
 // --- Extension worker console bridge (issue #91) -------------------------
-// The Manifest V3 extension background service worker (extension/background.js)
-// ports main.js's core loop — ensureSession() challenge/response auth,
-// goOnline()'s EventSource connection to /app/events, and the answer-submission
-// fetch to /app/answer — so a worker can stay online with the tab closed.
+// SCAFFOLDING ONLY — no extension/ directory exists in this repo yet.
 //
-// This page-side service worker is the bridge between that extension and the
-// existing web-push flow: it forwards push payloads to the extension (which is
-// already running persistently) so extension-native notifications are at least
-// a parity replacement for web push, and it relays the extension's answer
-// submissions back into any open console tab. It builds on push.js /
-// btnEnablePush rather than replacing them.
+// This is a speculative, forward-looking bridge for a Manifest V3 extension
+// background service worker that would port main.js's core loop
+// (ensureSession() challenge/response auth, goOnline()'s EventSource
+// connection to /app/events, and the answer-submission fetch to /app/answer)
+// so a worker could stay online with the tab closed. Until that extension
+// ships, nothing posts messages with EXTENSION_MESSAGE_SOURCE and the
+// forwardPushToExtension relay below is inert. It is kept here (rather than
+// deleted) so the protocol shape is documented alongside the push flow it
+// builds on; treat it as a design sketch, not a live feature.
+//
+// When the extension lands, wire it up here and remove this disclosure.
 
 const EXTENSION_MESSAGE_SOURCE = 'arbiter-extension';
 
 // Forward a push payload to the extension background worker so it can raise an
 // extension-native notification even when no console tab is open.
+//
+// NOTE: scaffolding only (see above) — no extension/ directory exists yet, so
+// this currently has no recipient. It is a no-op until the extension ships.
 function forwardPushToExtension(payload) {
   try {
     // chrome.runtime.sendMessage reaches the extension only when the extension
     // has declared externally_connectable for this origin; otherwise this is a
     // no-op and the web-push notification above remains the fallback.
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-      chrome.runtime.sendMessage({ type: 'arbiter:push', payload });
+      chrome.runtime.sendMessage({ source: 'arbiter-page', type: 'push', payload });
     }
   } catch {
-    // Extension not installed / not reachable — web push already handled it.
+    // extension not installed / not reachable — ignore
   }
 }
-
-self.addEventListener('message', (event) => {
-  const data = event.data;
-  if (!data || data.source !== EXTENSION_MESSAGE_SOURCE) return;
-
-  if (data.type === 'arbiter:push') {
-    forwardPushToExtension(data.payload || {});
-    return;
-  }
-
-  // The extension answered a dispatched question in the background; surface it
-  // to any open console tab so the UI stays in sync with the extension loop.
-  if (data.type === 'arbiter:answered') {
-    event.waitUntil(
-      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-        for (const client of clients) {
-          client.postMessage({ type: 'arbiter:answered', payload: data.payload || {} });
-        }
-      }),
-    );
-  }
-});

@@ -1,30 +1,31 @@
-import {
-  StellarWalletsKit,
-  WalletNetwork,
-  FreighterModule,
-  LobstrModule,
-  xBullModule,
-  HanaModule,
-  AlbedoModule,
-  HotWalletModule,
-  LedgerModule,
-} from '@creit.tech/stellar-wallets-kit';
-import { createWalletKit } from './wallet.js';
+import { Networks } from '@creit.tech/stellar-wallets-kit';
 import { openSecureLocalWallet } from './localWallet.js';
+import { createWalletKit, wireConnectButtons } from './wallet.js';
+import { consumeReferralCode } from './referral.js';
 import { initI18n, t } from './i18n.js';
 import { initA11y } from './a11y.js';
 import { StrKey } from '@stellar/stellar-sdk';
 import { buildStakeXdr, buildWithdrawXdr, buildWithdrawToXdr } from './contractCalls.js';
 import { stroopsFromUsdcInput } from './units.js';
 import { initBankWithdraw } from './anchor.js';
-import { initI18n, t } from './i18n.js';
 import { initPwa } from './pwa.js';
 import { isNativeShell } from './platform.js';
 
 initI18n();
 initPwa();
 import { renderFencedCode } from './codeBlocks.js';
+import { enrollBiometricUnlock, authorizeSecretReveal } from './biometricUnlock.js';
 import { ensureSession as ensureSharedSession } from './session.js';
+import { initErrorReporting } from './errorReporting.js';
+import { initSessionReplay } from './sessionReplay.js';
+
+// Client-side telemetry (issues #106/#107). Both are no-ops unless the
+// matching env var is set at build time, and both scrub/mask sensitive
+// fields before anything leaves the browser (sendDefaultPii: false,
+// beforeSend scrubbers in errorReporting.js; named block/mask selector
+// lists in sessionReplay.js).
+initErrorReporting('main');
+initSessionReplay({ page: 'main' });
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const HORIZON_URL = import.meta.env.VITE_HORIZON_URL || 'https://horizon-testnet.stellar.org';
@@ -83,6 +84,7 @@ const el = {
   btnWithdrawBank: document.getElementById('btn-withdraw-bank'),
   bankWithdrawStatus: document.getElementById('bank-withdraw-status'),
   withdrawBeneficiaryInput: document.getElementById('withdraw-beneficiary-input'),
+  withdrawMemoInput: document.getElementById('withdraw-memo-input'),
   stakeForm: document.getElementById('stake-form'),
   stakeInput: document.getElementById('stake-input'),
   btnStake: document.getElementById('btn-stake'),
@@ -108,18 +110,6 @@ const state = {
   // downstream needs to know which one is active.
   activeWallet: null,
   address: null,
-  get identity() {
-    return this.identities.get(this.address) || null;
-  },
-  get activeWallet() {
-    return this.identity?.wallet || null;
-  },
-  get sessionToken() {
-    return this.identity?.sessionToken || null;
-  },
-  get sessionExpiresAt() {
-    return this.identity?.sessionExpiresAt || 0;
-  },
   online: false,
   eventSource: null,
   currentQuestion: null,
@@ -132,13 +122,18 @@ const state = {
 
 const notify = createNotificationCenter({ mount: document.querySelector('header'), storageKey: 'arbiter-worker-notifications' });
 
-/** Activity-log entry; also mirrored into the header bell (issue #133). */
-function log(message) {
-  const li = document.createElement('li');
-  const time = new Date().toLocaleTimeString();
-  li.textContent = `[${time}] ${message}`;
-  el.log.prepend(li);
-  notify(message);
+/** Activity-log entry; also mirrored into the header bell (issue #133),
+ * except for content passed with a separate `notification` text (#465). */
+const activityLog = createActivityLog({
+  write(line) {
+    const li = document.createElement('li');
+    li.textContent = line;
+    el.log.prepend(li);
+  },
+  notify,
+});
+function log(message, options) {
+  activityLog(message, options);
 }
 
 // --- Backend API version check (issue #150) -------------------------------
@@ -191,6 +186,11 @@ async function checkBackendVersion() {
     // the existing request paths already surface connectivity problems.
   }
 }
+
+// Run exactly once on startup (issue #150). Fire-and-forget: the check is
+// best-effort and never blocks app usage, and a mismatch only shows the
+// non-blocking banner above.
+checkBackendVersion();
 
 function showPanel(name) {
   for (const key of ['connect', 'onboard', 'online']) {
@@ -281,40 +281,28 @@ startCategoryDemandPolling();
 // let whichever resolves last silently overwrite the other's in-flight
 // state.activeWallet/state.address — guard against that race by disabling
 // both the instant either one starts, and only re-enabling on failure.
-function setConnectButtonsBusy(busy) {
-  el.btnConnect.disabled = busy;
-  el.btnQuickStart.disabled = busy;
-}
-
-el.btnConnect.addEventListener('click', async () => {
-  setConnectButtonsBusy(true);
-  // Extension/deep-link wallets mostly can't open from a wrapped WebView
-  // (issue #56); steer native-shell users to the local quick-start wallet.
-  if (isNativeShell()) log(t('log.inAppWallet'));
-  try {
-    await kit.openModal({
-      onWalletSelected: async (option) => {
-        kit.setWallet(option.id);
-        const { address } = await kit.getAddress();
-        el.backup.classList.add('hidden'); // backup/reveal only applies to the local quick-start wallet
-        await activateWallet(kit, address);
-      },
-      onClosed: (err) => {
-        setConnectButtonsBusy(false);
-        if (err) log(t('log.walletClosed', { error: err.message }));
-      },
-    });
-  } catch (err) {
-    setConnectButtonsBusy(false);
-    log(t('log.connectFailed', { error: err.message }));
-  }
-});
 // --- Wallet connect (extension) or quick start (local, non-custodial) -----
 // Module list + button wiring live in wallet.js, shared with dashboard.js
 // (issue #19). The one behavioral difference between the two pages — this
 // console shows the backup/reveal panel only for the local quick-start
 // wallet — is handled via the `quickStart` flag onActivated receives,
 // rather than a special case inside the shared helper.
+
+function setConnectButtonsBusy(busy) {
+  if (el.btnConnect) el.btnConnect.disabled = busy;
+  if (el.btnQuickStart) el.btnQuickStart.disabled = busy;
+}
+
+wireConnectButtons({
+  kit,
+  connectButton: el.btnConnect,
+  quickStartButton: null,
+  onActivated: async (wallet, address) => {
+    el.backup.classList.add('hidden');
+    await activateWallet(wallet, address);
+  },
+  onError: log,
+});
 
 el.btnQuickStart.addEventListener('click', async () => {
   setConnectButtonsBusy(true);
@@ -339,6 +327,7 @@ function showBackupPanel() {
   el.backupSecret.value = '••••••••••••••••••••••••••••••••••••••••••••••••••';
   el.backupSecret.type = 'password';
   el.backupCopyStatus.textContent = '';
+  enrollBiometricUnlock().catch(() => {});
   // Quick-start users only: the one step with irreversible financial risk.
   startTour('arbiter_tour_backup_seen', [
     {
@@ -351,7 +340,14 @@ function showBackupPanel() {
 
 el.btnRevealSecret.addEventListener('click', async () => {
   const revealed = el.backupSecret.type === 'password';
-  if (revealed) el.backupSecret.value = (await state.localWallet?.exportSecret()) || '';
+  if (revealed) {
+    const unlocked = await authorizeSecretReveal();
+    if (!unlocked) {
+      el.backupCopyStatus.textContent = 'Biometric verification was cancelled or failed.';
+      return;
+    }
+    el.backupSecret.value = (await state.localWallet?.exportSecret()) || '';
+  }
   el.backupSecret.type = revealed ? 'text' : 'password';
   el.btnRevealSecret.textContent = t(revealed ? 'backup.hide' : 'backup.reveal');
   el.btnRevealSecret.setAttribute('aria-pressed', String(revealed));
@@ -369,6 +365,11 @@ el.btnBackupDone.addEventListener('click', async () => {
 });
 
 el.btnCopySecret.addEventListener('click', async () => {
+  const unlocked = await authorizeSecretReveal();
+  if (!unlocked) {
+    el.backupCopyStatus.textContent = 'Biometric verification was cancelled or failed.';
+    return;
+  }
   const secret = await state.localWallet?.exportSecret();
   if (!secret) return;
   try {
@@ -506,10 +507,6 @@ async function hasUsdcTrustline(address) {
   if (res.status === 404) return false; // account doesn't exist on-chain at all yet
   if (!res.ok) throw new Error(`Horizon returned ${res.status}`);
   const account = await res.json();
-  return (account.balances || []).some((b) => b.asset_code === USDC_ASSET_CODE);
-  if (res.status === 404) return false;
-  if (!res.ok) throw new Error(`Horizon returned ${res.status}`);
-  const account = await res.json();
   return (account.balances || []).some(
     (b) => b.asset_code === USDC_ASSET_CODE && b.asset_issuer === USDC_ASSET_ISSUER
   );
@@ -539,10 +536,14 @@ el.btnOnboard.addEventListener('click', async () => {
   el.btnOnboard.disabled = true;
   try {
     log('Building sponsored onboarding transaction…');
+    const referralCode = consumeReferralCode();
     const buildRes = await fetch(`${BACKEND_URL}/sponsor/onboard/build`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address: state.address }),
+      body: JSON.stringify({
+        address: state.address,
+        ...(referralCode ? { referralCode } : {}),
+      }),
     });
     if (!buildRes.ok) throw new Error((await buildRes.json()).error || `build failed: ${buildRes.status}`);
     const { xdr } = await buildRes.json();
@@ -597,7 +598,12 @@ el.btnToggle.addEventListener('click', async () => {
  * expires. This exists because the backend now REQUIRES it for any
  * real-address workerId — see workerAuth.js. */
 async function ensureSession() {
-  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) return state.sessionToken;
+  if (state.sessionToken && Date.now() < state.sessionExpiresAt - 60_000) {
+    window.dispatchEvent(
+      new CustomEvent('arbiter:session', { detail: { address: state.address, token: state.sessionToken } }),
+    );
+    return state.sessionToken;
+  }
 
   log('Proving control of your address (one signature)…');
   const challengeRes = await fetch(`${BACKEND_URL}/workers/${state.address}/session/challenge`, { method: 'POST' });
@@ -606,7 +612,7 @@ async function ensureSession() {
 
   const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
     address: state.address,
-    networkPassphrase: WalletNetwork.TESTNET,
+    networkPassphrase: Networks.TESTNET,
   });
 
   const sessionRes = await fetch(`${BACKEND_URL}/workers/${state.address}/session`, {
@@ -618,6 +624,7 @@ async function ensureSession() {
   const { token, expiresAt } = await sessionRes.json();
   state.sessionToken = token;
   state.sessionExpiresAt = expiresAt;
+  window.dispatchEvent(new CustomEvent('arbiter:session', { detail: { address: state.address, token } }));
   log('Session established — you can answer questions as yourself, and only yourself.');
   return token;
   return ensureSharedSession({
@@ -710,7 +717,8 @@ function onQuestionReceived({ questionId, question, expiresInMs }) {
   el.answerInput.disabled = false;
   el.btnAnswer.disabled = false;
   el.question.classList.remove('hidden');
-  log(`New question dispatched: "${question}"`);
+  // #465: the bell persists to localStorage, so it gets the id, not the text.
+  log(`New question dispatched: "${question}"`, { notification: `New question dispatched (id ${questionId})` });
   startCountdown(expiresInMs);
   alertNewQuestion({ questionId, question });
 }
@@ -766,7 +774,7 @@ el.answerForm.addEventListener('submit', async (evt) => {
     } else if (!res.ok) {
       throw new Error(`unexpected status ${res.status}`);
     } else {
-      log(`Answer submitted: "${answer}"`);
+      log(`Answer submitted: "${answer}"`, { notification: `Answer submitted for question ${q.questionId}` });
     }
   } catch (err) {
     log(`Answer submission failed: ${err.message}`);
@@ -807,16 +815,52 @@ function renderTrackRecord({ matched, total, matchRatio }) {
   el.trackRecordSummary.textContent = `${matched}/${total} answers matched consensus (${pct}%)`;
 }
 
+// --- Withdraw memo validation (issue #478) --------------------------------
+// The payout-address field invites exchange deposit addresses, and most
+// exchanges credit deposits by memo — a withdraw_to() without the required
+// memo can strand the whole accrued balance. The single optional memo input
+// accepts either shape Stellar allows on a classic transaction:
+//   - all-digit input → MEMO_ID (what an exchange's numeric deposit tag
+//     maps to on Stellar), validated to fit a u64;
+//   - anything else  → MEMO_TEXT, validated to fit the 28-byte limit.
+// Anything else is rejected here, before the transaction is built or signed.
+
+const U64_MAX = 18446744073709551615n;
+const TEXT_MEMO_MAX_BYTES = 28; // Stellar's memo.text byte limit
+
+function parseWithdrawMemo(raw) {
+  if (/^\d+$/.test(raw)) {
+    const id = BigInt(raw);
+    if (id > U64_MAX) throw new Error('memo id must fit in a u64 (0 – 18446744073709551615)');
+    return { type: 'id', value: id.toString() };
+  }
+  const bytes = new TextEncoder().encode(raw).length;
+  if (bytes > TEXT_MEMO_MAX_BYTES) {
+    throw new Error(`memo text must be ${TEXT_MEMO_MAX_BYTES} bytes or fewer (entered ${bytes})`);
+  }
+  return { type: 'text', value: raw };
+}
+
 el.btnWithdraw.addEventListener('click', async () => {
   el.btnWithdraw.disabled = true;
   try {
     // Optional — leave blank to withdraw to your own address (the common
     // case). Fill it in to route the payout elsewhere (an exchange deposit
     // address, a cold wallet) without ever holding the funds at the signing
-    // key first.
+    // key first. Exchange deposit addresses usually require the memo below
+    // to credit the deposit — see the helper copy next to the input.
     const beneficiary = el.withdrawBeneficiaryInput.value.trim();
     if (beneficiary && !StrKey.isValidEd25519PublicKey(beneficiary)) {
       throw new Error('payout address is not a valid Stellar public key');
+    }
+
+    // Optional memo (issue #478): validated up front, before any network
+    // call or signing. A memo without a payout address has no destination
+    // to attribute, so reject it rather than silently dropping it.
+    const memoRaw = (el.withdrawMemoInput?.value || '').trim();
+    const memo = memoRaw ? parseWithdrawMemo(memoRaw) : undefined;
+    if (memo && !beneficiary) {
+      throw new Error('a withdraw memo needs a payout address — add one, or clear the memo');
     }
 
     const owedRes = await fetch(`${BACKEND_URL}/workers/${state.address}/owed`);
@@ -826,7 +870,7 @@ el.btnWithdraw.addEventListener('click', async () => {
 
     log('Building withdraw transaction…');
     const xdr = beneficiary
-      ? await buildWithdrawToXdr(state.address, beneficiary, owedStroops)
+      ? await buildWithdrawToXdr(state.address, beneficiary, owedStroops, memo)
       : await buildWithdrawXdr(state.address, owedStroops);
     const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
       address: state.address,
@@ -903,7 +947,7 @@ el.stakeForm.addEventListener('submit', async (evt) => {
     const xdr = await buildStakeXdr(state.address, amountStroops);
     const { signedTxXdr } = await state.activeWallet.signTransaction(xdr, {
       address: state.address,
-      networkPassphrase: WalletNetwork.TESTNET,
+      networkPassphrase: Networks.TESTNET,
     });
     const res = await fetch(`${BACKEND_URL}/sponsor/stake`, {
       method: 'POST',
@@ -917,17 +961,6 @@ el.stakeForm.addEventListener('submit', async (evt) => {
     await refreshEarnings();
   } catch (err) {
     log(`Stake failed: ${err.message}`);
-  } finally {
-    el.btnStake.disabled = false;
-    state.activeWallet = wallet;
-    state.address = address;
-    el.workerAddress.textContent = address;
-    el.connect.classList.add('hidden');
-
-    const trusted = await hasUsdcTrustline(address);
-    showPanel(trusted ? 'online' : 'onboard');
-    if (trusted) startCategoryDemandPolling();
-    log(`Connected ${address}${trusted ? '' : ' — USDC trustline required before going online.'}`);
   } finally {
     el.btnStake.disabled = false;
   }
@@ -948,13 +981,6 @@ if ('serviceWorker' in navigator) {
     .catch((err) => {
       log(`Service worker registration failed (push notifications unavailable): ${err.message}`);
     });
-}
-
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(base64);
-  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
 
 // Issue #21: a page reload used to always show the HTML default "Off" status
