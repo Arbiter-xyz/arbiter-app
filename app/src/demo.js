@@ -4,6 +4,8 @@
 // diff between polls into dispatch / answer / settlement events. Tradeoff:
 // events are only as fresh as POLL_MS and per-worker answers are inferred
 // from totalAnswers increments, not tied to a specific question.
+import { safeGet, safeSet, safeRemove } from './storage.js';
+
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 const TOKEN_KEY = 'arbiter-admin-token';
 const POLL_MS = 2_000;
@@ -35,10 +37,10 @@ function pushEvent(kind, label, text) {
 
 async function fetchAdmin(path) {
   const res = await fetch(`${BACKEND_URL}${path}`, {
-    headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}` },
+    headers: { Authorization: `Bearer ${safeGet(TOKEN_KEY, 'session')}` },
   });
   if (res.status === 401) {
-    localStorage.removeItem(TOKEN_KEY);
+    safeRemove(TOKEN_KEY, 'session');
     showLogin('That token was rejected — try again.');
     throw new Error('unauthorized');
   }
@@ -109,12 +111,16 @@ function start() {
 
 document.getElementById('demo-login').addEventListener('submit', (e) => {
   e.preventDefault();
-  localStorage.setItem(TOKEN_KEY, document.getElementById('demo-token').value.trim());
+  if (!safeSet(TOKEN_KEY, document.getElementById('demo-token').value.trim(), 'session')) {
+    showLogin("Couldn't keep the token — browser storage is blocked. Allow site data and try again.");
+    return;
+  }
   start();
 });
 document.getElementById('btn-clear').addEventListener('click', () => {
   document.getElementById('demo-feed').replaceChildren();
 });
 
-if (localStorage.getItem(TOKEN_KEY)) start();
+safeRemove(TOKEN_KEY); // #454: drop a token an older build left in localStorage
+if (safeGet(TOKEN_KEY, 'session')) start();
 else showLogin();

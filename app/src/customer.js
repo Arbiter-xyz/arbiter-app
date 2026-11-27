@@ -4,7 +4,7 @@
 // up the minimal page/login shell itself, per that issue's own text
 // ("the two are expected to merge cleanly either order"): a "paste your API
 // key" gate structurally identical to admin.js's showLogin()/showShell()/
-// token-in-localStorage pattern, plus the account-balance view and a "top
+// token-in-sessionStorage pattern, plus the account-balance view and a "top
 // up" affordance against the existing POST /billing/checkout endpoint.
 //
 // #37 is the webhook registration/management section below. Wired against
@@ -16,7 +16,8 @@
 // Auth: `Authorization: Bearer ak_live_…` (the API key itself), same scheme
 // as the admin console's bearer token.
 
-import { takeQueryParam } from './queryParam.js';
+import { safeGet, safeSet, safeRemove } from './storage.js';
+import { fetchWithTimeout } from './fetchTimeout.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 // #456: after a successful checkout, re-fetch the balance once more after
@@ -70,13 +71,16 @@ function showAccount() {
 }
 
 async function fetchCustomer(path, options = {}) {
-  const key = localStorage.getItem(KEY_STORAGE);
-  const res = await fetch(`${BACKEND_URL}${path}`, {
-    ...options,
-    headers: { Authorization: `Bearer ${key}`, ...(options.headers || {}) },
-  });
+  const key = safeGet(KEY_STORAGE, 'session');
+  // #455: every request gets the #283 deadline, so a hung connection rejects
+  // and the callers' finally blocks re-enable their buttons.
+  const res = await fetchWithTimeout(
+    `${BACKEND_URL}${path}`,
+    { ...options, headers: { Authorization: `Bearer ${key}`, ...(options.headers || {}) } },
+    REQUEST_TIMEOUT_MS,
+  );
   if (res.status === 401) {
-    localStorage.removeItem(KEY_STORAGE);
+    safeRemove(KEY_STORAGE, 'session');
     showLogin('That API key was rejected — try again.');
     throw new Error('unauthorized');
   }
@@ -132,7 +136,10 @@ async function login() {
   if (!key || el.btnLogin.disabled) return;
   el.btnLogin.disabled = true;
   try {
-    localStorage.setItem(KEY_STORAGE, key);
+    if (!safeSet(KEY_STORAGE, key, 'session')) {
+      showLogin("Couldn't keep the API key — browser storage is blocked. Allow site data and try again.");
+      return;
+    }
     el.loginStatus.textContent = '';
     await loadAccount();
   } finally {
@@ -196,7 +203,7 @@ el.btnWebhookSecretCopy.addEventListener('click', async () => {
 });
 
 el.btnLogout.addEventListener('click', () => {
-  localStorage.removeItem(KEY_STORAGE);
+  safeRemove(KEY_STORAGE, 'session');
   el.keyInput.value = '';
   showLogin();
 });
@@ -238,20 +245,11 @@ el.btnWebhookDelete.addEventListener('click', async () => {
   }
 });
 
-// #456: Top up's successUrl/cancelUrl bring the user back with
-// ?checkout=success|cancel. Read it once, drop it from the URL, and tell the
-// user what happened.
-const CHECKOUT_MESSAGES = {
-  success: 'Payment received — your balance updates once the provider confirms it.',
-  cancel: 'Checkout cancelled — you have not been charged.',
-};
-const checkoutResult = takeQueryParam('checkout');
-const checkoutMessage = CHECKOUT_MESSAGES[checkoutResult];
-if (checkoutMessage) {
-  log(checkoutMessage);
-}
+// #454: the key lives in sessionStorage now; drop any copy an older build
+// left in localStorage.
+safeRemove(KEY_STORAGE);
 
-if (localStorage.getItem(KEY_STORAGE)) {
+if (safeGet(KEY_STORAGE, 'session')) {
   loadAccount();
   if (checkoutResult === 'success') setTimeout(loadAccount, CHECKOUT_REFRESH_MS);
 } else {

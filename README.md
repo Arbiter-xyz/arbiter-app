@@ -123,6 +123,10 @@ e2e/          # browser click-through harness
 - `app/admin.html` — a bearer-token-gated read-only ops console
   (transactions, workers, payers, live treasury balance, fee revenue,
   fraud/trust monitoring) served against arbiter-backend's `/admin/*`.
+  The admin token (also used by `app/demo.html`) and the customer page's
+  API key are kept in `sessionStorage`, so they last only for the browser
+  session: closing the browser means pasting them again. Copies an older
+  build left in `localStorage` are deleted on load.
 
 ## Notification digest (pending backend)
 
