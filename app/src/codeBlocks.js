@@ -44,6 +44,6 @@ export function parseFences(value) {
     segments.push({ type: 'code', code: match[2], language: (match[1] || '').toLowerCase() });
     cursor = match.index + match[0].length;
   }
-  segments.push({ type: 'text', text: text.slice(cursor) });
-  return segments;
+  target.append(document.createTextNode(text.slice(cursor)));
 }
+

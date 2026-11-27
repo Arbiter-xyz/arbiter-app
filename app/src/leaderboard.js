@@ -1,8 +1,10 @@
-import { truncateAddress, formatRatio, workerProfileUrl, formatUsdc } from './format.js';
-// formatUsdc comes from format.js, which documents it as the canonical
-// whole-unit formatter for leaderboard values (#230). The leaderboard used
-// i18n.js's version, but i18n.js currently fails to evaluate (it declares
-// `en` twice), which stopped this page loading at all (#461).
+import { truncateAddress, formatRatio, workerProfileUrl } from './format.js';
+// Deliberately using i18n.js's formatUsdc (not units.js's): this is a
+// user-facing display surface, and i18n.js's implementation is the
+// locale-aware formatter intended for rendered output. units.js's
+// variant is for on-chain/base-unit math. See the dx issue tracking the
+// three divergent formatUsdc implementations.
+import { formatUsdc } from './i18n.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
