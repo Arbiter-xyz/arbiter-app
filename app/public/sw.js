@@ -70,8 +70,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Hashed build assets, styles, icons: cache-first, populated on first use.
-  if (/\.(js|css|png|svg|json|woff2?)$/.test(url.pathname)) {
+  // Hashed build assets in /assets/ (Vite output) and icons: cache-first, populated on first use.
+  // Other same-origin resources (e.g. /flags.json, /manifest.json) go to network.
+  if (/^\/assets\/.*\.(js|css|png|svg|woff2?)$/.test(url.pathname) || /^\/icons\/.*\.(png|svg)$/.test(url.pathname)) {
     event.respondWith(
       caches.match(request).then(
         (hit) =>
