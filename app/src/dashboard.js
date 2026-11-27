@@ -19,7 +19,6 @@ initErrorReporting('dashboard');
 initSessionReplay({ page: 'dashboard' });
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
-const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
 
 // See wallet.js for the module list and the connect/quick-start button
 // wiring shared with main.js (issue #19).
