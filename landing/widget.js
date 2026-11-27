@@ -92,7 +92,9 @@
 
         for (var i = 0; i < POLL_ATTEMPTS; i++) {
           await sleep(POLL_INTERVAL_MS);
-          var job = await (await fetch(apiBase + "/oracle/" + encodeURIComponent(jobId))).json();
+          var pollRes = await fetch(apiBase + "/oracle/" + encodeURIComponent(jobId));
+          if (!pollRes.ok) throw new Error("backend returned " + pollRes.status);
+          var job = await pollRes.json();
           if (job.status !== "settled") continue;
           if (job.outcome === "resolved") setState("resolved", "Resolved", String(job.answer));
           else setState("refunded", "Refunded", job.reason ? String(job.reason) : "No consensus reached.");

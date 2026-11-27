@@ -13,4 +13,8 @@ export const SENSITIVE_FIELD_IDS = [
   'demo-token',
   // checkout.js — revealed plaintext API key on the fiat/API-key checkout page
   'apikey-reveal-input',
+  // customer.js — where customers paste their ak_live_… API key (#457)
+  'customer-key-input',
+  // customer.js — shows the webhook signing secret once after saving (#457)
+  'webhook-status',
 ];
